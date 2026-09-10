@@ -1,0 +1,3 @@
+# The Forgejo token is linked in by `bytewise --conf-repo .' and is also excluded through
+# .git/info/exclude. Listed here too so a clone set up by hand cannot commit it either.
+/.env.forgejo
