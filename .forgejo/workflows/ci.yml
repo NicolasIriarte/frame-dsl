@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Everything the build needs is in the checkout: the CLibs tarballs are committed under
+      # third_party/clibs/ and unpacked locally. Nothing here reaches the network, and nothing here
+      # needs a secret -- which is the point, since CLibs is private and the token a workflow is
+      # given automatically cannot read another repository.
+      - name: Install the toolchain
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential
+
+      - name: Build
+        run: make
+
+      - name: Run the test suite
+        run: make test

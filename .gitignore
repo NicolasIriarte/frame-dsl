@@ -2,9 +2,5 @@
 # .git/info/exclude. Listed here too so a clone set up by hand cannot commit it either.
 /.env.forgejo
 
-# Build output.
+# Build output. The vendored CLibs tarballs are unpacked in here too, so this covers them.
 /build/
-
-# CLibs, downloaded by scripts/fetch_deps.sh at the version pinned there. Not vendored: see that
-# script for why.
-/third_party/

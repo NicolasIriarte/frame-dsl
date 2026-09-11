@@ -1,9 +1,13 @@
 # Frame-DSL build.
 #
-#   make          build the hello-world binary
-#   make deps     fetch the CLibs libraries into third_party/
+#   make          build build/frame-dsl
+#   make deps     unpack the vendored CLibs libraries
 #   make test     build and run the test suite
-#   make clean    remove build output, leaving third_party/ alone
+#   make clean    remove build output
+#
+# The build needs no network and no credentials: the CLibs release tarballs are committed under
+# third_party/clibs/ and unpacked into build/. To bump them, run scripts/vendor_clibs.sh by hand and
+# commit what it replaces.
 
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
@@ -16,13 +20,19 @@ CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
 THIRD_PARTY_CFLAGS ?= -std=c11 -O2 -Wno-format-truncation
 
 BUILD := build
-THIRD_PARTY := third_party
-LOGGER := $(THIRD_PARTY)/logger
-TESTING := $(THIRD_PARTY)/testing
 
-# Written by fetch_deps.sh once every library is unpacked. It depends on the script rather than on
-# a version variable here, so bumping CLIBS_VERSION in the script is what triggers a re-fetch.
-DEPS := $(THIRD_PARTY)/.fetched
+# The committed tarballs, and where they are unpacked to. Unpacking is build output, so `make clean`
+# discards it and the next build redoes it -- which costs a local untar rather than a download.
+CLIBS_DIST := third_party/clibs
+CLIBS_ARCHIVES := $(wildcard $(CLIBS_DIST)/*.tar.gz)
+
+DEPS_DIR := $(BUILD)/deps
+LOGGER := $(DEPS_DIR)/logger
+TESTING := $(DEPS_DIR)/testing
+
+# Version lives in the filenames, so the archives are globbed rather than named: bumping CLibs is
+# replacing a file, with nothing here to keep in step.
+DEPS := $(DEPS_DIR)/.unpacked
 
 TARGET := $(BUILD)/frame-dsl
 SRC := $(wildcard src/*.c)
@@ -38,8 +48,19 @@ all: $(TARGET)
 
 deps: $(DEPS)
 
-$(DEPS): scripts/fetch_deps.sh
-	@scripts/fetch_deps.sh
+# Each archive holds one <lib>-<version>/ directory; that component is stripped so include paths
+# name the library and never the version.
+$(DEPS): $(CLIBS_ARCHIVES)
+	@mkdir -p $(DEPS_DIR)
+	@for archive in $(CLIBS_ARCHIVES); do \
+		name="$$(basename "$$archive" .tar.gz)"; \
+		lib="$${name%-v*}"; \
+		rm -rf "$(DEPS_DIR)/$$lib"; \
+		mkdir -p "$(DEPS_DIR)/$$lib"; \
+		tar xzf "$$archive" -C "$(DEPS_DIR)/$$lib" --strip-components=1; \
+		echo "unpacked $$name"; \
+	done
+	@touch $@
 
 $(TARGET): $(SRC) | $(DEPS)
 	@mkdir -p $(@D)
