@@ -1,0 +1,10 @@
+// REJECTED: check 5 -- a width using valof() must declare max.
+//
+// `len` is 32 bits, so this field could claim up to 4 GiB. There is no bound to reserve in the
+// arena, so the field cannot have the dedicated slot requirement 4 asks for.
+
+pkt TM_UNBOUNDED {
+  hdr: 8 = 0xAA;
+  len: 32;
+  data: valof(len) * 8;
+};

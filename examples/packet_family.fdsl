@@ -1,0 +1,30 @@
+// Several packets in one file, which is the case the distinguishability check exists for.
+//
+// All three pin the same 8 bits, at the same offset, to different values. That is what makes them
+// pairwise distinguishable: it is not enough for each packet to *have* a discriminator, the
+// discriminators have to contradict each other. See docs/design.md, "Deciding distinguishability".
+//
+// This is also why examples/tm_datagram.fdsl and examples/can_frame.fdsl are separate files: one
+// pins bits 0..7 and the other pins bits 12..13, so they constrain disjoint bits and a frame could
+// satisfy both. Put them together and the file is rejected.
+
+bit_order  msb_first;
+byte_order big_endian;
+
+pkt TC_PING {
+  type: 8 = 0x01;
+  seq: 16;
+};
+
+pkt TC_SET_MODE {
+  type: 8 = 0x02;
+  seq: 16;
+  mode: 8;
+};
+
+pkt TC_PAYLOAD {
+  type: 8 = 0x03;
+  seq: 16;
+  len: 16;                          // counts payload bytes
+  body: valof(len) * 8 max 2048;
+};

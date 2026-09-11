@@ -1,0 +1,11 @@
+// REJECTED: check 7 -- valof() must name a field declared earlier in the same packet.
+//
+// `data` needs `len` to know its width, but `len` comes after it. Reading `len` means first knowing
+// where it starts, which means already knowing how wide `data` is. There is no order in which a
+// decoder can resolve this.
+
+pkt TM_BACKWARDS {
+  hdr: 8 = 0xAA;
+  data: valof(len) * 8 max 512;
+  len: 16;
+};

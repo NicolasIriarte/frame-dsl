@@ -1,0 +1,17 @@
+// Bit ordering and byte order at all three scopes, with the innermost winning.
+//
+// Read the settings on `count` and `value` together: they sit next to each other, are the same
+// width, and are laid out differently. That is the whole point of the field-level override.
+
+bit_order  msb_first;             // file scope: applies to every packet below
+byte_order big_endian;
+
+pkt TM_MIXED {
+  byte_order little_endian;       // packet scope: applies to this packet's fields
+
+  marker: 16 = 0xCAFE;            // little_endian, inherited from the packet
+  count:  32 byte_order big_endian;   // field scope: wins over the packet
+  value:  32;                     // little_endian again
+  flags:   4 bit_order lsb_first; // bit order is independent of byte order
+  rest:    4;
+};

@@ -1,0 +1,103 @@
+(* Frame-DSL, v1 grammar.
+ *
+ * ISO/IEC 14977 EBNF. This is the whole language a v1 parser must accept -- deliberately small, and
+ * written to be turned directly into a recursive-descent parser: one function per production, no
+ * backtracking needed, and every production decidable from a single lookahead token.
+ *
+ * What is NOT here is as deliberate as what is. Signed and floating-point fields, enums, conditional
+ * fields, repetition, packet composition, CRC declarations and calibration curves are all deferred,
+ * each to its own issue, so that they are designed against a language that exists and a parser that
+ * runs rather than against a sketch.
+ *
+ * Rules this grammar cannot express -- a valof() referring only to an earlier field, the mandatory
+ * max on a variable-sized field, the required discriminator, packet distinguishability -- are
+ * semantic checks, listed in docs/design.md. They are checked when a definition file loads.
+ *)
+
+definition_file    = { file_setting } , { packet } ;
+
+(* --- Settings -------------------------------------------------------------------------------
+ * The same two settings appear at three scopes. At file scope they precede every packet and apply
+ * to the file; at packet scope they precede every field and apply to the packet; at field scope
+ * they are a suffix on one field. Precedence therefore falls out of position: field > packet >
+ * file, with no separate rule to remember.
+ *)
+
+file_setting       = setting ;
+packet_setting     = setting ;
+field_setting      = setting_body ;
+
+setting            = setting_body , ";" ;
+setting_body       = bit_order | byte_order ;
+
+bit_order          = "bit_order"  , bit_order_value ;
+byte_order         = "byte_order" , byte_order_value ;
+
+bit_order_value    = "msb_first" | "lsb_first" ;
+byte_order_value   = "big_endian" | "little_endian" ;
+
+(* --- Packets --------------------------------------------------------------------------------
+ * A packet has at least one field: an empty packet describes nothing and is more likely a mistake
+ * than an intention. The trailing semicolon after the closing brace is required.
+ *)
+
+packet             = "pkt" , identifier , "{" ,
+                       { packet_setting } ,
+                       field , { field } ,
+                     "}" , ";" ;
+
+(* --- Fields ---------------------------------------------------------------------------------
+ * Width is an expression in BITS, always. `max` bounds a width that depends on another field's
+ * value; `=` fixes the field's value and is what lets the decoder tell packets apart.
+ *
+ * The grammar permits `max` and `=` together; the semantic pass rejects it, because a field whose
+ * width is not known until decode time cannot also be a discriminator.
+ *)
+
+field              = identifier , ":" , width ,
+                     [ "max" , expression ] ,
+                     [ "=" , integer ] ,
+                     { field_setting } , ";" ;
+
+width              = expression ;
+
+(* --- Expressions ----------------------------------------------------------------------------
+ * Integer arithmetic, standard precedence, left-associative. It exists because length fields rarely
+ * count exactly what follows them: `valof(len) * 8` when len counts payload bytes,
+ * `valof(len) * 8 - 32` when it counts itself as well.
+ *)
+
+expression         = term , { ( "+" | "-" ) , term } ;
+term               = factor , { ( "*" | "/" ) , factor } ;
+factor             = integer
+                   | valof
+                   | "(" , expression , ")" ;
+
+valof              = "valof" , "(" , identifier , ")" ;
+
+(* --- Lexical --------------------------------------------------------------------------------
+ * Whitespace and comments separate tokens and are otherwise discarded. Block comments do not nest.
+ *)
+
+identifier         = ( letter | "_" ) , { letter | digit | "_" } ;
+
+integer            = decimal | hexadecimal | binary ;
+decimal            = digit , { digit } ;
+hexadecimal        = "0x" , hex_digit , { hex_digit } ;
+binary             = "0b" , bit , { bit } ;
+
+letter             = "A" | "..." | "Z" | "a" | "..." | "z" ;
+digit              = "0" | "..." | "9" ;
+hex_digit          = digit | "a" | "..." | "f" | "A" | "..." | "F" ;
+bit                = "0" | "1" ;
+
+comment            = line_comment | block_comment ;
+line_comment       = "//" , { ? any character except newline ? } , newline ;
+block_comment      = "/*" , { ? any character sequence not containing "*/" ? } , "*/" ;
+
+(* Reserved words, none of which may be used as an identifier:
+ *
+ *   pkt  valof  max
+ *   bit_order   msb_first     lsb_first
+ *   byte_order  big_endian    little_endian
+ *)

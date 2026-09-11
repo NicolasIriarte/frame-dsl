@@ -1,0 +1,23 @@
+// TM_DATAGRAM_01 from the original design sketch. Its field list -- an 11-bit base identifier, RTR,
+// IDE, a reserved bit and a 4-bit DLC -- is the layout of a CAN 2.0A standard frame.
+//
+// The sketch had no fixed field, so nothing could identify it and it was rejected. The fix was
+// already in the protocol rather than invented for the language: in a standard frame IDE is 0 by
+// definition (a 1 means an extended, 29-bit identifier follows) and r0 is reserved and transmitted
+// as 0. Pinning them is describing CAN accurately, not decorating the file to satisfy a check.
+//
+// `delimiter;` from the sketch is gone: it had no width and no defined meaning. See
+// manual/language.md.
+
+bit_order  msb_first;
+byte_order big_endian;
+
+pkt TM_DATAGRAM_01 {
+  base:       11;          // standard identifier
+  rtr:         1;          // remote transmission request
+  ide:         1 = 0b0;    // fixed: 0 marks a standard (11-bit) identifier
+  r0:          1 = 0b0;    // fixed: reserved, transmitted dominant
+  dlc:         4;          // data length code
+  data_field:  8;
+  seq:        15;
+};
