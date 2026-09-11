@@ -1,9 +1,16 @@
 # Frame-DSL build.
 #
-#   make          build build/frame-dsl
-#   make deps     unpack the vendored CLibs libraries
-#   make test     build and run the test suite
-#   make clean    remove build output
+#   make              build build/frame-dsl
+#   make deps         unpack the vendored CLibs libraries
+#   make test         run both levels of tests
+#   make test-unit    unit tests only
+#   make test-system  system tests only
+#   make clean        remove build output
+#
+# Tests come at two levels. Unit tests reach into a module directly and are compiled with src/ on
+# their include path. System tests use the project the way a user does -- the public interface and
+# the binary -- and are compiled WITHOUT src/, so a system test that reaches for an internal header
+# fails to build. That boundary is enforced by the compiler rather than by anyone remembering it.
 #
 # The build needs no network and no credentials: the CLibs release tarballs are committed under
 # third_party/clibs/ and unpacked into build/. To bump them, run scripts/vendor_clibs.sh by hand and
@@ -35,14 +42,28 @@ TESTING := $(DEPS_DIR)/testing
 DEPS := $(DEPS_DIR)/.unpacked
 
 TARGET := $(BUILD)/frame-dsl
-SRC := $(wildcard src/*.c)
 
-TEST_RUNNER := $(BUILD)/run_tests
-TEST_SRC := $(wildcard test/*.c)
-TEST_REGISTRY := $(BUILD)/inc/testsuite_registry.h
-TESTSUITE_OBJ := $(BUILD)/testsuite.o
+# Everything but the entry point is compiled once into objects, so the binary and both test runners
+# link the same code rather than recompiling it three ways.
+LIB_SRC := $(filter-out src/main.c, $(wildcard src/*.c))
+LIB_OBJ := $(LIB_SRC:src/%.c=$(BUILD)/obj/%.o)
 
-.PHONY: all deps test clean
+UNIT_SRC := $(wildcard test/unit/*.c)
+UNIT_RUNNER := $(BUILD)/run_unit_tests
+UNIT_REGISTRY := $(BUILD)/inc/unit/testsuite_registry.h
+
+SYSTEM_SRC := $(wildcard test/system/*.c)
+SYSTEM_RUNNER := $(BUILD)/run_system_tests
+SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
+
+# One per level, not one shared. testsuite.c sizes its user-story array from
+# TESTSUITE_USER_STORY_COUNT, which it picks up from whichever testsuite_registry.h is on its include
+# path when it is compiled -- so the count is baked into the object. A single object built without a
+# registry sizes the array for zero stories and halts on the second one registered.
+TESTSUITE_UNIT_OBJ := $(BUILD)/testsuite_unit.o
+TESTSUITE_SYSTEM_OBJ := $(BUILD)/testsuite_system.o
+
+.PHONY: all deps test test-unit test-system clean
 
 all: $(TARGET)
 
@@ -62,26 +83,53 @@ $(DEPS): $(CLIBS_ARCHIVES)
 	done
 	@touch $@
 
-$(TARGET): $(SRC) | $(DEPS)
+$(BUILD)/obj/%.o: src/%.c | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) $^ -o $@
+	$(CC) $(CFLAGS) -I$(LOGGER) -Isrc -c $< -o $@
+
+$(TARGET): src/main.c $(LIB_OBJ) | $(DEPS)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I$(LOGGER) -Isrc $^ -o $@
+
+$(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
+	@mkdir -p $(@D)
+	$(CC) $(THIRD_PARTY_CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -c $< -o $@
+
+$(TESTSUITE_SYSTEM_OBJ): $(TESTING)/testsuite.c $(SYSTEM_REGISTRY) | $(DEPS)
+	@mkdir -p $(@D)
+	$(CC) $(THIRD_PARTY_CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -c $< -o $@
 
 # Regenerated whenever a story file is added or removed, which is the whole point of generating it.
-$(TEST_REGISTRY): $(TEST_SRC) | $(DEPS)
+$(UNIT_REGISTRY): $(UNIT_SRC) | $(DEPS)
 	@mkdir -p $(@D)
-	$(TESTING)/gen_test_registry test $@
+	$(TESTING)/gen_test_registry test/unit $@
 
-$(TESTSUITE_OBJ): $(TESTING)/testsuite.c | $(DEPS)
+$(SYSTEM_REGISTRY): $(SYSTEM_SRC) | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(THIRD_PARTY_CFLAGS) -I$(LOGGER) -I$(TESTING) -c $< -o $@
+	$(TESTING)/gen_test_registry test/system $@
 
-$(TEST_RUNNER): $(TEST_SRC) $(TEST_REGISTRY) $(TESTSUITE_OBJ)
+$(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc \
-		$(TEST_SRC) $(TESTSUITE_OBJ) -o $@
+	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Isrc \
+		$(UNIT_SRC) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) -o $@
 
-test: $(TEST_RUNNER)
-	./$(TEST_RUNNER)
+# Note what is missing: -Isrc. A system test cannot include an internal header, because the compiler
+# cannot find one. FRAMEDSL_BIN and EXAMPLES_DIR are passed in so a test drives the real binary and
+# the real example files rather than a copy that can drift.
+$(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) $(TARGET)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system \
+		-D_POSIX_C_SOURCE=200809L \
+		-DFRAMEDSL_BIN='"$(TARGET)"' -DEXAMPLES_DIR='"examples"' \
+		$(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
+
+test: test-unit test-system
+
+test-unit: $(UNIT_RUNNER)
+	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)
+
+test-system: $(SYSTEM_RUNNER)
+	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/system ./$(SYSTEM_RUNNER)
 
 clean:
 	rm -rf $(BUILD)
