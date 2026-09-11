@@ -38,12 +38,11 @@ MUST NOT is not negotiable, SHOULD / SHOULD NOT is a default that a stated reaso
    except an issue the model created itself, which it may complete directly.
 4. An AI model MUST NOT merge a PR unless explicitly told to, for that PR, in that moment. Being
    told once does not carry forward to future PRs.
+5. Issues MUST follow the template provided under the `templates/` directory.
 
 ## Forgejo access
 
-This repo uses the same `claude` Forgejo account and SSH key as `nico/NicOs` and
-`nico/curriculum`, on the same instance
-(`http://100.125.208.18:3000`).
+This repo uses the same `claude` Forgejo account and SSH key.
 
 The access token lives in one file outside every repository, at `~/.env.forgejo` (mode 0600). It is
 never copied into a repository and never read out of a sibling project's working tree. In a fresh
