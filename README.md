@@ -56,6 +56,12 @@ make        # build build/frame-dsl
 make test   # build and run the test suite
 ```
 
+`make` also writes `compile_commands.json` at the repository root, so clangd and anything else
+speaking that format can index the project with no further setup -- including the generated test
+registries, and the deliberate absence of `src/` from the system tests' include path. It is
+gitignored: the paths in it are absolute, so it belongs to one checkout on one machine. Nothing needs
+to be installed to produce it; the Makefile already knows every flag it compiles with.
+
 The three CLibs libraries this builds against are vendored: their release tarballs are committed
 under `third_party/clibs/`, and unpacked into `build/` as part of the build. Nothing is downloaded,
 so a clone builds on a machine with no route to the Forgejo instance and CI needs no secret.
@@ -71,28 +77,29 @@ That script is the only thing here that talks to the network, and the only thing
 -- CLibs is private. `bytewise --conf-repo .` links one in; `bytewise --status .` shows what is
 configured.
 
-| Target | |
-| --- | --- |
-| `make` | build `build/frame-dsl` |
-| `make deps` | unpack the vendored CLibs libraries into `build/deps/` |
-| `make test` | run both levels of tests |
-| `make test-unit` | unit tests only |
-| `make test-system` | system tests only |
-| `make clean` | remove `build/` |
+| Target                  |                                                        |
+|-------------------------|--------------------------------------------------------|
+| `make`                  | build `build/frame-dsl`                                |
+| `make deps`             | unpack the vendored CLibs libraries into `build/deps/` |
+| `make test`             | run both levels of tests                               |
+| `make test-unit`        | unit tests only                                        |
+| `make test-system`      | system tests only                                      |
+| `make compile-commands` | regenerate `compile_commands.json` alone               |
+| `make clean`            | remove `build/` and `compile_commands.json`            |
 
 ## Layout
 
-| Path | |
-| --- | --- |
-| `include/` | `framedsl.h`, the public API and the only header a user includes |
-| `src/` | the runtime and the command-line front end |
-| `test/` | one user story per file, `NN_name.c`; the runner registers them from the filenames |
-| `manual/` | the language reference -- what someone writing a definition file needs |
-| `docs/` | design documents -- why the language and runtime are shaped the way they are |
-| `examples/` | example definition files, doubling as the parser's fixtures |
-| `scripts/` | `vendor_clibs.sh`, which updates the committed CLibs tarballs |
-| `templates/` | issue templates; `GUIDELINES.md` requires issues to follow them |
-| `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time |
+| Path                 |                                                                                    |
+|----------------------|------------------------------------------------------------------------------------|
+| `include/`           | `framedsl.h`, the public API and the only header a user includes                   |
+| `src/`               | the runtime and the command-line front end                                         |
+| `test/`              | one user story per file, `NN_name.c`; the runner registers them from the filenames |
+| `manual/`            | the language reference -- what someone writing a definition file needs             |
+| `docs/`              | design documents -- why the language and runtime are shaped the way they are       |
+| `examples/`          | example definition files, doubling as the parser's fixtures                        |
+| `scripts/`           | `vendor_clibs.sh`, which updates the committed CLibs tarballs                      |
+| `templates/`         | issue templates; `GUIDELINES.md` requires issues to follow them                    |
+| `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time                   |
 
 ## Working on this repository
 

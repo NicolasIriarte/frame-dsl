@@ -5,6 +5,7 @@
 #   make test         run both levels of tests
 #   make test-unit    unit tests only
 #   make test-system  system tests only
+#   make compile-commands  regenerate compile_commands.json alone
 #   make clean        remove build output
 #
 # Tests come at two levels. Unit tests reach into a module directly and are compiled with src/ on
@@ -63,9 +64,29 @@ SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 TESTSUITE_UNIT_OBJ := $(BUILD)/testsuite_unit.o
 TESTSUITE_SYSTEM_OBJ := $(BUILD)/testsuite_system.o
 
-.PHONY: all deps test test-unit test-system clean
+COMPILE_COMMANDS := compile_commands.json
 
-all: $(TARGET)
+# The three ways this project compiles a C file, defined once. The rules below use these, and so does
+# the compile_commands.json generator -- which is the whole reason they are variables. A generator
+# that restated the flags would be wrong the first time one of these rules was edited, and wrong
+# silently: the symptom is a confused language server, not a failed build.
+#
+# SYSTEM_FLAGS is the one to look at. It has no -Isrc, which is what stops a system test reaching
+# inside, and it carries defines whose values are quoted strings. Those are backslash-escaped rather
+# than wrapped in single quotes, so the quotes survive every step between here and the generator:
+# make's expansion, the recipe's shell, an environment variable, and the word-splitting that turns
+# the lot back into arguments. Nesting single quotes inside single quotes loses them silently, and
+# the symptom is a macro expanding to a bare identifier rather than to a string.
+SRC_FLAGS := $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc
+UNIT_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc
+SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
+	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\"
+
+.PHONY: all deps test test-unit test-system compile-commands clean
+
+# compile_commands.json is built by default so a fresh clone is browsable after `make`, with no
+# second step for somebody to discover.
+all: $(TARGET) $(COMPILE_COMMANDS)
 
 deps: $(DEPS)
 
@@ -85,11 +106,11 @@ $(DEPS): $(CLIBS_ARCHIVES)
 
 $(BUILD)/obj/%.o: src/%.c | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc -c $< -o $@
+	$(CC) $(SRC_FLAGS) -c $< -o $@
 
 $(TARGET): src/main.c $(LIB_OBJ) | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc $^ -o $@
+	$(CC) $(SRC_FLAGS) $^ -o $@
 
 $(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
 	@mkdir -p $(@D)
@@ -110,19 +131,16 @@ $(SYSTEM_REGISTRY): $(SYSTEM_SRC) | $(DEPS)
 
 $(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc \
-		$(UNIT_SRC) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) -o $@
+	$(CC) $(UNIT_FLAGS) $(UNIT_SRC) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) -o $@
 
 # Note what is missing: -Isrc. A system test gets include/ -- the public header a user would get --
 # but not the internals, so a system test that reaches inside fails to build rather than quietly
 # testing something no user can reach. FRAMEDSL_BIN and EXAMPLES_DIR are passed in so a test drives the real binary and
 # the real example files rather than a copy that can drift.
-$(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) $(TARGET)
+$(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) $(TARGET) \
+                  $(COMPILE_COMMANDS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
-		-D_POSIX_C_SOURCE=200809L \
-		-DFRAMEDSL_BIN='"$(TARGET)"' -DEXAMPLES_DIR='"examples"' \
-		$(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
+	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
 test: test-unit test-system
 
@@ -132,5 +150,27 @@ test-unit: $(UNIT_RUNNER)
 test-system: $(SYSTEM_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/system ./$(SYSTEM_RUNNER)
 
+compile-commands: $(COMPILE_COMMANDS)
+
+# Depends on the Makefile because that is where the flags live, and on the sources because a file
+# nobody has indexed is the same problem as a stale flag. The generated test registries are
+# prerequisites too: the recorded flags point a language server at them, and a header that has not
+# been generated yet reads as a broken include in an editor even though the build is fine.
+#
+# The source *directories* are prerequisites as well, and they are not redundant. The file lists come
+# from $(wildcard), which is evaluated when the Makefile is read -- so a deleted file simply vanishes
+# from the prerequisites and nothing looks out of date, leaving an entry behind for a file that no
+# longer exists. A directory's timestamp moves when a file is added or removed from it, which is
+# exactly the event the file list cannot report.
+$(COMPILE_COMMANDS): Makefile scripts/gen_compile_commands.sh src test/unit test/system \
+                     $(LIB_SRC) src/main.c $(UNIT_SRC) \
+                     $(SYSTEM_SRC) $(UNIT_REGISTRY) $(SYSTEM_REGISTRY) | $(DEPS)
+	@CC="$(CC)" \
+	 SRC_FLAGS="$(SRC_FLAGS)" \
+	 UNIT_FLAGS="$(UNIT_FLAGS)" \
+	 SYSTEM_FLAGS="$(SYSTEM_FLAGS)" \
+	 scripts/gen_compile_commands.sh $@
+	@echo "wrote $@"
+
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) $(COMPILE_COMMANDS)
