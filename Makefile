@@ -24,7 +24,7 @@ TESTING := $(THIRD_PARTY)/testing
 # a version variable here, so bumping CLIBS_VERSION in the script is what triggers a re-fetch.
 DEPS := $(THIRD_PARTY)/.fetched
 
-TARGET := $(BUILD)/hello_world
+TARGET := $(BUILD)/frame-dsl
 SRC := $(wildcard src/*.c)
 
 TEST_RUNNER := $(BUILD)/run_tests
