@@ -62,19 +62,37 @@ static int us1_tc01_parses_every_valid_example(const TestArguments *args) {
   return 0;
 }
 
-/* The files under examples/invalid/ are rejected by the semantic checks, which do not exist yet.
- * They are all syntactically fine, so at this stage they must parse. When the checks land, this case
- * becomes their job and flips to expecting a rejection. */
-static int us1_tc02_invalid_examples_are_still_syntactically_valid(const TestArguments *args) {
+/* Each file under examples/invalid/ names, in its own header comment, the one check it exists to
+ * trip. Asserting the number rather than merely "it failed" is the point: a file rejected for the
+ * wrong reason is a green test hiding a broken checker.
+ *
+ * This is also the documentation staying honest. If someone changes a check so a fixture starts
+ * failing for a different reason, the fixture's comment has become a lie and this says so. */
+static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const TestArguments *args) {
   (void)args;
 
-  const char *names[] = {"invalid/no_discriminator.fdsl", "invalid/unbounded_valof.fdsl",
-                         "invalid/ambiguous_packets.fdsl", "invalid/forward_valof.fdsl",
-                         "invalid/value_too_wide.fdsl", "invalid/byte_order_unaligned.fdsl"};
-  for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
-    int failure = expect_parses(names[i]);
-    if (failure != 0) {
-      return failure;
+  const struct {
+    const char *name;
+    int check;
+  } cases[] = {
+      {"invalid/no_discriminator.fdsl", 11},   {"invalid/unbounded_valof.fdsl", 5},
+      {"invalid/ambiguous_packets.fdsl", 12},  {"invalid/forward_valof.fdsl", 7},
+      {"invalid/value_too_wide.fdsl", 8},      {"invalid/byte_order_unaligned.fdsl", 10},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", EXAMPLES_DIR, cases[i].name);
+    Run run = run_on(path);
+
+    if (run.status != 1) {
+      return __LINE__;
+    }
+
+    char wanted[32];
+    snprintf(wanted, sizeof(wanted), "[check %d]", cases[i].check);
+    if (strstr(run.output, wanted) == NULL) {
+      return __LINE__;
     }
   }
   return 0;
@@ -140,7 +158,7 @@ static int us1_tc05_a_missing_file_is_distinguishable_from_a_bad_one(const TestA
   if (run.status != 2) {
     FORCE_FAILURE();
   }
-  if (strstr(run.output, "cannot open") == NULL) {
+  if (strstr(run.output, "cannot read") == NULL) {
     FORCE_FAILURE();
   }
   return 0;
@@ -178,8 +196,8 @@ static int us1_tc07_no_arguments_is_a_usage_error(const TestArguments *args) {
 void register_user_story1(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us1_tc01_parses_every_valid_example, "every example in examples/ parses", true);
-  ADD_TEST_CASE(us1_tc02_invalid_examples_are_still_syntactically_valid,
-                "the invalid examples are semantic failures, not syntax ones", false);
+  ADD_TEST_CASE(us1_tc02_rejects_each_invalid_example_for_its_documented_check,
+                "each invalid example is rejected for the check it names", false);
   ADD_TEST_CASE(us1_tc03_reports_a_syntax_error_with_its_position,
                 "a syntax error is reported with file, line and column", false);
   ADD_TEST_CASE(us1_tc04_reports_every_error_in_one_run, "several errors are reported in one run", false);

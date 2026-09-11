@@ -85,11 +85,11 @@ $(DEPS): $(CLIBS_ARCHIVES)
 
 $(BUILD)/obj/%.o: src/%.c | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -Isrc -c $< -o $@
+	$(CC) $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc -c $< -o $@
 
 $(TARGET): src/main.c $(LIB_OBJ) | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -Isrc $^ -o $@
+	$(CC) $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc $^ -o $@
 
 $(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
 	@mkdir -p $(@D)
@@ -110,15 +110,16 @@ $(SYSTEM_REGISTRY): $(SYSTEM_SRC) | $(DEPS)
 
 $(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Isrc \
+	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc \
 		$(UNIT_SRC) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) -o $@
 
-# Note what is missing: -Isrc. A system test cannot include an internal header, because the compiler
-# cannot find one. FRAMEDSL_BIN and EXAMPLES_DIR are passed in so a test drives the real binary and
+# Note what is missing: -Isrc. A system test gets include/ -- the public header a user would get --
+# but not the internals, so a system test that reaches inside fails to build rather than quietly
+# testing something no user can reach. FRAMEDSL_BIN and EXAMPLES_DIR are passed in so a test drives the real binary and
 # the real example files rather than a copy that can drift.
 $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) $(TARGET)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system \
+	$(CC) $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
 		-D_POSIX_C_SOURCE=200809L \
 		-DFRAMEDSL_BIN='"$(TARGET)"' -DEXAMPLES_DIR='"examples"' \
 		$(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@

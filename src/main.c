@@ -1,64 +1,63 @@
+/* frame-dsl: validate a definition file and describe what is in it.
+ *
+ * Written against the public header alone, with nothing internal included. That is deliberate: if
+ * the tool shipped with the project needs to reach inside, the interface is not finished. */
 #include <stdio.h>
-#include <stdlib.h>
 
-#include "diag.h"
+#include "framedsl.h"
 #include "logger.h"
-#include "parser.h"
 
-/* Reads the whole file. Definition files are small by nature -- they describe a handful of packet
- * layouts -- so there is no reason to stream one. */
-static char *read_file(const char *path, DiagList *diags) {
-  FILE *handle = fopen(path, "rb");
-  if (handle == NULL) {
-    diag_add(diags, 0, 0, 0, "cannot open '%s'", path);
-    return NULL;
-  }
+static void report(const FramedslResult *result) {
+  const char *name = framedsl_source_name(result);
 
-  if (fseek(handle, 0, SEEK_END) != 0) {
-    diag_add(diags, 0, 0, 0, "cannot read '%s'", path);
-    fclose(handle);
-    return NULL;
-  }
-  long size = ftell(handle);
-  if (size < 0) {
-    diag_add(diags, 0, 0, 0, "cannot read '%s'", path);
-    fclose(handle);
-    return NULL;
-  }
-  rewind(handle);
+  for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
+    const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
 
-  char *source = malloc((size_t)size + 1);
-  if (source == NULL) {
-    diag_add(diags, 0, 0, 0, "out of memory reading '%s'", path);
-    fclose(handle);
-    return NULL;
-  }
+    /* The check number is printed because it is what makes a rejection checkable: "rejected" is a
+     * weaker claim than "rejected for the reason the file says it should be". */
+    char check[32] = "";
+    if (diag->check > 0) {
+      snprintf(check, sizeof(check), " [check %d]", diag->check);
+    }
 
-  size_t read = fread(source, 1, (size_t)size, handle);
-  fclose(handle);
-  source[read] = '\0';
-  return source;
-}
-
-static void report(const char *path, const DiagList *diags) {
-  for (size_t i = 0; i < diags->count; ++i) {
-    const Diag *diag = &diags->items[i];
     if (diag->line > 0) {
-      log_fail("%s:%d:%d: %s", path, diag->line, diag->column, diag->message);
+      log_fail("%s:%d:%d:%s %s", name, diag->line, diag->column, check, diag->message);
     } else {
-      log_fail("%s: %s", path, diag->message);
+      log_fail("%s:%s %s", name, check, diag->message);
     }
   }
-  if (diags->overflowed) {
-    log_fail("%s: more problems follow, not reported", path);
-  }
 }
 
-static void describe(const AstFile *file) {
-  for (size_t p = 0; p < file->packet_count; ++p) {
-    const AstPacket *packet = &file->packets[p];
-    log_info("pkt %s: %zu field%s", packet->name, packet->field_count,
-             packet->field_count == 1 ? "" : "s");
+static void describe(const FramedslDefinition *definition) {
+  for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
+    size_t fields = framedsl_field_count(definition, p);
+
+    log_info("pkt %s: %zu field%s, %llu bits reserved", framedsl_packet_name(definition, p), fields,
+             fields == 1 ? "" : "s",
+             (unsigned long long)framedsl_packet_reserved_bits(definition, p));
+
+    for (size_t f = 0; f < fields; ++f) {
+      FramedslField field;
+      if (!framedsl_field(definition, p, f, &field)) {
+        continue;
+      }
+
+      char offset[32] = "at ?";
+      if (field.offset_known) {
+        snprintf(offset, sizeof(offset), "at %llu", (unsigned long long)field.offset_bits);
+      }
+
+      if (field.variable) {
+        log_info("    %-14s %s, variable, max %llu bits", field.name, offset,
+                 (unsigned long long)field.max_bits);
+      } else if (field.has_fixed) {
+        log_info("    %-14s %s, %llu bits = %#llx", field.name, offset,
+                 (unsigned long long)field.width_bits, (unsigned long long)field.fixed);
+      } else {
+        log_info("    %-14s %s, %llu bits", field.name, offset,
+                 (unsigned long long)field.width_bits);
+      }
+    }
   }
 }
 
@@ -68,30 +67,36 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  DiagList diags;
-  diag_init(&diags);
-
-  char *source = read_file(argv[1], &diags);
-  if (source == NULL) {
-    report(argv[1], &diags);
-    diag_free(&diags);
+  FramedslResult *result = framedsl_load_file(argv[1]);
+  if (result == NULL) {
+    log_fail("out of memory");
     return 2;
   }
 
-  AstFile *file = parse(source, &diags);
-
-  int status = 0;
-  if (diags.count > 0) {
-    report(argv[1], &diags);
+  int status;
+  switch (framedsl_status(result)) {
+  case FRAMEDSL_OK: {
+    const FramedslDefinition *definition = framedsl_definition(result);
+    describe(definition);
+    log_info("%s: ok, %zu packet%s", framedsl_source_name(result),
+             framedsl_packet_count(definition), framedsl_packet_count(definition) == 1 ? "" : "s");
+    status = 0;
+    break;
+  }
+  case FRAMEDSL_ERROR_INVALID:
+    report(result);
     status = 1;
-  } else if (file != NULL) {
-    describe(file);
-    log_info("%s: parsed, %zu packet%s", argv[1], file->packet_count,
-             file->packet_count == 1 ? "" : "s");
+    break;
+  /* A missing file is not a malformed file, and a script should not have to grep the message to
+   * tell them apart. */
+  case FRAMEDSL_ERROR_IO:
+  case FRAMEDSL_ERROR_MEMORY:
+  default:
+    report(result);
+    status = 2;
+    break;
   }
 
-  ast_free(file);
-  free(source);
-  diag_free(&diags);
+  framedsl_result_free(result);
   return status;
 }

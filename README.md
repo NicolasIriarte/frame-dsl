@@ -44,7 +44,8 @@ Three things that are load-bearing rather than incidental:
 - **A decodable packet must carry at least one fixed-value field.** Definitions whose packets cannot
   be told apart are rejected when the file loads, not when a frame arrives on a live link.
 
-The full language reference is in [`manual/`](manual), and the design behind it in [`docs/`](docs).
+The full language reference is in [`manual/`](manual) -- including the [C API](manual/api.md) --
+and the design behind it in [`docs/`](docs).
 
 ## Building
 
@@ -74,13 +75,16 @@ configured.
 | --- | --- |
 | `make` | build `build/frame-dsl` |
 | `make deps` | unpack the vendored CLibs libraries into `build/deps/` |
-| `make test` | build and run the test suite |
+| `make test` | run both levels of tests |
+| `make test-unit` | unit tests only |
+| `make test-system` | system tests only |
 | `make clean` | remove `build/` |
 
 ## Layout
 
 | Path | |
 | --- | --- |
+| `include/` | `framedsl.h`, the public API and the only header a user includes |
 | `src/` | the runtime and the command-line front end |
 | `test/` | one user story per file, `NN_name.c`; the runner registers them from the filenames |
 | `manual/` | the language reference -- what someone writing a definition file needs |
