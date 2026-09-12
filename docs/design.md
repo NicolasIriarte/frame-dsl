@@ -193,6 +193,13 @@ alternative is finding out on a live link.
 14. A reservation appears only on a field whose width depends on another field. A constant-width
     field's slot is already known from its width, and a second number could only restate it or
     contradict it.
+15. `@bit_order` and `@byte_order` may not be written on a bit string -- a field wider than
+    `FRAMEDSL_SCALAR_MAX_BITS`, or a `valof()`-sized one. They describe how the bits of a value are
+    arranged, and a bit string is the bytes the caller handed over. Inherited, either is simply
+    irrelevant to that field and meaningful to the next one.
+16. A `valof()` must name a **scalar** field. A width is arithmetic on a number, and anything wider
+    than a scalar is a run of bytes with no single value to multiply. Without this the width would be
+    computed from whatever the first eight bytes of a payload happened to be.
 
 ### Deciding distinguishability
 
@@ -261,6 +268,26 @@ expression is rejected can always rewrite it so the multiple of eight is visible
 Encoding is the same walk in reverse, with one difference: fixed-value fields are written from the
 definition, not from the arena, so a caller cannot emit a frame that fails to identify itself.
 
+### Bit numbering
+
+One statement, from which the rest follows:
+
+```
+stream bit i is bit 7 - (i % 8) of byte i / 8
+```
+
+Bit zero of a frame is the most significant bit of its first byte, which is the order a frame is
+transmitted in. The mask and value a packet's fixed fields project onto use the same numbering, so a
+packet's discriminator is **literally the bytes a frame of it must have** -- the decoder matches an
+incoming buffer with an AND and a compare rather than reversing anything first.
+
+A **scalar** is laid down by that rule under its resolved `bit_order`, after `byte_order` has
+reordered its bytes where that means anything. A **bit string** is laid down as the bytes it was
+given, each most significant bit first, shifted to wherever the field starts; neither attribute
+applies to it, because it is a run of octets somebody handed over rather than a number with an order.
+Check 15 rejects writing either on such a field, for the same reason check 10 exists: a line that
+cannot do anything should say so rather than be ignored.
+
 ## The bytecode
 
 A program is a flat array of field instructions, one per field, in declaration order. Each carries its
@@ -309,6 +336,20 @@ already draws between wire order and host values.
 That means a field instruction gains an optional transform reference, and the arena may need to hold
 an engineering value alongside the raw one. It means the language gains a per-field attribute. It
 does not mean anything about the layout rules changes, which is the property worth preserving now.
+
+### What a decode reports
+
+Three failures, kept apart because a program responds to them differently. `UNRECOGNISED` is nothing
+here matching -- noise, or a sender running a newer file -- and is something to count and drop.
+`TRUNCATED` is a packet matching and the bytes then running out, which means the transport is handing
+over the wrong bytes. `RANGE` is a length field claiming more than its field reserved, which means the
+frame is corrupt. A single "decode failed" would leave a caller unable to tell a noisy link from a
+broken one.
+
+A decode also reports how many bytes the frame occupied. A packet with a `valof()` field has no length
+until it has been decoded, so without that a caller reading a stream would have to re-implement the
+length field's arithmetic to find where one frame ended and the next began -- which is precisely the
+duplication this library exists to remove. Bytes past the frame are left alone.
 
 ## Deliberately unsettled
 

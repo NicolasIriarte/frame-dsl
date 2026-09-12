@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "definition.h"
+#include "frame.h"
 #include "framedsl.h"
 
 /* The arena, and the accessors that put values into it.
@@ -14,35 +15,6 @@
  *
  * The arena holds host-native values. A scalar sits in it as a uint64_t whatever its declared width;
  * converting to and from the order it has on the wire is the encoder's job, not the caller's. */
-
-typedef struct {
-  /* Byte offset into the arena. */
-  size_t offset;
-  /* Bytes the slot owns: 8 for a scalar, ceil(width/8) for a fixed bit string, and the declared
-   * reservation for a variable one. */
-  size_t capacity;
-  /* Bytes actually present. Equal to capacity except for a variable field, where it is whatever the
-   * last set_bytes() put there -- so it starts at zero, which is a legitimate length. */
-  size_t length;
-
-  uint64_t width_bits;
-  bool is_scalar;
-  bool variable;
-} Slot;
-
-struct FramedslFrame {
-  const FramedslDefinition *definition;
-  uint32_t tag;
-
-  Slot *slots;
-  size_t slot_count;
-  /* Index of each packet's first slot, so (packet, field) reaches a slot without a search. */
-  size_t *packet_base;
-  size_t packet_count;
-
-  uint8_t *arena;
-  size_t arena_size;
-};
 
 static uint32_t next_tag = 1;
 
@@ -83,15 +55,25 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   size_t arena_offset = round_up(slots_offset + slot_count * sizeof(Slot), alignof(uint64_t));
 
   size_t arena_size = 0;
+  /* The output buffer holds the largest frame this definition can produce: every field at its full
+   * reserved width. Sized once, here, so encoding never asks how big the answer will be. */
+  size_t output_size = 0;
   for (size_t p = 0; p < layout->packet_count; ++p) {
     const PacketLayout *packet = &layout->packets[p];
+    uint64_t packet_bits = 0;
     for (size_t f = 0; f < packet->field_count; ++f) {
+      const FieldLayout *field = &packet->fields[f];
       arena_size = round_up(arena_size, alignof(uint64_t));
-      arena_size += slot_bytes(&packet->fields[f]);
+      arena_size += slot_bytes(field);
+      packet_bits += field->variable ? field->max_bits : field->width_bits;
+    }
+    size_t packet_bytes = (size_t)((packet_bits + 7) / 8);
+    if (packet_bytes > output_size) {
+      output_size = packet_bytes;
     }
   }
 
-  uint8_t *block = calloc(1, arena_offset + arena_size);
+  uint8_t *block = calloc(1, arena_offset + arena_size + output_size);
   if (block == NULL) {
     return NULL;
   }
@@ -105,6 +87,8 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   frame->slot_count = slot_count;
   frame->arena = block + arena_offset;
   frame->arena_size = arena_size;
+  frame->output = block + arena_offset + arena_size;
+  frame->output_size = output_size;
 
   size_t slot = 0;
   size_t offset = 0;
@@ -150,9 +134,7 @@ void framedsl_frame_reset(FramedslFrame *frame) {
   }
 }
 
-/* Resolves an id to its slot, or NULL if it does not address one of this frame's fields. The tag
- * check is what stops an id from another definition reading whatever sits at that index. */
-static Slot *slot_of(const FramedslFrame *frame, FramedslFieldId id) {
+Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id) {
   if (frame == NULL || id.owner != frame->tag || id.packet >= frame->packet_count) {
     return NULL;
   }
@@ -213,7 +195,7 @@ FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
-  Slot *slot = slot_of(frame, id);
+  Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -231,7 +213,7 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
-  const Slot *slot = slot_of(frame, id);
+  const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -244,7 +226,7 @@ FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, cons
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
-  Slot *slot = slot_of(frame, id);
+  Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || (bytes == NULL && length > 0)) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -272,7 +254,7 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
-  const Slot *slot = slot_of(frame, id);
+  const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || length == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -291,7 +273,7 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
 }
 
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
-  const Slot *slot = slot_of(frame, id);
+  const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar) {
     return 0;
   }

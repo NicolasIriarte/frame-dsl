@@ -188,6 +188,8 @@ typedef struct {
   ByteOrder byte_order;
   bool bit_written;
   bool byte_written;
+  int bit_line;
+  int bit_column;
   int byte_line;
   int byte_column;
 } Attributes;
@@ -242,6 +244,8 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
       ok = false;
     }
     attrs->bit_written = ok;
+    attrs->bit_line = line;
+    attrs->bit_column = column;
   } else if (word_is(&name, "byte_order")) {
     if (word_is(&value, "big_endian")) {
       attrs->byte_order = BYTE_ORDER_BIG_ENDIAN;
@@ -305,6 +309,8 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   field->byte_order = attrs.byte_order;
   field->bit_order_written = attrs.bit_written;
   field->byte_order_written = attrs.byte_written;
+  field->bit_order_line = attrs.bit_line;
+  field->bit_order_column = attrs.bit_column;
   field->byte_order_line = attrs.byte_line;
   field->byte_order_column = attrs.byte_column;
 

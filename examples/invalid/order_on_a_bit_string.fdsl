@@ -1,0 +1,15 @@
+# REJECTED: check 15 -- the ordering attributes describe a value, and a bit string is not one.
+#
+# `payload` is 128 bits, so it is a run of sixteen bytes rather than a number. `@byte_order` would
+# have to mean "reverse the caller's payload", which is not something a frame description can
+# reasonably ask for: those bytes are already in whatever order the thing that produced them wrote.
+#
+# Inheriting the attribute from a packet or a block is fine, and covers the scalars around it. Only
+# writing it here, where it can do nothing, is the mistake -- the same rule as check 10.
+
+pkt TM_WIDE {
+  hdr: 8 = 0xAA;
+
+  [ @byte_order: little_endian; ]
+  payload: 128;
+};

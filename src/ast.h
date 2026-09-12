@@ -63,6 +63,8 @@ typedef struct {
    * means somebody believed they had specified something. */
   bool bit_order_written;
   bool byte_order_written;
+  int bit_order_line;
+  int bit_order_column;
   int byte_order_line;
   int byte_order_column;
 } AstField;

@@ -30,6 +30,8 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/odd_packet.fdsl`](invalid/odd_packet.fdsl) | 13 -- packet is not a whole number of bytes |
 | [`invalid/odd_valof_width.fdsl`](invalid/odd_valof_width.fdsl) | 13 -- variable width not provably a byte multiple |
 | [`invalid/reservation_on_fixed_width.fdsl`](invalid/reservation_on_fixed_width.fdsl) | 14 -- a reservation on a constant-width field |
+| [`invalid/order_on_a_bit_string.fdsl`](invalid/order_on_a_bit_string.fdsl) | 15 -- an ordering attribute written on a bit string |
+| [`invalid/valof_on_a_bit_string.fdsl`](invalid/valof_on_a_bit_string.fdsl) | 16 -- `valof()` naming a field that is not a scalar |
 
 Each of these fails the one check it is named for and no other. That is worth keeping true: a fixture
 that trips two checks stops proving which one is working.

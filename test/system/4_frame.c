@@ -4,13 +4,13 @@
  * than anywhere else: if reading a value back needed something internal, the accessors would not be
  * finished.
  *
- * This file also interposes the allocator. Defining malloc in the executable overrides libc's for
- * every object linked into it, including the library, so "nothing allocates after the frame exists"
- * is measured rather than asserted. */
+ * The allocator is interposed in main.c, so "nothing allocates after the frame exists" is measured
+ * rather than asserted. See allocations.h. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "allocations.h"
 #include "framedsl.h"
 #include "testsuite.h"
 
@@ -25,41 +25,6 @@
   "  crc:      16;\n"                                                                              \
   "};\n"                                                                                           \
   "pkt TM_B { hdr: 8 = 0xBB; seq: 16; };\n"
-
-/* ---- Allocator interposition ---------------------------------------------------------------- */
-
-static bool counting_allocations = false;
-static size_t allocation_count = 0;
-
-extern void *__libc_malloc(size_t size);
-extern void *__libc_calloc(size_t count, size_t size);
-extern void *__libc_realloc(void *pointer, size_t size);
-extern void __libc_free(void *pointer);
-
-void *malloc(size_t size) {
-  if (counting_allocations) {
-    allocation_count += 1;
-  }
-  return __libc_malloc(size);
-}
-
-void *calloc(size_t count, size_t size) {
-  if (counting_allocations) {
-    allocation_count += 1;
-  }
-  return __libc_calloc(count, size);
-}
-
-void *realloc(void *pointer, size_t size) {
-  if (counting_allocations) {
-    allocation_count += 1;
-  }
-  return __libc_realloc(pointer, size);
-}
-
-void free(void *pointer) {
-  __libc_free(pointer);
-}
 
 /* ---- Helpers --------------------------------------------------------------------------------- */
 
@@ -489,19 +454,17 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
     /* Prove the counter is live before trusting a zero from it. An interposition that silently did
      * not take would make the rest of this case pass while measuring nothing, which is a worse
      * outcome than no test at all -- so first check that something known to allocate is seen. */
-    allocation_count = 0;
-    counting_allocations = true;
+    framedsl_allocation_count_start();
     FramedslFrame *probe = framedsl_frame_new(fixture.definition);
-    counting_allocations = false;
+    size_t seen = framedsl_allocation_count_stop();
     framedsl_frame_free(probe);
 
-    if (probe == NULL || allocation_count == 0) {
+    if (probe == NULL || seen == 0) {
       fixture_close(&fixture);
       FORCE_FAILURE();
     }
 
-    allocation_count = 0;
-    counting_allocations = true;
+    framedsl_allocation_count_start();
 
     for (int i = 0; i < 64; ++i) {
       framedsl_set_u64(fixture.frame, len, (uint64_t)i);
@@ -512,8 +475,7 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
       framedsl_frame_reset(fixture.frame);
     }
 
-    counting_allocations = false;
-    if (allocation_count != 0) {
+    if (framedsl_allocation_count_stop() != 0) {
       failure = __LINE__;
     }
   }

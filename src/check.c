@@ -183,14 +183,14 @@ static bool residue_mod8(const Expr *expr, uint64_t *out) {
 
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
  * means knowing where it starts, which means every field before it is already resolved. */
-static void check_references(Checker *checker, const AstPacket *packet, size_t field_index,
-                             const Expr *expr) {
+static void check_references(Checker *checker, size_t packet_index, const AstPacket *packet,
+                             size_t field_index, const Expr *expr) {
   if (expr == NULL) {
     return;
   }
   if (expr->kind == EXPR_BINARY) {
-    check_references(checker, packet, field_index, expr->lhs);
-    check_references(checker, packet, field_index, expr->rhs);
+    check_references(checker, packet_index, packet, field_index, expr->lhs);
+    check_references(checker, packet_index, packet, field_index, expr->rhs);
     return;
   }
   if (expr->kind != EXPR_VALOF) {
@@ -199,6 +199,17 @@ static void check_references(Checker *checker, const AstPacket *packet, size_t f
 
   for (size_t i = 0; i < field_index; ++i) {
     if (strcmp(packet->fields[i].name, expr->reference) == 0) {
+      /* Check 16. A width is arithmetic on a number, and only a scalar is one -- anything wider is a
+       * run of bytes with no single value to multiply. Caught here rather than at encode time, where
+       * it would be a width computed from whatever the first eight bytes of a payload happened to
+       * be. */
+      const FieldLayout *referenced = &checker->layout->packets[packet_index].fields[i];
+      if (!referenced->is_scalar) {
+        fail(checker, expr->line, expr->column, 16,
+             "valof(%s) names a field of more than %d bits, which has no single value to compute a "
+             "width from; only a scalar can size another field",
+             expr->reference, FRAMEDSL_SCALAR_MAX_BITS);
+      }
       return;
     }
   }
@@ -221,8 +232,14 @@ static void check_references(Checker *checker, const AstPacket *packet, size_t f
 
 /* ---- Fixed-bit projection (check 12) -------------------------------------------------------- */
 
+/* Stream bit `index` is bit 7 - index%8 of byte index/8: bit zero of a frame is the most significant
+ * bit of its first byte, which is the order a frame is transmitted in.
+ *
+ * That numbering is not an internal convenience. It makes a packet's mask and value *the bytes a
+ * frame must have*, so the decoder matches an incoming buffer against them with an AND and a
+ * compare rather than reversing anything first. */
 static void bits_set(uint8_t *bits, size_t index) {
-  bits[index / 8] |= (uint8_t)(1u << (index % 8));
+  bits[index / 8] |= (uint8_t)(1u << (7 - (index % 8)));
 }
 
 /* Lays a fixed value onto the stream bits its field occupies, applying that field's bit order and
@@ -287,8 +304,8 @@ static void check_packet(Checker *checker, size_t packet_index) {
       }
     }
 
-    check_references(checker, packet, i, field->width);
-    check_references(checker, packet, i, field->reserve);
+    check_references(checker, packet_index, packet, i, field->width);
+    check_references(checker, packet_index, packet, i, field->reserve);
 
     bool variable = expr_uses_valof(field->width);
     slot->variable = variable;
@@ -396,10 +413,24 @@ static void check_packet(Checker *checker, size_t packet_index) {
       }
     }
 
+    /* Check 15. Both attributes describe how the bits of a *value* are arranged. A bit string is not
+     * a value -- it is the bytes the caller handed over, already in whatever order the thing that
+     * produced them wrote, and the library has no basis to reorder an opaque payload. Written here it
+     * can do nothing, which is the same reason check 10 exists. Inherited, it is simply irrelevant to
+     * this field and meaningful to the next one. */
+    if (width_ok && !slot->is_scalar && (field->bit_order_written || field->byte_order_written)) {
+      bool byte = field->byte_order_written;
+      fail(checker, byte ? field->byte_order_line : field->bit_order_line,
+           byte ? field->byte_order_column : field->bit_order_column, 15,
+           "'%s.%s' is a bit string, not a number, so '%s' cannot apply to it; it is written to the "
+           "frame as the bytes it was given",
+           packet->name, field->name, byte ? "byte_order" : "bit_order");
+    }
+
     /* Check 10. Only a byte_order *written here* is an error: one inherited from packet or file
      * scope covers every field below it, and most real frames mix byte-wide fields with sub-byte
      * ones. What is worth rejecting is somebody writing a setting that cannot do anything. */
-    if (field->byte_order_written && !variable && slot->width_bits > 0) {
+    if (field->byte_order_written && slot->is_scalar && slot->width_bits > 0) {
       if (slot->width_bits % 8 != 0) {
         fail(checker, field->byte_order_line, field->byte_order_column, 10,
              "'%s.%s' is %llu bits, so it has no bytes to reorder and 'byte_order' cannot apply",

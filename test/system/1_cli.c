@@ -81,6 +81,8 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
       {"invalid/value_too_wide.fdsl", 8},      {"invalid/byte_order_unaligned.fdsl", 10},
       {"invalid/odd_packet.fdsl", 13},         {"invalid/odd_valof_width.fdsl", 13},
       {"invalid/reservation_on_fixed_width.fdsl", 14},
+      {"invalid/order_on_a_bit_string.fdsl", 15},
+      {"invalid/valof_on_a_bit_string.fdsl", 16},
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {

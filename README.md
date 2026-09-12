@@ -16,13 +16,23 @@ framedsl_set_u64(frame, len, 2);
 framedsl_set_bytes(frame, payload, data, sizeof(data));
 ```
 
+...encodes it, and reads one back without being told what arrived:
+
+```c
+size_t length;
+const uint8_t *bytes = framedsl_encode(frame, "TM_DATAGRAM_02", &length, NULL);
+send(socket, bytes, length, 0);
+
+const char *packet = framedsl_decode(frame, received, received_length, &consumed, NULL);
+```
+
 When a frame changes, the definition file changes. The program does not get rebuilt.
 
-> **Status: early.** A definition file loads, is checked, and can be asked what is in it; a frame
-> holds a value for every field and hands it back. What does not exist yet is the part that turns
-> those values into bytes -- the bytecode, the encoder and the decoder. See the
-> [issue tracker](http://100.125.208.18:3000/nico/Frame-DSL/issues) for what is in flight. Nothing
-> here is stable, and nothing is published.
+> **Status: early, and now end to end.** A definition file loads and is checked; a program sets
+> fields by name, encodes a frame, and decodes one back without being told which packet arrived. That
+> is the first milestone in [`docs/scope.md`](docs/scope.md). Signed and floating-point fields, enums,
+> conditionals, repetition, composition, CRC and calibration curves are all still absent, each with
+> its own issue. Nothing here is stable, and nothing is published.
 
 ## What it looks like
 

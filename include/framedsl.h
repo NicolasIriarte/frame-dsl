@@ -29,6 +29,11 @@ extern "C" {
 /* A field of this width or less is a scalar; wider is a bit string. The width alone decides. */
 #define FRAMEDSL_SCALAR_MAX_BITS 64
 
+/* Encoding reads a packet's scalars into a fixed array so that a width expression can index them
+ * without allocating. A packet with more fields than this is refused rather than allocating for it;
+ * nothing resembling a real frame comes close. */
+#define FRAMEDSL_MAX_FIELDS_PER_PACKET 256
+
 typedef enum {
   FRAMEDSL_OK = 0,
   /* The file could not be read. Deliberately separate from FRAMEDSL_INVALID: a missing file is a
@@ -49,6 +54,12 @@ typedef enum {
   FRAMEDSL_ERROR_RANGE,
   /* A buffer the caller supplied is too small. The call reports the size it needed. */
   FRAMEDSL_ERROR_BUFFER,
+  /* Nothing in this definition matches the frame. Usually noise on the link, or a sender running a
+   * newer definition than this one. */
+  FRAMEDSL_ERROR_UNRECOGNISED,
+  /* A packet matched and then the bytes ran out. Usually a framing bug in the caller's transport --
+   * a different problem from an unrecognised frame, which is why it is a different value. */
+  FRAMEDSL_ERROR_TRUNCATED,
 } FramedslStatus;
 
 typedef enum {
@@ -216,6 +227,63 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
 /* Bytes the field currently holds: its fixed size, or how much the last framedsl_set_bytes() put
  * there. 0 if the id does not address a bit-string field. */
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id);
+
+/* Builds a frame of `packet` from the values in `frame`, and returns it.
+ *
+ *     size_t length;
+ *     FramedslStatus status;
+ *     const uint8_t *bytes = framedsl_encode(frame, "TM_DATAGRAM_02", &length, &status);
+ *     if (bytes != NULL) {
+ *       send(socket, bytes, length, 0);
+ *     }
+ *
+ * The bytes belong to the frame and are **valid until the next call on it**. That is the usual
+ * shape -- encode, hand them to a socket, forget them -- and a caller who needs them to outlive that
+ * copies them.
+ *
+ * `length` is in bytes and needs no companion bit count: a packet is a whole number of bytes or it
+ * did not load.
+ *
+ * Fixed-value fields are written from the definition rather than from the arena, so a frame always
+ * identifies itself whatever a caller put in those slots.
+ *
+ * NULL on failure, with the reason in `*status`: FRAMEDSL_ERROR_FIELD for a packet name this
+ * definition does not have, FRAMEDSL_ERROR_RANGE for a width that overflows, exceeds what the field
+ * reserved, or disagrees with the bytes set on the field it sizes. `status` may be NULL if the reason
+ * is not wanted. Nothing is allocated, and on failure nothing is left for the caller to read. */
+const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length,
+                               FramedslStatus *status);
+
+/* Reads a frame out of `buffer` into `frame`, and returns the name of the packet it turned out to be.
+ *
+ *     size_t consumed;
+ *     FramedslStatus status;
+ *     const char *packet = framedsl_decode(frame, bytes, length, &consumed, &status);
+ *     if (packet != NULL) {
+ *       framedsl_get_u64(frame, len_id, &value);
+ *     }
+ *
+ * Which packet it is is worked out from the frame itself: every packet carries at least one
+ * fixed-value field (check 11) and no two can be confused (check 12), so the caller never says.
+ *
+ * The name points into the definition and lives as long as it does. It is the symmetric counterpart
+ * of the name `framedsl_encode()` takes.
+ *
+ * `consumed` receives how many bytes the frame occupied, so a caller reading a stream can advance by
+ * it and decode the next one. That matters because a packet with a `valof()` field has no length
+ * until it has been decoded -- without this a caller would have to re-implement its length field by
+ * hand. Bytes past the frame are left alone; `consumed` may be NULL.
+ *
+ * NULL on failure, with the reason in `*status`:
+ *
+ *   FRAMEDSL_ERROR_UNRECOGNISED  nothing here matches. Noise, or a sender ahead of this file.
+ *   FRAMEDSL_ERROR_TRUNCATED     a packet matched and the bytes ran out.
+ *   FRAMEDSL_ERROR_RANGE         a length field claims more than its field reserved.
+ *
+ * A failed decode leaves the arena holding whatever the walk had reached before it stopped. Nothing
+ * is read past `buffer + length`, and nothing is allocated. */
+const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t length,
+                            size_t *consumed, FramedslStatus *status);
 
 #ifdef __cplusplus
 }
