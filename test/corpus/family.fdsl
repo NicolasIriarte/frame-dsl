@@ -1,0 +1,23 @@
+# Three packets pinning the same eight bits to different values, which is what makes them pairwise
+# distinguishable. One row per packet, so the decoder has to pick rather than having one option.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt TC_PING {
+  type: 8 = 0x01;
+  seq: 16;
+};
+
+pkt TC_SET_MODE {
+  type: 8 = 0x02;
+  seq: 16;
+  mode: 8;
+};
+
+pkt TC_PAYLOAD {
+  type:    8 = 0x03;
+  len:     8;
+  body[8]: valof(len) * 8;
+  crc:     8;
+};

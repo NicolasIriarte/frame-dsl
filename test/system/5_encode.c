@@ -5,6 +5,7 @@
  * there is one, a round trip will not be evidence. Two matching bugs cancel, and the frames this
  * library exists to produce are defined by somebody else's specification, not by its own reader. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "allocations.h"
@@ -429,6 +430,112 @@ static int us5_tc13_encoding_does_not_allocate(const TestArguments *args) {
   return failure;
 }
 
+/* ---- Into a buffer the caller owns -------------------------------------------------------------
+ *
+ * framedsl_encode() lends a pointer valid until the next call. A caller who already has somewhere the
+ * frame has to end up -- a transmit ring, a region of a larger message -- needs the other direction,
+ * and needs to be told when their buffer is too small rather than finding out afterwards. */
+
+/* The buffer is allocated at exactly the size needed, so a write past the frame is a write past the
+ * allocation and the sanitiser says so rather than it going unnoticed in the slack of an array. */
+static int us5_tc14_encoding_into_a_caller_buffer_writes_the_same_bytes(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!open_fixture(VARIABLE_DEFINITION, &fixture)) {
+    close_fixture(&fixture);
+    FORCE_FAILURE();
+  }
+
+  const uint8_t payload[4] = {1, 2, 3, 4};
+  const uint8_t expected[] = {0xAA, 0x04, 1, 2, 3, 4, 0xC7};
+  FramedslFieldId data;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "A.data", &data) ||
+      framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK ||
+      !set_scalar(&fixture, "A.len", 4) || !set_scalar(&fixture, "A.crc", 0xC7)) {
+    failure = __LINE__;
+  } else {
+    uint8_t *exact = malloc(sizeof(expected));
+    size_t length = 0;
+
+    if (exact == NULL) {
+      failure = __LINE__;
+    } else if (framedsl_encode_into(fixture.frame, "A", exact, sizeof(expected), &length) !=
+               FRAMEDSL_OK) {
+      failure = __LINE__;
+    } else if (length != sizeof(expected) || memcmp(exact, expected, sizeof(expected)) != 0) {
+      failure = __LINE__;
+    }
+    free(exact);
+
+    /* A buffer with room to spare takes the frame and nothing else: the bytes past it are the
+     * caller's, and an encoder that cleared them would be corrupting a message it was handed a
+     * window into. */
+    if (failure == 0) {
+      uint8_t roomy[32];
+      memset(roomy, 0xEE, sizeof(roomy));
+
+      if (framedsl_encode_into(fixture.frame, "A", roomy, sizeof(roomy), &length) != FRAMEDSL_OK) {
+        failure = __LINE__;
+      } else if (length != sizeof(expected) || memcmp(roomy, expected, sizeof(expected)) != 0) {
+        failure = __LINE__;
+      } else {
+        for (size_t i = sizeof(expected); i < sizeof(roomy); ++i) {
+          if (roomy[i] != 0xEE) {
+            failure = __LINE__;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  close_fixture(&fixture);
+  return failure;
+}
+
+/* One byte short is refused, says how many were needed, and leaves the buffer alone -- a partial
+ * frame in a caller's ring would be sent as though it were whole. */
+static int us5_tc15_a_buffer_too_small_is_refused_with_the_size_needed(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!open_fixture("pkt A { hdr: 8 = 0xAA; seq: 16; tail: 8; };", &fixture)) {
+    close_fixture(&fixture);
+    FORCE_FAILURE();
+  }
+
+  uint8_t buffer[4];
+  memset(buffer, 0xEE, sizeof(buffer));
+  size_t length = 0;
+  int failure = 0;
+
+  if (!set_scalar(&fixture, "A.seq", 0x1234) || !set_scalar(&fixture, "A.tail", 0x5F)) {
+    failure = __LINE__;
+  } else if (framedsl_encode_into(fixture.frame, "A", buffer, 3, &length) != FRAMEDSL_ERROR_BUFFER) {
+    failure = __LINE__;
+  } else if (length != 4) {
+    failure = __LINE__; /* the size needed, so the next attempt is sized from the answer */
+  } else if (buffer[0] != 0xEE || buffer[1] != 0xEE || buffer[2] != 0xEE) {
+    failure = __LINE__; /* not a partial frame, not the bytes that would have fit */
+  } else if (framedsl_encode_into(fixture.frame, "A", NULL, 0, &length) != FRAMEDSL_ERROR_BUFFER ||
+             length != 4) {
+    failure = __LINE__; /* asking how big it would be, without a buffer to write it to */
+  } else if (framedsl_encode_into(fixture.frame, "A", buffer, sizeof(buffer), &length) !=
+                 FRAMEDSL_OK ||
+             length != 4) {
+    failure = __LINE__; /* and then it fits, at exactly the size just reported */
+  } else if (framedsl_encode_into(fixture.frame, "NOPE", buffer, sizeof(buffer), &length) !=
+             FRAMEDSL_ERROR_FIELD) {
+    failure = __LINE__; /* every other refusal is the one framedsl_encode() gives */
+  }
+
+  close_fixture(&fixture);
+  return failure;
+}
+
 void register_user_story5(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us5_tc01_a_byte_aligned_packet_encodes_plainly,
@@ -455,4 +562,8 @@ void register_user_story5(void) {
   ADD_TEST_CASE(us5_tc12_a_bit_string_off_a_byte_boundary_is_shifted,
                 "a bit string not starting on a byte boundary is shifted", false);
   ADD_TEST_CASE(us5_tc13_encoding_does_not_allocate, "encoding allocates nothing, counted", false);
+  ADD_TEST_CASE(us5_tc14_encoding_into_a_caller_buffer_writes_the_same_bytes,
+                "encoding into a caller's buffer writes the frame and nothing past it", false);
+  ADD_TEST_CASE(us5_tc15_a_buffer_too_small_is_refused_with_the_size_needed,
+                "too small a buffer is refused, untouched, with the size needed", false);
 }

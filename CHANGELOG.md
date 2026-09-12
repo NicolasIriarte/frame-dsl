@@ -20,9 +20,25 @@ nothing written under it fails the release rather than publishing an empty page.
   and a C API that sets fields by name, encodes a named packet, and decodes a buffer into whichever
   packet its fixed bits identify -- allocating nothing after a frame is created. See
   [`manual/api.md`](manual/api.md).
+- `framedsl_encode_into()`, which writes a frame into a buffer the caller already has and reports the
+  size needed when it does not fit, leaving the buffer untouched.
+- A frame now knows which packet it is holding. After a decode, reading a field of another packet --
+  or any field at all after a decode that failed -- is `FRAMEDSL_ERROR_ABSENT` rather than a stale
+  value from an earlier frame. Writing a field, or resetting the frame, takes it back.
 
+- **`frame-dsl <file> -d "<hex>"`**, which decodes a capture against a definition and prints the
+  fields of every frame in it. The hex may carry any separators, an odd number of digits is refused
+  rather than padded, and frames back to back are walked one at a time.
+- **Syntax highlighting for Emacs**: `editors/frame-dsl-mode.el`, a major mode with font lock,
+  comment commands and indentation for `.fdsl` files. `docs/highlighting.md` records why it is a
+  hand-written mode rather than a tree-sitter grammar or a language server, and a test compares its
+  word lists against the compiler's so the two cannot drift apart unnoticed.
 - A build: a `Makefile` producing `build/frame-dsl`, and a test runner built on CLibs' user-story
   test suite.
+- A corpus of definition files under `test/corpus/`, driven by a table in `test/system/7_corpus.c`:
+  each row names a file, the values to set and the bytes they must produce, and one loop encodes,
+  compares against those bytes, decodes them into a second frame and reads every field back. Adding
+  a case costs a file and a row.
 - The CLibs `logger`, `bash-logger` and `testing` libraries, vendored as release tarballs under
   `third_party/clibs/` and unpacked into `build/` by the build. Building needs no network and no
   credentials. `scripts/vendor_clibs.sh` updates them, and is the only thing here that does.

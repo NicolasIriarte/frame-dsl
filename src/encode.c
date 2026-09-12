@@ -181,3 +181,39 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
   *length = (size_t)(offset / 8);
   return frame->output;
 }
+
+/* The same encode, into a buffer the caller owns.
+ *
+ * It builds the frame in the frame's own output buffer first and copies. That looks like a copy too
+ * many until you ask what the alternative is: the length of a frame with a valof() field is not known
+ * until the walk that produces it has finished, so encoding straight into the caller's buffer means
+ * either writing into it before knowing whether it is big enough, or walking the widths twice. The
+ * first breaks the promise that a refused call leaves the buffer alone -- which is the promise a
+ * caller with a transmit ring actually needs -- and the second costs more than a memcpy of a frame.
+ *
+ * A NULL buffer with a capacity of zero is the useful degenerate case: it is how a caller asks how
+ * big the frame would be, and it answers without writing anywhere. */
+FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet, uint8_t *buffer,
+                                    size_t capacity, size_t *length) {
+  if (length == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  *length = 0;
+
+  size_t encoded = 0;
+  FramedslStatus status = FRAMEDSL_OK;
+  const uint8_t *bytes = framedsl_encode(frame, packet, &encoded, &status);
+  if (bytes == NULL) {
+    return status;
+  }
+
+  /* Reported whether or not it fits, so a caller sizes the next attempt from the answer. */
+  *length = encoded;
+
+  if (capacity < encoded || (buffer == NULL && encoded > 0)) {
+    return FRAMEDSL_ERROR_BUFFER;
+  }
+
+  memcpy(buffer, bytes, encoded);
+  return FRAMEDSL_OK;
+}

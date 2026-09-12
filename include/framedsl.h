@@ -60,6 +60,11 @@ typedef enum {
   /* A packet matched and then the bytes ran out. Usually a framing bug in the caller's transport --
    * a different problem from an unrecognised frame, which is why it is a different value. */
   FRAMEDSL_ERROR_TRUNCATED,
+  /* The field is real, and this frame is not holding it: a field of another packet after a decode,
+   * or any field after a decode that failed. Separate from FRAMEDSL_ERROR_FIELD, which means the id
+   * does not address a field at all -- one is a caller asking the wrong frame a reasonable question,
+   * the other is a caller holding a broken id. */
+  FRAMEDSL_ERROR_ABSENT,
 } FramedslStatus;
 
 typedef enum {
@@ -184,7 +189,11 @@ bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, co
  * back. Everything it will ever need is allocated when it is created, so no call below allocates.
  *
  * The arena starts zeroed and stays whatever it was last set to. There is no notion of a field being
- * unset: a field nobody has touched reads as zero and will encode as zero. */
+ * unset: a field nobody has touched reads as zero and will encode as zero.
+ *
+ * A decoded frame is the exception, and it is not the same statement. See "What a frame holds"
+ * below: values a caller writes are theirs to leave at zero, but a field that did not arrive did not
+ * arrive, and reading it as zero would be inventing one. */
 
 /* NULL only if the allocation failed. The definition must outlive the frame. */
 FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition);
@@ -201,6 +210,27 @@ bool framedsl_find(const FramedslDefinition *definition, const char *dotted, Fra
  * index is out of range. */
 bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size_t field,
                        FramedslFieldId *out);
+
+/* ---- What a frame holds ----------------------------------------------------------------------
+ *
+ * The arena has a slot for every field of every packet, which is what makes the whole thing one
+ * allocation -- but a frame is only ever one packet at a time, and the other slots hold whatever was
+ * last in them. A frame therefore tracks which of three things it is holding:
+ *
+ *   - **Whatever a caller put there.** A new frame, a reset one, and any frame a successful
+ *     framedsl_set_*() has been called on. Every field reads, because the caller is building a frame
+ *     and the values are theirs.
+ *   - **A decoded packet.** After a successful framedsl_decode(). Its own fields read; a field of any
+ *     other packet is FRAMEDSL_ERROR_ABSENT rather than a stale number from an earlier frame.
+ *   - **Nothing.** After a decode that failed part-way. Every field is FRAMEDSL_ERROR_ABSENT, because
+ *     the arena holds however far the walk got, which is not a frame.
+ *
+ * Writing to a field puts the frame back in the caller's hands: a decoded frame that a caller starts
+ * setting fields on is no longer a record of what arrived, and refusing to read back a value the
+ * caller just wrote would be the wrong way round.
+ *
+ * Encoding is not restricted by any of this. It names the packet it wants, so it is never the case of
+ * a caller reading a field they did not mean to. */
 
 /* Scalars: any field of FRAMEDSL_SCALAR_MAX_BITS or fewer. The value is checked against the field's
  * declared width, so a 4-bit field set to 20 is FRAMEDSL_ERROR_RANGE and the slot keeps what it had.
@@ -225,7 +255,9 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
                                   size_t capacity, size_t *length);
 
 /* Bytes the field currently holds: its fixed size, or how much the last framedsl_set_bytes() put
- * there. 0 if the id does not address a bit-string field. */
+ * there. 0 if the id does not address a bit-string field this frame is holding -- it has no status to
+ * return, so a field the frame does not have answers the same as one holding nothing. Ask
+ * framedsl_get_bytes() when the difference matters. */
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id);
 
 /* Builds a frame of `packet` from the values in `frame`, and returns it.
@@ -254,6 +286,28 @@ size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id);
 const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length,
                                FramedslStatus *status);
 
+/* The same encode, writing into a buffer the caller already has rather than lending one.
+ *
+ *     uint8_t slot[64];
+ *     size_t length;
+ *     if (framedsl_encode_into(frame, "TM_DATAGRAM_02", slot, sizeof(slot), &length) == FRAMEDSL_OK) {
+ *       send(socket, slot, length, 0);
+ *     }
+ *
+ * For a caller who has somewhere the frame has to end up anyway -- a transmit ring, a region of a
+ * larger message, a buffer whose lifetime is theirs rather than the frame's. framedsl_encode() is
+ * still the one to reach for otherwise; this one exists because "valid until the next call" is an
+ * answer some callers cannot use.
+ *
+ * `*length` always receives the size of the encoded frame, including when that is the reason the call
+ * failed: too small a buffer is FRAMEDSL_ERROR_BUFFER with the size needed written there, so a caller
+ * sizes the next attempt from the answer rather than from a guess. **Nothing is written to `buffer`
+ * in that case** -- not a partial frame, not the bytes that would have fit.
+ *
+ * Every other failure is framedsl_encode()'s, for the same reasons. Nothing is allocated. */
+FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet, uint8_t *buffer,
+                                    size_t capacity, size_t *length);
+
 /* Reads a frame out of `buffer` into `frame`, and returns the name of the packet it turned out to be.
  *
  *     size_t consumed;
@@ -280,8 +334,10 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
  *   FRAMEDSL_ERROR_TRUNCATED     a packet matched and the bytes ran out.
  *   FRAMEDSL_ERROR_RANGE         a length field claims more than its field reserved.
  *
- * A failed decode leaves the arena holding whatever the walk had reached before it stopped. Nothing
- * is read past `buffer + length`, and nothing is allocated. */
+ * A failed decode leaves the arena holding whatever the walk had reached before it stopped, and the
+ * frame holding nothing -- so every field reads back FRAMEDSL_ERROR_ABSENT rather than a value out of
+ * a half-decoded frame. A caller who ignores the return value is told by the next call instead of
+ * being handed a number. Nothing is read past `buffer + length`, and nothing is allocated. */
 const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t length,
                             size_t *consumed, FramedslStatus *status);
 

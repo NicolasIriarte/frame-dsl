@@ -81,6 +81,10 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   FramedslFrame *frame = (FramedslFrame *)block;
   frame->definition = definition;
   frame->tag = definition->tag;
+  /* A new frame is the caller's to fill in. calloc already made this true; saying it costs a line and
+   * means the enum's first member can be reordered without changing what a new frame is. */
+  frame->holds = HOLDS_CALLER_VALUES;
+  frame->held_packet = 0;
   frame->packet_base = (size_t *)(block + base_offset);
   frame->packet_count = layout->packet_count;
   frame->slots = (Slot *)(block + slots_offset);
@@ -132,6 +136,24 @@ void framedsl_frame_reset(FramedslFrame *frame) {
   for (size_t i = 0; i < frame->slot_count; ++i) {
     frame->slots[i].length = frame->slots[i].variable ? 0 : frame->slots[i].capacity;
   }
+  frame->holds = HOLDS_CALLER_VALUES;
+  frame->held_packet = 0;
+}
+
+bool frame_holds(const FramedslFrame *frame, FramedslFieldId id) {
+  switch (frame->holds) {
+  /* Every slot is the caller's own value, including the ones they have not written yet -- which is
+   * the "there is no unset" rule, and is only about values a caller owns. */
+  case HOLDS_CALLER_VALUES: return true;
+  case HOLDS_DECODED_PACKET: return id.packet == frame->held_packet;
+  case HOLDS_NOTHING: break;
+  }
+  return false;
+}
+
+void frame_taken_by_caller(FramedslFrame *frame) {
+  frame->holds = HOLDS_CALLER_VALUES;
+  frame->held_packet = 0;
 }
 
 Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id) {
@@ -200,12 +222,14 @@ FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64
     return FRAMEDSL_ERROR_FIELD;
   }
 
-  /* Checked before anything is written, so a rejected value leaves the slot holding what it held. */
+  /* Checked before anything is written, so a rejected value leaves the slot holding what it held --
+   * and, since the write is what takes the frame back from a decode, leaves that alone too. */
   if (slot->width_bits < 64 && value >= ((uint64_t)1 << slot->width_bits)) {
     return FRAMEDSL_ERROR_RANGE;
   }
 
   memcpy(frame->arena + slot->offset, &value, sizeof(value));
+  frame_taken_by_caller(frame);
   return FRAMEDSL_OK;
 }
 
@@ -216,6 +240,11 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  if (!frame_holds(frame, id)) {
+    /* The slot exists and has something in it; it is just not this frame's. Handing it over would be
+     * the last frame's value, or a zero nobody set, and both look exactly like an answer. */
+    return FRAMEDSL_ERROR_ABSENT;
   }
   memcpy(out, frame->arena + slot->offset, sizeof(*out));
   return FRAMEDSL_OK;
@@ -246,6 +275,7 @@ FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, cons
     memset(frame->arena + slot->offset + length, 0, slot->capacity - length);
   }
   slot->length = length;
+  frame_taken_by_caller(frame);
   return FRAMEDSL_OK;
 }
 
@@ -257,6 +287,11 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || length == NULL) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  /* Before the size is reported, so a caller cannot learn the length of a field the frame is not
+   * holding either. */
+  if (!frame_holds(frame, id)) {
+    return FRAMEDSL_ERROR_ABSENT;
   }
 
   if (capacity < slot->length || (out == NULL && slot->length > 0)) {
@@ -274,7 +309,7 @@ FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id
 
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
   const Slot *slot = frame_slot(frame, id);
-  if (slot == NULL || slot->is_scalar) {
+  if (slot == NULL || slot->is_scalar || !frame_holds(frame, id)) {
     return 0;
   }
   return slot->length;

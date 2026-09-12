@@ -87,6 +87,12 @@ const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t 
     return NULL;
   }
 
+  /* Set before the walk rather than on each way out, so that every path that gives up below leaves
+   * the frame holding nothing. A decode that stops part-way leaves the arena holding however far it
+   * got, and the caller finds that out from the next read instead of from a plausible number. */
+  frame->holds = HOLDS_NOTHING;
+  frame->held_packet = 0;
+
   const FramedslDefinition *definition = frame->definition;
   const Layout *layout = definition->layout;
 
@@ -167,6 +173,9 @@ const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t 
 
     offset += width;
   }
+
+  frame->holds = HOLDS_DECODED_PACKET;
+  frame->held_packet = index;
 
   if (consumed != NULL) {
     *consumed = (size_t)(offset / 8);

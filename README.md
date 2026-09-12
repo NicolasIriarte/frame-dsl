@@ -65,6 +65,46 @@ Three things that are load-bearing rather than incidental:
 The full language reference is in [`manual/`](manual) -- including the [C API](manual/api.md) --
 and the design behind it in [`docs/`](docs).
 
+## The tool
+
+`build/frame-dsl` reads a definition and says what is in it:
+
+```sh
+frame-dsl examples/packet_family.fdsl
+```
+
+Give it bytes and it decodes them instead, working out which packet they are from the frame itself:
+
+```sh
+$ frame-dsl examples/packet_family.fdsl -d "01 00 01  03 00 02 00 02 AA BB"
+[INFO] TC_PING, 3 bytes
+[INFO]     type           1 (0x1)
+[INFO]     seq            1 (0x1)
+[INFO] TC_PAYLOAD, 7 bytes
+[INFO]     type           3 (0x3)
+[INFO]     seq            2 (0x2)
+[INFO]     len            2 (0x2)
+[INFO]     body           [2 bytes] AA BB
+[INFO] 2 frames, 10 bytes
+```
+
+The hex may be written however the thing you copied it from writes it -- spaces, colons, commas,
+dashes, `0x` prefixes, or nothing at all. An odd number of digits is a typo and is refused rather
+than padded: padding it would change the frame you are asking about.
+
+Frames back to back are walked one at a time, which is the only way to read a capture containing a
+packet whose length is a field inside it. A frame nothing matches, one that runs out of bytes, and
+one whose length field claims more than its field reserved are three different messages, because
+they mean three different things to whoever is holding the capture.
+
+Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
+invocation is.
+
+Emacs users get syntax highlighting, comments and indentation for `.fdsl` files from
+[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el); [`editors/README.md`](editors/README.md)
+says how to install it, and [`docs/highlighting.md`](docs/highlighting.md) says why it is a
+hand-written mode rather than a tree-sitter grammar or a language server.
+
 ## Building
 
 Requires a C11 compiler, `make` and `tar`. **No network, and no credentials.**
@@ -102,6 +142,7 @@ configured.
 | `make test`             | run both levels of tests                               |
 | `make test-unit`        | unit tests only                                        |
 | `make test-system`      | system tests only                                      |
+| `make test-editors`     | the Emacs mode's tests; skipped when Emacs is absent   |
 | `make compile-commands` | regenerate `compile_commands.json` alone               |
 | `make clean`            | remove `build/` and `compile_commands.json`            |
 
@@ -112,9 +153,11 @@ configured.
 | `include/`           | `framedsl.h`, the public API and the only header a user includes                   |
 | `src/`               | the compiler, the runtime and the command-line front end                           |
 | `test/`              | one user story per file, `NN_name.c`; the runner registers them from the filenames |
+| `test/corpus/`       | definition files for the table in `test/system/7_corpus.c` -- a row per combination |
 | `manual/`            | the language reference -- what someone writing a definition file needs             |
 | `docs/`              | design documents -- why the language and runtime are shaped the way they are       |
 | `examples/`          | example definition files, doubling as the parser's fixtures                        |
+| `editors/`           | `frame-dsl-mode.el`, an Emacs major mode for `.fdsl` files                          |
 | `scripts/`           | `vendor_clibs.sh`, which updates the committed CLibs tarballs                      |
 | `templates/`         | issue templates; `GUIDELINES.md` requires issues to follow them                    |
 | `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time                   |

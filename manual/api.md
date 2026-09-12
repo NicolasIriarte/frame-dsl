@@ -77,13 +77,22 @@ bool framedsl_ok(const FramedslResult *result);
 | `FRAMEDSL_ERROR_FIELD` | the field id does not address a field of this frame, or addresses one of the wrong kind |
 | `FRAMEDSL_ERROR_RANGE` | the value or length does not fit the field |
 | `FRAMEDSL_ERROR_BUFFER` | a buffer you supplied is too small; the call reports the size needed |
+| `FRAMEDSL_ERROR_ABSENT` | the field is real and this frame is not holding it |
+| `FRAMEDSL_ERROR_UNRECOGNISED` | nothing in the definition matches the frame you handed over |
+| `FRAMEDSL_ERROR_TRUNCATED` | a packet matched and then the bytes ran out |
 
 `IO` and `INVALID` are separate on purpose. A file that is not there is a different problem from a
 file that is wrong, and a caller should not have to read the message to tell them apart.
 
-The last three belong to the frame half below. They are in the same enum rather than one of their
+The last five belong to the frame half below. They are in the same enum rather than one of their
 own, so a caller that prints a status has one function to write -- and "which call failed" never
 needs asking, because it is the one that returned something other than `FRAMEDSL_OK`.
+
+`FIELD` and `ABSENT` are worth keeping straight. `FIELD` means the id does not address a field at
+all -- it is out of range, it belongs to another definition, or it is being used through the wrong
+pair of accessors. `ABSENT` means it addresses a perfectly good field that *this frame is not
+holding*, which is [what a frame holds](#what-a-frame-holds) below. One is a broken id; the other is
+a reasonable question asked of the wrong frame.
 
 ## What was wrong
 
@@ -174,6 +183,32 @@ This is a deliberate choice rather than an omission. Tracking which fields a cal
 mean a bit per field, a rule about what `reset` does to it, and an encode that fails on a field the
 caller quite reasonably wanted to leave at zero.
 
+### What a frame holds
+
+The arena has a slot for every field of **every** packet, which is what makes it one allocation. A
+frame is only ever one packet at a time, so the other slots hold whatever was last in them -- and
+after decoding a `TC_PING`, reading `TC_SET_MODE.mode` would hand back a previous frame's value, or a
+zero nobody set. Both look exactly like an answer.
+
+So a frame knows which of three things it is holding:
+
+| | | |
+| --- | --- | --- |
+| **the caller's values** | a new frame, a reset one, or one a `framedsl_set_*()` succeeded on | every field reads |
+| **a decoded packet** | after a successful `framedsl_decode()` | its own fields read; any other packet's field is `FRAMEDSL_ERROR_ABSENT` |
+| **nothing** | after a decode that failed | every field is `FRAMEDSL_ERROR_ABSENT` |
+
+Note that this is not the "unset" bookkeeping the section above rejects, and the difference is whose
+values they are. A field *the caller* has not written is theirs to leave at zero, and encoding it as
+zero is correct. A field that *did not arrive* did not arrive; reading it as zero is inventing one.
+
+**Writing to a field puts the frame back in the caller's hands.** A decoded frame somebody starts
+setting fields on is no longer a record of what came in, and refusing to read back a value the caller
+has just written would be the wrong way round. `framedsl_frame_reset()` does the same.
+
+**Encoding is not restricted by any of this.** It names the packet it wants, so it is never the case
+this rule exists to catch. The usual build-a-frame-and-encode-it path never meets it at all.
+
 ## Addressing a field
 
 ```c
@@ -229,6 +264,7 @@ not already give, and the compiler widens the argument at the call site for noth
 | bytes longer than the field reserved | `FRAMEDSL_ERROR_RANGE` |
 | a fixed-width field given the wrong number of bytes | `FRAMEDSL_ERROR_RANGE` |
 | `framedsl_get_bytes` into too small a buffer | `FRAMEDSL_ERROR_BUFFER`, with the size needed in `*length` |
+| reading a field the frame is not holding | `FRAMEDSL_ERROR_ABSENT` -- see [what a frame holds](#what-a-frame-holds) |
 
 A rejected `set_u64` changes nothing: the check runs before the write, so a caller that ignores the
 status is left with the previous value rather than a truncated one.
@@ -241,7 +277,9 @@ cleared, so a short value never leaves a longer one's tail behind it.
 
 `framedsl_get_bytes()` reports the size needed when the buffer is too small, so a caller can size one
 from the answer instead of from a guess. `framedsl_byte_length()` asks the same question without
-copying anything.
+copying anything -- it returns a `size_t` and so has no status to give, which means a field the frame
+is not holding answers `0` just as an empty one does. Ask `framedsl_get_bytes()` where that
+difference matters.
 
 ### `NULL`
 
@@ -318,6 +356,48 @@ read it, at the far end of a link, with nothing to say why.
 `status` may be `NULL` if the reason is not wanted. On any failure the call returns `NULL` and there is
 nothing for the caller to read.
 
+### Into a buffer you already have
+
+```c
+FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet,
+                                    uint8_t *buffer, size_t capacity, size_t *length);
+```
+
+```c
+uint8_t slot[64];
+size_t length;
+
+if (framedsl_encode_into(frame, "TM_DATAGRAM_02", slot, sizeof(slot), &length) == FRAMEDSL_OK) {
+  send(socket, slot, length, 0);
+}
+```
+
+Same encode, writing where the caller says. For somebody who has a place the frame has to end up
+anyway -- a transmit ring, a region of a larger message, a buffer whose lifetime is theirs rather
+than the frame's. `framedsl_encode()` stays the one to reach for otherwise; this exists because
+"valid until the next call on the frame" is an answer some callers cannot use.
+
+**`*length` always receives the size of the encoded frame**, including when that size is the reason
+the call failed:
+
+| | |
+| --- | --- |
+| it fits | `FRAMEDSL_OK`, `*length` is how many bytes were written |
+| too small | `FRAMEDSL_ERROR_BUFFER`, `*length` is the size needed, **and `buffer` is untouched** |
+| anything else | whatever `framedsl_encode()` would have said |
+
+Untouched matters more than it looks. A partial frame left in a caller's ring is a frame that gets
+sent, and the receiver at the far end has no way to know it was refused here.
+
+A `NULL` buffer with a capacity of `0` is the useful degenerate case: it is how you ask how big the
+frame would be without writing it anywhere.
+
+Internally this builds the frame in the frame's own buffer and copies. That looks like a copy too
+many until you ask what the alternative is: a packet with a `valof()` field has no length until the
+walk that produces it has finished, so encoding straight into the caller's buffer means either
+writing into it before knowing whether it is big enough -- which breaks the promise above -- or
+walking every width twice, which costs more than the copy. Nothing is allocated either way.
+
 ## Decoding
 
 ```c
@@ -382,7 +462,13 @@ The last is what the mandatory reservation buys. A frame claiming more than the 
 the walk: the slot is never overrun, nothing is allocated to fit a number a corrupt frame supplied,
 and the caller is told. Nothing is read past `buffer + length` in any case.
 
-A decode that fails leaves the arena holding whatever the walk had reached. Do not read it.
+A decode that fails leaves the arena holding whatever the walk had reached, and the frame holding
+**nothing** -- so every field reads back `FRAMEDSL_ERROR_ABSENT` rather than a value out of half a
+frame. That is [what a frame holds](#what-a-frame-holds) doing the work: a caller who ignored the
+return value is told by the next call instead of being handed a number. Set a field, or reset the
+frame, to take it back.
+
+The same rule is what stops a decoded frame answering for a packet that did not arrive.
 
 ## A whole program
 

@@ -16,10 +16,14 @@ jobs:
       # third_party/clibs/ and unpacked locally. Nothing here reaches the network, and nothing here
       # needs a secret -- which is the point, since CLibs is private and the token a workflow is
       # given automatically cannot read another repository.
+      # emacs-nox is for `make test-editors' alone. The build does not need it and neither does any
+      # other target: that step skips with a message when Emacs is absent, so a contributor without
+      # it still runs everything else. It is installed here because a test that only ever skips in
+      # CI is a test nobody is running.
       - name: Install the toolchain
         run: |
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends build-essential
+          apt-get install -y -qq --no-install-recommends build-essential emacs-nox
 
       - name: Build
         run: make

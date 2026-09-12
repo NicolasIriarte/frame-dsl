@@ -82,11 +82,20 @@ COMPILE_COMMANDS := compile_commands.json
 # the lot back into arguments. Nesting single quotes inside single quotes loses them silently, and
 # the symptom is a macro expanding to a bare identifier rather than to a string.
 SRC_FLAGS := $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc
-UNIT_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc
+UNIT_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc \
+	-DSOURCE_DIR=\"src\" -DEDITORS_DIR=\"editors\"
 SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
-	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\"
+	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\" \
+	-DCORPUS_DIR=\"test/corpus\"
 
-.PHONY: all deps test test-unit test-system compile-commands clean
+.PHONY: all deps test test-unit test-system test-editors compile-commands clean
+
+# Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
+# person running this has in their own configuration cannot make the mode look like it works.
+EDITORS := editors
+EMACS ?= emacs
+EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.el \
+	-f ert-run-tests-batch-and-exit
 
 # compile_commands.json is built by default so a fresh clone is browsable after `make`, with no
 # second step for somebody to discover.
@@ -151,13 +160,24 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system
+test: test-unit test-system test-editors
 
 test-unit: $(UNIT_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)
 
 test-system: $(SYSTEM_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/system ./$(SYSTEM_RUNNER)
+
+# The Emacs half of the editor support. Skipped, loudly, when Emacs is not installed: this project
+# builds and tests with a C compiler, make and tar, and a highlighter is not a reason to add a third
+# thing somebody has to install to run the suite. What that skip gives up is covered without Emacs by
+# test/unit/9_editor_support.c, which compares the mode's word lists against the compiler's.
+test-editors:
+	@if command -v $(EMACS) >/dev/null 2>&1; then \
+		$(EMACS) $(EMACS_TEST_FLAGS); \
+	else \
+		echo "test-editors: no $(EMACS) on PATH, skipping editors/frame-dsl-mode.el tests"; \
+	fi
 
 compile-commands: $(COMPILE_COMMANDS)
 

@@ -488,6 +488,144 @@ static int us6_tc11_the_round_trip_works_from_a_file(const TestArguments *args) 
   return failure;
 }
 
+/* ---- What the frame is holding -----------------------------------------------------------------
+ *
+ * The arena has a slot for every field of every packet, which is what makes it one allocation. The
+ * cost is that after decoding a TC_PING, TC_SET_MODE's slots still hold whatever was last in them --
+ * so a caller reading the wrong packet's field gets a number rather than an answer. These three cases
+ * are the difference between "do not read that" written in the manual and it being true. */
+
+static int us6_tc12_a_decoded_frame_does_not_answer_for_another_packet(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!open_fixture(FAMILY, &fixture)) {
+    close_fixture(&fixture);
+    FORCE_FAILURE();
+  }
+
+  /* A TC_SET_MODE first, so mode's slot holds 0x7F and a later read of it would look plausible. */
+  const uint8_t set_mode[] = {0x02, 0x12, 0x34, 0x7F};
+  const uint8_t ping[] = {0x01, 0xAB, 0xCD};
+
+  FramedslFieldId mode;
+  FramedslFieldId body;
+  uint64_t value = 0;
+  uint8_t bytes[16] = {0};
+  size_t length = 0;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "TC_SET_MODE.mode", &mode) ||
+      !framedsl_find(fixture.definition, "TC_PAYLOAD.body", &body)) {
+    failure = __LINE__;
+  } else if (framedsl_decode(fixture.frame, set_mode, sizeof(set_mode), NULL, NULL) == NULL) {
+    failure = __LINE__;
+  } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_OK || value != 0x7F) {
+    failure = __LINE__;
+  } else if (framedsl_decode(fixture.frame, ping, sizeof(ping), NULL, NULL) == NULL) {
+    failure = __LINE__;
+  } else if (!scalar_is(&fixture, "TC_PING.seq", 0xABCD)) {
+    failure = __LINE__; /* the packet that did arrive still reads */
+  } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_ERROR_ABSENT) {
+    failure = __LINE__; /* 0x7F is still sitting in that slot, and it is not this frame's */
+  } else if (framedsl_get_bytes(fixture.frame, body, bytes, sizeof(bytes), &length) !=
+             FRAMEDSL_ERROR_ABSENT) {
+    failure = __LINE__;
+  } else if (framedsl_byte_length(fixture.frame, body) != 0) {
+    failure = __LINE__;
+  }
+
+  close_fixture(&fixture);
+  return failure;
+}
+
+/* "A failed decode leaves the arena holding whatever the walk had reached. Do not read it." -- said
+ * by the manual, and enforced here, because a caller who ignored the return value is exactly the
+ * caller who will read it. */
+static int us6_tc13_a_failed_decode_leaves_nothing_readable(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!open_fixture(FAMILY, &fixture)) {
+    close_fixture(&fixture);
+    FORCE_FAILURE();
+  }
+
+  const uint8_t good[] = {0x02, 0x12, 0x34, 0x7F};
+  const uint8_t cut_short[] = {0x02, 0x12};
+  const uint8_t noise[] = {0xFF, 0x00, 0x00, 0x00};
+
+  FramedslFieldId seq;
+  uint64_t value = 0;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "TC_SET_MODE.seq", &seq)) {
+    failure = __LINE__;
+  } else if (framedsl_decode(fixture.frame, good, sizeof(good), NULL, NULL) == NULL ||
+             framedsl_get_u64(fixture.frame, seq, &value) != FRAMEDSL_OK || value != 0x1234) {
+    failure = __LINE__;
+  } else if (framedsl_decode(fixture.frame, cut_short, sizeof(cut_short), NULL, NULL) != NULL) {
+    failure = __LINE__;
+  } else if (framedsl_get_u64(fixture.frame, seq, &value) != FRAMEDSL_ERROR_ABSENT) {
+    failure = __LINE__; /* 0x1234 is still there; half a frame is not a frame */
+  } else if (framedsl_decode(fixture.frame, noise, sizeof(noise), NULL, NULL) != NULL) {
+    failure = __LINE__;
+  } else if (framedsl_get_u64(fixture.frame, seq, &value) != FRAMEDSL_ERROR_ABSENT) {
+    failure = __LINE__; /* the same for a frame that matched nothing at all */
+  }
+
+  close_fixture(&fixture);
+  return failure;
+}
+
+/* The rule is about frames that arrived, and must not touch frames a caller is building. A fresh
+ * frame reads every field of every packet -- that is the "there is no unset" rule, and the encoding
+ * path depends on it. */
+static int us6_tc14_a_frame_the_caller_is_filling_in_reads_everything(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!open_fixture(FAMILY, &fixture)) {
+    close_fixture(&fixture);
+    FORCE_FAILURE();
+  }
+
+  const uint8_t cut_short[] = {0x02, 0x12};
+  FramedslFieldId mode;
+  uint64_t value = 0;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "TC_SET_MODE.mode", &mode)) {
+    failure = __LINE__;
+  } else if (!scalar_is(&fixture, "TC_PING.seq", 0) || !scalar_is(&fixture, "TC_PAYLOAD.len", 0)) {
+    failure = __LINE__; /* a new frame: every field of every packet reads, as zero */
+  } else if (framedsl_decode(fixture.frame, cut_short, sizeof(cut_short), NULL, NULL) != NULL) {
+    failure = __LINE__;
+  } else if (framedsl_set_u64(fixture.frame, mode, 0x42) != FRAMEDSL_OK) {
+    failure = __LINE__;
+  } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_OK || value != 0x42) {
+    failure = __LINE__; /* writing a value takes the frame back: a caller reads back what they set */
+  } else if (!scalar_is(&fixture, "TC_PING.seq", 0)) {
+    failure = __LINE__;
+  } else {
+    /* And a reset does the same, from a frame holding a decode. */
+    const uint8_t ping[] = {0x01, 0xAB, 0xCD};
+    if (framedsl_decode(fixture.frame, ping, sizeof(ping), NULL, NULL) == NULL) {
+      failure = __LINE__;
+    } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_ERROR_ABSENT) {
+      failure = __LINE__;
+    } else {
+      framedsl_frame_reset(fixture.frame);
+      if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_OK || value != 0) {
+        failure = __LINE__;
+      }
+    }
+  }
+
+  close_fixture(&fixture);
+  return failure;
+}
+
 void register_user_story6(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us6_tc01_hand_written_bytes_decode_to_their_values,
@@ -510,4 +648,10 @@ void register_user_story6(void) {
                 "set, encode, send, decode, read back -- between two frames", false);
   ADD_TEST_CASE(us6_tc11_the_round_trip_works_from_a_file,
                 "the same, from a definition file on disk", false);
+  ADD_TEST_CASE(us6_tc12_a_decoded_frame_does_not_answer_for_another_packet,
+                "a decoded frame refuses another packet's field instead of a stale value", false);
+  ADD_TEST_CASE(us6_tc13_a_failed_decode_leaves_nothing_readable,
+                "after a failed decode every field is absent, not half-decoded", false);
+  ADD_TEST_CASE(us6_tc14_a_frame_the_caller_is_filling_in_reads_everything,
+                "a frame the caller is building still reads every field", false);
 }

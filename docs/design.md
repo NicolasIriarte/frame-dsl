@@ -87,6 +87,23 @@ a field nobody touched encodes as zero. Tracking which fields a caller had set w
 field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
 reasonably meant to leave at zero.
 
+**But a frame knows which packet it is holding.** That is not the same bookkeeping, and the
+difference is whose values the slots contain. A slot the *caller* has not written is theirs to leave
+at zero. A slot belonging to a packet that *did not arrive* holds a previous frame's value, or a zero
+nobody set, and handing either over as an answer is inventing one -- which is the cost of the arena
+having a slot per field of every packet rather than per field of one.
+
+So a frame is in one of three states: holding the caller's values (new, reset, or written to),
+holding one decoded packet, or holding nothing after a decode that stopped part-way. Reading a field
+is refused in the last two unless the field belongs to the packet that arrived. It is one enum and
+one comparison, not a bit per field, and it is checked at the accessor rather than costing the
+encoder anything.
+
+Writing a value returns the frame to the first state. A decoded frame somebody starts setting fields
+on is no longer a record of what came in, and the alternative -- refusing to read back a value the
+caller has just written -- is a rule that fires in the wrong direction. Encoding does not consult any
+of this: it is told which packet it wants, so it is never the mistake this catches.
+
 ## Layout, bit ordering and endianness
 
 Fields occupy consecutive bits in declaration order. There is no implicit padding and no automatic
@@ -268,6 +285,25 @@ expression is rejected can always rewrite it so the multiple of eight is visible
 Encoding is the same walk in reverse, with one difference: fixed-value fields are written from the
 definition, not from the arena, so a caller cannot emit a frame that fails to identify itself.
 
+### Lending a buffer, and taking one
+
+The encoder hands back a pointer into the frame, valid until the next call on it. That is the shape
+the usual caller wants -- encode, give the bytes to a socket, forget them -- and it is why encoding
+needs no buffer argument and can never fail for want of room.
+
+It cannot, however, answer "refuse a buffer that is too small and say how much was needed", because
+there is no caller buffer in it. A caller who already has somewhere the frame must end up -- a
+transmit ring, a window into a larger message -- would otherwise copy into it themselves, having been
+handed a pointer they did not want. So there is a second entry point that takes the buffer.
+
+It encodes into the frame's own buffer and copies, which is worth justifying because it looks like a
+copy too many. The length of a frame containing a `valof()` field is not known until the walk that
+produces it has finished. Encoding straight into the caller's buffer therefore means either writing
+into it before knowing whether it fits -- leaving a partial frame in a ring that something else is
+about to send -- or walking every width twice to total them first. The first is wrong and the second
+costs more than a memcpy of at most a few hundred bytes. Neither allocates; this is the cheaper of
+the two correct options rather than a shortcut.
+
 ### Bit numbering
 
 One statement, from which the rest follows:
@@ -345,6 +381,11 @@ here matching -- noise, or a sender running a newer file -- and is something to 
 over the wrong bytes. `RANGE` is a length field claiming more than its field reserved, which means the
 frame is corrupt. A single "decode failed" would leave a caller unable to tell a noisy link from a
 broken one.
+
+A decode that fails also leaves the frame holding *nothing*, so every field reads back as absent
+rather than as whatever the walk had written before it stopped. "Do not read the arena after a failed
+decode" was previously a sentence in the manual, and the caller it is addressed to -- the one who did
+not check the return value -- is precisely the caller who does not read the manual either.
 
 A decode also reports how many bytes the frame occupied. A packet with a `valof()` field has no length
 until it has been decoded, so without that a caller reading a stream would have to re-implement the

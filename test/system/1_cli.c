@@ -15,12 +15,12 @@ typedef struct {
   char output[8192];
 } Run;
 
-/* Runs the binary on `path`, capturing stdout and stderr together. */
-static Run run_on(const char *path) {
+/* Runs the binary with `arguments`, capturing stdout and stderr together. */
+static Run run_with(const char *arguments) {
   Run run = {.status = -1, .output = {0}};
 
-  char command[1024];
-  snprintf(command, sizeof(command), "%s %s 2>&1", FRAMEDSL_BIN, path);
+  char command[2048];
+  snprintf(command, sizeof(command), "%s %s 2>&1", FRAMEDSL_BIN, arguments);
 
   FILE *pipe = popen(command, "r");
   if (pipe == NULL) {
@@ -40,6 +40,16 @@ static Run run_on(const char *path) {
   int closed = pclose(pipe);
   run.status = WIFEXITED(closed) ? WEXITSTATUS(closed) : -1;
   return run;
+}
+
+static Run run_on(const char *path) { return run_with(path); }
+
+/* Runs the binary against an example, decoding `hex`. The quoting is the tool's advertised shape:
+ * one argument holding the whole capture, separators and all. */
+static Run decode_example(const char *example, const char *flag, const char *hex) {
+  char arguments[1024];
+  snprintf(arguments, sizeof(arguments), "%s/%s %s \"%s\"", EXAMPLES_DIR, example, flag, hex);
+  return run_with(arguments);
 }
 
 static int expect_parses(const char *name) {
@@ -198,6 +208,159 @@ static int us1_tc07_no_arguments_is_a_usage_error(const TestArguments *args) {
   return 0;
 }
 
+/* ---- Decoding a capture -------------------------------------------------------------------------
+ *
+ * Somebody has a frame as hex -- out of a log line, a tcpdump column, a colleague's message -- and
+ * the definition that describes it. These cases are that, at the terminal. */
+
+static int us1_tc08_decodes_a_frame_and_names_its_fields(const TestArguments *args) {
+  (void)args;
+
+  Run run = decode_example("packet_family.fdsl", "-d", "01 00 09");
+  if (run.status != 0) {
+    FORCE_FAILURE();
+  }
+  if (strstr(run.output, "TC_PING") == NULL) {
+    FORCE_FAILURE();
+  }
+  /* The values, not merely the names: a tool that printed the field list without reading the bytes
+   * would pass a test that only looked for "seq". */
+  if (strstr(run.output, "seq") == NULL || strstr(run.output, "9") == NULL) {
+    FORCE_FAILURE();
+  }
+  /* A packet it is not must not appear. */
+  if (strstr(run.output, "TC_SET_MODE") != NULL) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
+/* The hex arrives written however the thing it was copied from writes it. All of these are the same
+ * three bytes, and all of them must decode to the same frame. */
+static int us1_tc09_accepts_hex_however_it_is_written(const TestArguments *args) {
+  (void)args;
+
+  const char *forms[] = {"010009", "01 00 09", "01:00:09", "0x01,0x00,0x09", "01-00-09"};
+  const char *flags[] = {"-d", "--decode"};
+
+  for (size_t f = 0; f < sizeof(flags) / sizeof(*flags); ++f) {
+    for (size_t i = 0; i < sizeof(forms) / sizeof(*forms); ++i) {
+      Run run = decode_example("packet_family.fdsl", flags[f], forms[i]);
+      if (run.status != 0 || strstr(run.output, "TC_PING") == NULL) {
+        return __LINE__;
+      }
+    }
+  }
+  return 0;
+}
+
+/* Half a byte is a typo. Padding it would change the frame being asked about, and the answer would
+ * be about a frame nobody has. */
+static int us1_tc10_refuses_hex_that_is_not_hex(const TestArguments *args) {
+  (void)args;
+
+  const struct {
+    const char *hex;
+    const char *expected;
+  } cases[] = {
+      {"01 00 0", "odd number of digits"},
+      {"01 ZZ", "not a hex digit"},
+      {"0 1 00 09", "one digit"},
+      {"", "no bytes"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
+    Run run = decode_example("packet_family.fdsl", "-d", cases[i].hex);
+    if (run.status == 0) {
+      return __LINE__;
+    }
+    /* Which mistake it was, not merely that there was one: the message is the whole value of the
+     * refusal, since the person reading it has to find the typo. */
+    if (strstr(run.output, cases[i].expected) == NULL) {
+      return __LINE__;
+    }
+  }
+  return 0;
+}
+
+/* Frames back to back, which is what a capture looks like. TC_PAYLOAD's length is not knowable
+ * without decoding it, so this is also the only thing that shows `consumed` doing its job. */
+static int us1_tc11_walks_a_capture_of_several_frames(const TestArguments *args) {
+  (void)args;
+
+  Run run = decode_example("packet_family.fdsl", "-d",
+                           "01 00 01  03 00 02 00 02 AA BB  02 00 02 09");
+  if (run.status != 0) {
+    FORCE_FAILURE();
+  }
+  if (strstr(run.output, "TC_PING") == NULL || strstr(run.output, "TC_PAYLOAD") == NULL ||
+      strstr(run.output, "TC_SET_MODE") == NULL) {
+    FORCE_FAILURE();
+  }
+  /* The payload's bytes, and its length as it arrived rather than the 256 it reserved. */
+  if (strstr(run.output, "AA BB") == NULL || strstr(run.output, "[2 bytes]") == NULL) {
+    FORCE_FAILURE();
+  }
+  if (strstr(run.output, "3 frames") == NULL) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
+/* The three decode failures mean three different things to whoever is holding the capture, and the
+ * terminal tells them apart as the API does. */
+static int us1_tc12_tells_the_decode_failures_apart(const TestArguments *args) {
+  (void)args;
+
+  const struct {
+    const char *hex;
+    const char *expected;
+  } cases[] = {
+      {"FF 00 00 00", "no packet"},
+      {"02 12", "ran out"},
+      {"03 00 00 FF FF", "claims more"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
+    Run run = decode_example("packet_family.fdsl", "-d", cases[i].hex);
+    /* 1, not 2: the file was read and the bytes are the problem, which is the same distinction the
+     * describe path already makes between a malformed file and a missing one. */
+    if (run.status != 1) {
+      return __LINE__;
+    }
+    if (strstr(run.output, cases[i].expected) == NULL) {
+      return __LINE__;
+    }
+  }
+  return 0;
+}
+
+static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(
+    const TestArguments *args) {
+  (void)args;
+
+  char arguments[512];
+  snprintf(arguments, sizeof(arguments), "%s/packet_family.fdsl -d", EXAMPLES_DIR);
+  Run run = run_with(arguments);
+
+  if (run.status != 2 || strstr(run.output, "usage") == NULL) {
+    FORCE_FAILURE();
+  }
+
+  /* The flag before the file, which is how somebody who has used other tools will write it. */
+  snprintf(arguments, sizeof(arguments), "-d \"010009\" %s/packet_family.fdsl", EXAMPLES_DIR);
+  run = run_with(arguments);
+  if (run.status != 0 || strstr(run.output, "TC_PING") == NULL) {
+    FORCE_FAILURE();
+  }
+
+  /* And with no flag at all, the tool does what it has always done. */
+  if (expect_parses("packet_family.fdsl") != 0) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
 void register_user_story1(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us1_tc01_parses_every_valid_example, "every example in examples/ parses", true);
@@ -210,4 +373,16 @@ void register_user_story1(void) {
                 "a missing file exits differently from a malformed one", false);
   ADD_TEST_CASE(us1_tc06_reports_what_it_found, "a successful run names the packets it read", false);
   ADD_TEST_CASE(us1_tc07_no_arguments_is_a_usage_error, "running with no arguments explains itself", false);
+  ADD_TEST_CASE(us1_tc08_decodes_a_frame_and_names_its_fields,
+                "-d decodes a frame and prints its fields", false);
+  ADD_TEST_CASE(us1_tc09_accepts_hex_however_it_is_written,
+                "hex is accepted with any separators, under either flag", false);
+  ADD_TEST_CASE(us1_tc10_refuses_hex_that_is_not_hex,
+                "malformed hex is refused, naming the mistake", false);
+  ADD_TEST_CASE(us1_tc11_walks_a_capture_of_several_frames,
+                "a capture of several frames is walked frame by frame", false);
+  ADD_TEST_CASE(us1_tc12_tells_the_decode_failures_apart,
+                "unrecognised, truncated and over-bound are told apart at the terminal", false);
+  ADD_TEST_CASE(us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works,
+                "-d needs hex, takes either position, and describing still works", false);
 }
