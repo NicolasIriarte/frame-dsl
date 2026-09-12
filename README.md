@@ -100,7 +100,7 @@ configured.
 | Path                 |                                                                                    |
 |----------------------|------------------------------------------------------------------------------------|
 | `include/`           | `framedsl.h`, the public API and the only header a user includes                   |
-| `src/`               | the runtime and the command-line front end                                         |
+| `src/`               | the compiler, the runtime and the command-line front end                           |
 | `test/`              | one user story per file, `NN_name.c`; the runner registers them from the filenames |
 | `manual/`            | the language reference -- what someone writing a definition file needs             |
 | `docs/`              | design documents -- why the language and runtime are shaped the way they are       |

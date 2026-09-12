@@ -8,11 +8,14 @@
 #include <stdint.h>
 
 #include "ast.h"
+#include "bytecode.h"
 #include "check.h"
 
 struct FramedslDefinition {
   AstFile *ast;
   Layout *layout;
+  /* What the runtime actually walks. Built once, when the file loads. */
+  Program *program;
 
   /* Stamped into every FramedslFieldId this definition hands out, and checked by every accessor.
    * Without it an id resolved against one definition and used on another frame would address

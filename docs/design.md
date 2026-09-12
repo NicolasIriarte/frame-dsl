@@ -261,19 +261,43 @@ expression is rejected can always rewrite it so the multiple of eight is visible
 Encoding is the same walk in reverse, with one difference: fixed-value fields are written from the
 definition, not from the arena, so a caller cannot emit a frame that fails to identify itself.
 
-## The bytecode, sketched
+## The bytecode
 
-Not implemented, and deliberately not nailed down further than the shape -- the design that survives
-contact with the encoder is the one worth writing down.
+A program is a flat array of field instructions, one per field, in declaration order. Each carries its
+resolved `bit_order` and `byte_order`, whether it is a scalar, its fixed value if it has one, and how
+its width is obtained -- either a constant, or a short postfix program evaluated on a small operand
+stack whose only non-literal operand is "the value in slot N". `valof(len) * 8 - 32` becomes
+`SLOT len; LIT 8; MUL; LIT 32; SUB`.
 
-A program is a flat array of field instructions, one per field, in declaration order. Each carries:
-its slot in the arena, its resolved `bit_order` and `byte_order`, and how its width is obtained --
-either a constant, or a short postfix expression program evaluated on a small operand stack, whose
-only non-literal operand is "the value in slot N".
+Three places the sketch turned out to be wrong, which is the expected outcome of building it rather
+than a failure of the sketch:
 
-A postfix expression keeps the arithmetic from needing a tree at run time, and the stack depth is
-bounded by the expression's own nesting, which is known when it is compiled. `valof(len) * 8 - 32`
-becomes roughly `SLOT len; LIT 8; MUL; LIT 32; SUB`.
+**An instruction carries the field's index, not its slot in the arena.** The sketch assumed one arena
+per definition. There is one per *frame*, and several frames can share a definition -- so a program
+that named arena offsets would describe one frame rather than the definition it was compiled from.
+The frame maps index to storage.
+
+**A constant width compiles to no program at all**, rather than to a one-instruction one. It is the
+overwhelmingly common case, and a number on the instruction costs the interpreter nothing where a
+program would cost it a call and a loop.
+
+**Constant subtrees are folded during compilation.** `valof(n) * (4 * 2)` is three instructions, not
+five. The sketch did not say either way; doing it is two lines and the saving is paid per field per
+frame rather than once.
+
+The stack depth is computed from the emitted code -- not from the expression tree, which would be a
+second opinion about a different thing -- and a program needing more than the evaluator's fixed stack
+is rejected when the file loads. Nothing sane approaches it: `valof(len) * 8 - 32` reaches two.
+
+The evaluator refuses a width that overflows or would go below zero. Both depend on a frame's
+contents rather than on the definition, so neither can be settled when the file loads: a length field
+claiming less than the header it counts is exactly how the second happens, and on a live link that is
+a corrupt frame rather than a broken definition.
+
+Like the arena, a program is **one allocation**, carved into the packet table, the field instructions
+and the pool of width instructions. Compilation walks each width expression twice -- once to count
+what it will emit, once to emit it -- which is what lets the count be known before anything is
+allocated. The alternative was an allocation count that depended on the input.
 
 ## Where calibration curves will attach
 

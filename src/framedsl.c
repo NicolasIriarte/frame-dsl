@@ -87,12 +87,22 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
     layout = check_file(ast, &result->diags);
   }
 
-  if (layout == NULL) {
+  /* Codegen runs only on a file that passed every check, so what it can still fail on is an
+   * allocation or an expression nested deeper than the evaluator's stack -- not a mistake the checks
+   * were supposed to have caught. */
+  Program *program = NULL;
+  if (layout != NULL) {
+    program = program_compile(ast, layout, &result->diags);
+  }
+
+  if (layout == NULL || program == NULL) {
+    layout_free(layout);
     ast_free(ast);
     result->status = FRAMEDSL_ERROR_INVALID;
   } else {
     result->definition.ast = ast;
     result->definition.layout = layout;
+    result->definition.program = program;
     result->definition.tag = definition_next_tag();
     result->have_definition = true;
     result->status = FRAMEDSL_OK;
@@ -161,6 +171,7 @@ void framedsl_result_free(FramedslResult *result) {
     return;
   }
   if (result->have_definition) {
+    program_free(result->definition.program);
     layout_free(result->definition.layout);
     ast_free(result->definition.ast);
   }
