@@ -10,54 +10,69 @@
  * runs rather than against a sketch.
  *
  * Rules this grammar cannot express -- a valof() referring only to an earlier field, the mandatory
- * max on a variable-sized field, the required discriminator, packet distinguishability -- are
- * semantic checks, listed in docs/design.md. They are checked when a definition file loads.
+ * reservation on a variable-sized field, the required discriminator, packet distinguishability, a
+ * packet being a whole number of bytes -- are semantic checks, listed in docs/design.md. They are
+ * checked when a definition file loads.
  *)
 
-definition_file    = { file_setting } , { packet } ;
+definition_file    = { attribute } , { packet } ;
 
-(* --- Settings -------------------------------------------------------------------------------
- * The same two settings appear at three scopes. At file scope they precede every packet and apply
- * to the file; at packet scope they precede every field and apply to the packet; at field scope
- * they are a suffix on one field. Precedence therefore falls out of position: field > packet >
- * file, with no separate rule to remember.
+(* --- Attributes -----------------------------------------------------------------------------
+ * One form per job, so nothing is expressible two ways:
+ *
+ *   - A bare attribute may appear only before the first packet. It is the file default.
+ *   - A group attaches to the declaration that follows it -- a packet, a block or a field -- and
+ *     applies to that declaration only.
+ *
+ * Resolution is innermost-wins: field > block > packet > file.
+ *
+ * The names are identifiers rather than keywords, and this grammar deliberately does not enumerate
+ * them: the parser holds the table, so none of them is reserved and a field may be called
+ * `bit_order`. v1 knows `bit_order` (msb_first | lsb_first) and `byte_order` (big_endian |
+ * little_endian); an unknown one is reported by name.
  *)
 
-file_setting       = setting ;
-packet_setting     = setting ;
-field_setting      = setting_body ;
-
-setting            = setting_body , ";" ;
-setting_body       = bit_order | byte_order ;
-
-bit_order          = "bit_order"  , bit_order_value ;
-byte_order         = "byte_order" , byte_order_value ;
-
-bit_order_value    = "msb_first" | "lsb_first" ;
-byte_order_value   = "big_endian" | "little_endian" ;
+attribute          = "@" , identifier , ":" , identifier , ";" ;
+attribute_group    = "[" , attribute , { attribute } , "]" ;
 
 (* --- Packets --------------------------------------------------------------------------------
  * A packet has at least one field: an empty packet describes nothing and is more likely a mistake
  * than an intention. The trailing semicolon after the closing brace is required.
  *)
 
-packet             = "pkt" , identifier , "{" ,
-                       { packet_setting } ,
-                       field , { field } ,
+packet             = [ attribute_group ] , "pkt" , identifier , "{" ,
+                       declaration , { declaration } ,
                      "}" , ";" ;
 
-(* --- Fields ---------------------------------------------------------------------------------
- * Width is an expression in BITS, always. `max` bounds a width that depends on another field's
- * value; `=` fixes the field's value and is what lets the decoder tell packets apart.
- *
- * The grammar permits `max` and `=` together; the semantic pass rejects it, because a field whose
- * width is not known until decode time cannot also be a discriminator.
+(* --- Declarations ---------------------------------------------------------------------------
+ * A block is an attribute scope and nothing else. Its fields are laid out in the packet that
+ * contains it, with consecutive offsets and the same flat names they would have had without it, so
+ * nothing past the parser knows blocks exist. The *named* form -- `block Payload { ... }` -- nests
+ * a dotted name and is packet composition; it is deferred to its own issue.
  *)
 
-field              = identifier , ":" , width ,
-                     [ "max" , expression ] ,
-                     [ "=" , integer ] ,
-                     { field_setting } , ";" ;
+declaration        = [ attribute_group ] , ( field | block ) ;
+
+block              = "block" , "{" , declaration , { declaration } , "}" , ";" ;
+
+(* --- Fields ---------------------------------------------------------------------------------
+ * Width is an expression in BITS, always. The bracketed reservation is the one number in the
+ * language written in BYTES: it sizes the field's arena slot, which is storage rather than layout,
+ * and a width that depends on another field has no size until a frame arrives. `=` fixes the
+ * field's value and is what lets the decoder tell packets apart.
+ *
+ * The grammar permits a reservation anywhere, and permits it together with `=`; the semantic pass
+ * rejects both. A constant-width field's slot is already known (check 14), and a field whose width
+ * is not known until decode time cannot also be a discriminator (check 9).
+ *
+ * "[" does two jobs -- a group before a declaration, a reservation glued to a name -- told apart by
+ * position, with no lookahead, and the two never appear adjacent.
+ *)
+
+field              = identifier , [ reservation ] , ":" , width ,
+                     [ "=" , integer ] , ";" ;
+
+reservation        = "[" , expression , "]" ;
 
 width              = expression ;
 
@@ -76,7 +91,9 @@ factor             = integer
 valof              = "valof" , "(" , identifier , ")" ;
 
 (* --- Lexical --------------------------------------------------------------------------------
- * Whitespace and comments separate tokens and are otherwise discarded. Block comments do not nest.
+ * Whitespace and comments separate tokens and are otherwise discarded. A comment runs from "#" to
+ * the end of the line, and is the only comment form there is: a definition file is short, and one
+ * syntax is easier to state than two. It also leaves "/" meaning division and nothing else.
  *)
 
 identifier         = ( letter | "_" ) , { letter | digit | "_" } ;
@@ -91,13 +108,13 @@ digit              = "0" | "..." | "9" ;
 hex_digit          = digit | "a" | "..." | "f" | "A" | "..." | "F" ;
 bit                = "0" | "1" ;
 
-comment            = line_comment | block_comment ;
-line_comment       = "//" , { ? any character except newline ? } , newline ;
-block_comment      = "/*" , { ? any character sequence not containing "*/" ? } , "*/" ;
+comment            = "#" , { ? any character except newline ? } , newline ;
 
 (* Reserved words, none of which may be used as an identifier:
  *
- *   pkt  valof  max
- *   bit_order   msb_first     lsb_first
- *   byte_order  big_endian    little_endian
+ *   pkt  valof  block
+ *
+ * That is the whole list. Attribute names and values are not among them -- they are meaningful only
+ * after "@" and are looked up by the parser, which is why adding an attribute later costs a row in a
+ * table rather than a word out of the language.
  *)

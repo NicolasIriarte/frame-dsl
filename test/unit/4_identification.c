@@ -53,7 +53,7 @@ static bool accepted(const char *source) {
 
 static int us4_tc01_rejects_byte_order_written_on_a_sub_byte_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; s: 15 byte_order little_endian; t: 1; };", 10)) {
+  if (!rejected_by("pkt A { h: 8 = 1; [ @byte_order: little_endian; ] s: 15; t: 1; };", 10)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -64,7 +64,7 @@ static int us4_tc01_rejects_byte_order_written_on_a_sub_byte_field(const TestArg
  * it can do nothing is an error. */
 static int us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field(const TestArguments *args) {
   (void)args;
-  if (!accepted("byte_order little_endian;\npkt A { h: 8 = 1; s: 15; t: 1; };")) {
+  if (!accepted("@byte_order: little_endian;\npkt A { h: 8 = 1; s: 15; t: 1; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -72,7 +72,7 @@ static int us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field(const TestA
 
 static int us4_tc03_rejects_byte_order_on_a_field_off_a_byte_boundary(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 4 = 1; w: 16 byte_order little_endian; t: 4; };", 10)) {
+  if (!rejected_by("pkt A { h: 4 = 1; [ @byte_order: little_endian; ] w: 16; t: 4; };", 10)) {
     FORCE_FAILURE();
   }
   return 0;

@@ -48,8 +48,9 @@ static void describe(const FramedslDefinition *definition) {
       }
 
       if (field.variable) {
-        log_info("    %-14s %s, variable, max %llu bits", field.name, offset,
-                 (unsigned long long)field.max_bits);
+        /* Reported in the unit it was written in, so the line can be compared with the file. */
+        log_info("    %-14s %s, variable, reserves %llu bytes", field.name, offset,
+                 (unsigned long long)(field.max_bits / 8));
       } else if (field.has_fixed) {
         log_info("    %-14s %s, %llu bits = %#llx", field.name, offset,
                  (unsigned long long)field.width_bits, (unsigned long long)field.fixed);

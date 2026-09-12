@@ -1,19 +1,18 @@
-// TM_DATAGRAM_02 from the original design sketch, written in the language as specified.
-//
-// Two things changed from the sketch, both forced by decisions recorded in docs/design.md:
-//
-//   - `data: valof(len)` became `valof(len) * 8`. Widths are in bits and `len` counts payload
-//     bytes, so the conversion is written out rather than inferred.
-//   - `max 1024` was added. Without a bound the field cannot have a dedicated arena slot, which
-//     requirement 4 asks for.
+# TM_DATAGRAM_02 from the original design sketch, written in the language as specified.
+#
+# Two things changed from the sketch, both forced by decisions recorded in docs/design.md:
+#
+#   - `data: valof(len)` became `valof(len) * 8`. Widths are in bits and `len` counts payload
+#     bytes, so the conversion is written out rather than inferred.
+#   - `data` gained a reservation. Without one the field cannot have a dedicated arena slot, which
+#     requirement 4 asks for.
 
-bit_order  msb_first;
-byte_order big_endian;
+@bit_order:  msb_first;
+@byte_order: big_endian;
 
 pkt TM_DATAGRAM_02 {
-  some_header: 8 = 0xAA;            // fixed: this is what identifies the packet
-  len:         32;                  // counts payload bytes
-  data:        valof(len) * 8       // ...so convert bytes to bits
-               max 1024;            // 128 bytes reserved in the arena
+  some_header: 8 = 0xAA;             # fixed: this is what identifies the packet
+  len:         32;                   # counts payload bytes
+  data[128]:   valof(len) * 8;       # 128 bytes of arena; the width is per frame
   crc:         16;
 };

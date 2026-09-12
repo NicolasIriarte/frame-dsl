@@ -61,7 +61,7 @@ static int us3_tc03_rejects_a_zero_width_field(const TestArguments *args) {
   return 0;
 }
 
-static int us3_tc04_rejects_a_valof_width_without_max(const TestArguments *args) {
+static int us3_tc04_rejects_a_valof_width_without_a_reservation(const TestArguments *args) {
   (void)args;
   if (!rejected_by("pkt A { h: 8 = 1; n: 16; d: valof(n) * 8; };", 5)) {
     FORCE_FAILURE();
@@ -69,9 +69,9 @@ static int us3_tc04_rejects_a_valof_width_without_max(const TestArguments *args)
   return 0;
 }
 
-static int us3_tc05_rejects_a_max_that_is_not_constant(const TestArguments *args) {
+static int us3_tc05_rejects_a_reservation_that_is_not_constant(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d: valof(n) * 8 max valof(n); };", 6)) {
+  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[valof(n)]: valof(n) * 8; };", 6)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -79,7 +79,7 @@ static int us3_tc05_rejects_a_max_that_is_not_constant(const TestArguments *args
 
 static int us3_tc06_rejects_a_valof_naming_a_later_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; d: valof(n) * 8 max 64; n: 16; };", 7)) {
+  if (!rejected_by("pkt A { h: 8 = 1; d[8]: valof(n) * 8; n: 16; };", 7)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -88,7 +88,7 @@ static int us3_tc06_rejects_a_valof_naming_a_later_field(const TestArguments *ar
 /* A field in another packet is not in scope: each packet is decoded on its own. */
 static int us3_tc07_rejects_a_valof_naming_another_packets_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; };\npkt B { h: 8 = 2; d: valof(n) * 8 max 64; };", 7)) {
+  if (!rejected_by("pkt A { h: 8 = 1; n: 16; };\npkt B { h: 8 = 2; d[8]: valof(n) * 8; };", 7)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -104,7 +104,7 @@ static int us3_tc08_rejects_a_fixed_value_too_wide_for_its_field(const TestArgum
 
 static int us3_tc09_rejects_a_field_with_both_fixed_value_and_max(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d: valof(n) * 8 max 64 = 3; };", 9)) {
+  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[8]: valof(n) * 8 = 3; };", 9)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -115,8 +115,9 @@ void register_user_story3(void) {
   ADD_TEST_CASE(us3_tc01_rejects_a_duplicate_packet_name, "check 1: duplicate packet name", false);
   ADD_TEST_CASE(us3_tc02_rejects_a_duplicate_field_name, "check 2: duplicate field name", false);
   ADD_TEST_CASE(us3_tc03_rejects_a_zero_width_field, "check 4: a width must be at least one bit", false);
-  ADD_TEST_CASE(us3_tc04_rejects_a_valof_width_without_max, "check 5: a valof() width needs max", false);
-  ADD_TEST_CASE(us3_tc05_rejects_a_max_that_is_not_constant, "check 6: max must be constant", false);
+  ADD_TEST_CASE(us3_tc04_rejects_a_valof_width_without_a_reservation, "check 5: a valof() width needs a reservation", false);
+  ADD_TEST_CASE(us3_tc05_rejects_a_reservation_that_is_not_constant,
+                "check 6: a reservation must be constant", false);
   ADD_TEST_CASE(us3_tc06_rejects_a_valof_naming_a_later_field, "check 7: valof() must look backwards", false);
   ADD_TEST_CASE(us3_tc07_rejects_a_valof_naming_another_packets_field, "check 7: valof() cannot cross packets", false);
   ADD_TEST_CASE(us3_tc08_rejects_a_fixed_value_too_wide_for_its_field, "check 8: a fixed value must fit its width", false);

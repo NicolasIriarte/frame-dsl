@@ -48,6 +48,10 @@ TARGET := $(BUILD)/frame-dsl
 # link the same code rather than recompiling it three ways.
 LIB_SRC := $(filter-out src/main.c, $(wildcard src/*.c))
 LIB_OBJ := $(LIB_SRC:src/%.c=$(BUILD)/obj/%.o)
+MAIN_OBJ := $(BUILD)/obj/main.o
+
+# One .d per object, written by the compiler and read back at the bottom of this file.
+DEPFILES := $(LIB_OBJ:.o=.d) $(MAIN_OBJ:.o=.d)
 
 UNIT_SRC := $(wildcard test/unit/*.c)
 UNIT_RUNNER := $(BUILD)/run_unit_tests
@@ -104,11 +108,16 @@ $(DEPS): $(CLIBS_ARCHIVES)
 	done
 	@touch $@
 
+# -MMD -MP writes a .d file next to each .o listing the headers it included, and the -include below
+# feeds those back in. Without it, make only watches the .c file: editing a header leaves every object
+# that includes it stale, and a struct that changed size is then read through two different layouts in
+# one binary. That is not a build that fails, it is a build that corrupts memory, so the dependency
+# tracking is not a convenience.
 $(BUILD)/obj/%.o: src/%.c | $(DEPS)
 	@mkdir -p $(@D)
-	$(CC) $(SRC_FLAGS) -c $< -o $@
+	$(CC) $(SRC_FLAGS) -MMD -MP -c $< -o $@
 
-$(TARGET): src/main.c $(LIB_OBJ) | $(DEPS)
+$(TARGET): $(MAIN_OBJ) $(LIB_OBJ)
 	@mkdir -p $(@D)
 	$(CC) $(SRC_FLAGS) $^ -o $@
 
@@ -129,7 +138,7 @@ $(SYSTEM_REGISTRY): $(SYSTEM_SRC) | $(DEPS)
 	@mkdir -p $(@D)
 	$(TESTING)/gen_test_registry test/system $@
 
-$(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ)
+$(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) $(wildcard src/*.h)
 	@mkdir -p $(@D)
 	$(CC) $(UNIT_FLAGS) $(UNIT_SRC) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) -o $@
 
@@ -174,3 +183,7 @@ $(COMPILE_COMMANDS): Makefile scripts/gen_compile_commands.sh src test/unit test
 
 clean:
 	rm -rf $(BUILD) $(COMPILE_COMMANDS)
+
+# Last, so nothing above depends on a file that may not exist yet. The '-' makes a missing .d silent:
+# on a clean tree there are none, and the objects are about to be built anyway.
+-include $(DEPFILES)

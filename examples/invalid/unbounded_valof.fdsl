@@ -1,7 +1,10 @@
-// REJECTED: check 5 -- a width using valof() must declare max.
-//
-// `len` is 32 bits, so this field could claim up to 4 GiB. There is no bound to reserve in the
-// arena, so the field cannot have the dedicated slot requirement 4 asks for.
+# REJECTED: check 5 -- a width that depends on another field must reserve a slot.
+#
+# `data` is sized per frame, so nothing here says how much room the arena should set aside for it.
+# Requirement 2 in docs/scope.md asks that encoding and decoding never allocate, which is only
+# possible if every field's slot is sized once, when the file loads.
+#
+# Writing `data[64]:` would fix it.
 
 pkt TM_UNBOUNDED {
   hdr: 8 = 0xAA;

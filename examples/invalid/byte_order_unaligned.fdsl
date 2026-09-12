@@ -1,11 +1,18 @@
-// REJECTED: check 10 -- byte_order only applies to a field that is byte-aligned and a whole number
-// of bytes wide.
-//
-// `seq` is 15 bits and starts at bit 8: it has no bytes to reorder. Accepting the line and ignoring
-// it would leave the author believing they had specified something.
+# REJECTED: check 10 -- byte_order only applies to a field that is byte-aligned and a whole number
+# of bytes wide.
+#
+# `seq` is 15 bits and starts at bit 8: it has no bytes to reorder. Accepting the line and ignoring
+# it would leave the author believing they had specified something.
+#
+# Only a byte_order *written on the field* is an error. The same attribute in a group on a packet or
+# a block covers every field below it, most real frames mix byte-wide fields with sub-byte ones, and
+# a setting that is irrelevant here and meaningful two fields later is not a mistake.
 
 pkt TM_ODD {
   hdr: 8 = 0xAA;
-  seq: 15 byte_order little_endian;
+
+  [ @byte_order: little_endian; ]
+  seq: 15;
+
   tail: 1;
 };

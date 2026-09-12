@@ -13,7 +13,7 @@
   "pkt TM_A {\n"                                                                                   \
   "  hdr: 8 = 0xAA;\n"                                                                             \
   "  len: 32;\n"                                                                                   \
-  "  data: valof(len) * 8 max 1024;\n"                                                             \
+  "  data[128]: valof(len) * 8;\n"                                                                \
   "  crc: 16;\n"                                                                                   \
   "};\n"
 
@@ -175,13 +175,14 @@ static int us2_tc06_describes_a_variable_field_as_variable(const TestArguments *
 static int us2_tc07_reports_resolved_bit_and_byte_order(const TestArguments *args) {
   (void)args;
 
-  FramedslResult *result = framedsl_load_string("byte_order big_endian;\n"
+  FramedslResult *result = framedsl_load_string("@byte_order: big_endian;\n"
+                                                "[ @byte_order: little_endian; ]\n"
                                                 "pkt P {\n"
-                                                "  byte_order little_endian;\n"
                                                 "  hdr: 8 = 0x01;\n"
                                                 "  a: 32;\n"
-                                                "  b: 32 byte_order big_endian;\n"
-                                                "  c: 4 bit_order lsb_first;\n"
+                                                "  [ @byte_order: big_endian; ] b: 32;\n"
+                                                "  [ @bit_order: lsb_first; ] c: 4;\n"
+                                                "  d: 4;\n" /* brings P to 80 bits: check 13 */
                                                 "};\n",
                                                 "orders.fdsl");
 

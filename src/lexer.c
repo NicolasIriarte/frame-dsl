@@ -11,13 +11,7 @@ typedef struct {
 static const Keyword KEYWORDS[] = {
     {"pkt", TOK_PKT},
     {"valof", TOK_VALOF},
-    {"max", TOK_MAX},
-    {"bit_order", TOK_BIT_ORDER},
-    {"msb_first", TOK_MSB_FIRST},
-    {"lsb_first", TOK_LSB_FIRST},
-    {"byte_order", TOK_BYTE_ORDER},
-    {"big_endian", TOK_BIG_ENDIAN},
-    {"little_endian", TOK_LITTLE_ENDIAN},
+    {"block", TOK_BLOCK},
 };
 
 static bool is_digit(char c) { return c >= '0' && c <= '9'; }
@@ -56,9 +50,12 @@ static Token make(TokenKind kind, int line, int column) {
   return (Token){.kind = kind, .line = line, .column = column};
 }
 
-/* Whitespace and comments separate tokens and are otherwise discarded. An unterminated block comment
- * is reported against the line it opened on: that is the line someone has to go and fix, and by the
- * time the scan reaches end of file the opening is long out of sight. */
+/* Whitespace and comments separate tokens and are otherwise discarded.
+ *
+ * A comment runs from '#' to the end of the line, and that is the only form there is. There is no
+ * block comment: a definition file is short, every editor comments a region by prefixing its lines,
+ * and one syntax is easier to state than two. It also leaves '/' meaning division and nothing else,
+ * so the lexer no longer has to look ahead to find out which of two things a slash is. */
 static void skip_trivia(Lexer *lexer) {
   for (;;) {
     char c = peek(lexer, 0);
@@ -68,30 +65,8 @@ static void skip_trivia(Lexer *lexer) {
       continue;
     }
 
-    if (c == '/' && peek(lexer, 1) == '/') {
+    if (c == '#') {
       while (peek(lexer, 0) != '\0' && peek(lexer, 0) != '\n') {
-        advance(lexer);
-      }
-      continue;
-    }
-
-    if (c == '/' && peek(lexer, 1) == '*') {
-      int open_line = lexer->line;
-      int open_column = lexer->column;
-      advance(lexer);
-      advance(lexer);
-
-      for (;;) {
-        if (peek(lexer, 0) == '\0') {
-          diag_add(lexer->diags, open_line, open_column, 0,
-                   "unterminated block comment, opened here and never closed");
-          return;
-        }
-        if (peek(lexer, 0) == '*' && peek(lexer, 1) == '/') {
-          advance(lexer);
-          advance(lexer);
-          break;
-        }
         advance(lexer);
       }
       continue;
@@ -216,10 +191,13 @@ Token lexer_next(Lexer *lexer) {
 
   advance(lexer);
   switch (c) {
+  case '@': return make(TOK_AT, line, column);
   case ':': return make(TOK_COLON, line, column);
   case ';': return make(TOK_SEMICOLON, line, column);
   case '{': return make(TOK_LBRACE, line, column);
   case '}': return make(TOK_RBRACE, line, column);
+  case '[': return make(TOK_LBRACKET, line, column);
+  case ']': return make(TOK_RBRACKET, line, column);
   case '(': return make(TOK_LPAREN, line, column);
   case ')': return make(TOK_RPAREN, line, column);
   case '=': return make(TOK_EQUALS, line, column);
@@ -241,17 +219,14 @@ const char *token_kind_name(TokenKind kind) {
   case TOK_INT: return "a number";
   case TOK_PKT: return "'pkt'";
   case TOK_VALOF: return "'valof'";
-  case TOK_MAX: return "'max'";
-  case TOK_BIT_ORDER: return "'bit_order'";
-  case TOK_MSB_FIRST: return "'msb_first'";
-  case TOK_LSB_FIRST: return "'lsb_first'";
-  case TOK_BYTE_ORDER: return "'byte_order'";
-  case TOK_BIG_ENDIAN: return "'big_endian'";
-  case TOK_LITTLE_ENDIAN: return "'little_endian'";
+  case TOK_BLOCK: return "'block'";
+  case TOK_AT: return "'@'";
   case TOK_COLON: return "':'";
   case TOK_SEMICOLON: return "';'";
   case TOK_LBRACE: return "'{'";
   case TOK_RBRACE: return "'}'";
+  case TOK_LBRACKET: return "'['";
+  case TOK_RBRACKET: return "']'";
   case TOK_LPAREN: return "'('";
   case TOK_RPAREN: return "')'";
   case TOK_EQUALS: return "'='";

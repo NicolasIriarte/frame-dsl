@@ -52,7 +52,8 @@ static int expect_parses(const char *name) {
 static int us1_tc01_parses_every_valid_example(const TestArguments *args) {
   (void)args;
 
-  const char *names[] = {"tm_datagram.fdsl", "can_frame.fdsl", "packet_family.fdsl", "bit_order.fdsl"};
+  const char *names[] = {"tm_datagram.fdsl", "ccsds_space_packet.fdsl", "packet_family.fdsl",
+                         "bit_order.fdsl"};
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     int failure = expect_parses(names[i]);
     if (failure != 0) {
@@ -78,6 +79,8 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
       {"invalid/no_discriminator.fdsl", 11},   {"invalid/unbounded_valof.fdsl", 5},
       {"invalid/ambiguous_packets.fdsl", 12},  {"invalid/forward_valof.fdsl", 7},
       {"invalid/value_too_wide.fdsl", 8},      {"invalid/byte_order_unaligned.fdsl", 10},
+      {"invalid/odd_packet.fdsl", 13},         {"invalid/odd_valof_width.fdsl", 13},
+      {"invalid/reservation_on_fixed_width.fdsl", 14},
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {

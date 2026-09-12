@@ -112,6 +112,75 @@ static bool expr_uses_valof(const Expr *expr) {
   return false;
 }
 
+/* ---- Byte-multiple analysis (check 13) ------------------------------------------------------
+ *
+ * A frame leaves this library as bytes, so a packet that does not land on a byte boundary has no
+ * unambiguous byte form -- its last byte would be part frame and part nothing. Sub-byte *fields* are
+ * untouched by this; they are what the language exists for. What check 13 requires is that a
+ * packet's fields *sum* to a multiple of 8.
+ *
+ * A valof() width makes that sum depend on the frame, so it is decided by evaluating widths
+ * abstractly over Z/8 rather than by adding them. A literal is known; a valof() is not; a product is
+ * zero when either side is a known multiple of eight, whatever the other side is; a sum or a
+ * difference is known when both sides are. Anything that folds to a constant is known exactly,
+ * which covers division without a rule of its own.
+ *
+ * It is conservative: it needs one factor that is itself a multiple of eight, so `valof(n) * 2 * 4`
+ * is rejected even though it always is one. That is the right direction to be wrong in -- the
+ * alternative is a width that is only found to be unusable when a frame arrives. */
+static bool residue_mod8(const Expr *expr, uint64_t *out) {
+  if (expr == NULL) {
+    return false;
+  }
+
+  int64_t constant = 0;
+  if (fold(expr, &constant) == FOLD_OK) {
+    *out = (uint64_t)(((constant % 8) + 8) % 8);
+    return true;
+  }
+
+  /* Not constant and not a binary operator is a bare valof(): nothing is known about it. */
+  if (expr->kind != EXPR_BINARY) {
+    return false;
+  }
+
+  uint64_t lhs = 0;
+  uint64_t rhs = 0;
+  bool lhs_known = residue_mod8(expr->lhs, &lhs);
+  bool rhs_known = residue_mod8(expr->rhs, &rhs);
+
+  switch (expr->op) {
+  case '+':
+    if (!lhs_known || !rhs_known) {
+      return false;
+    }
+    *out = (lhs + rhs) % 8;
+    return true;
+
+  case '-':
+    if (!lhs_known || !rhs_known) {
+      return false;
+    }
+    *out = (lhs - rhs + 8) % 8;
+    return true;
+
+  case '*':
+    /* One byte-multiple factor is enough: 8m * k is a multiple of eight for every k. */
+    if ((lhs_known && lhs == 0) || (rhs_known && rhs == 0)) {
+      *out = 0;
+      return true;
+    }
+    if (!lhs_known || !rhs_known) {
+      return false;
+    }
+    *out = (lhs * rhs) % 8;
+    return true;
+
+  /* Division does not distribute over the modulus, so only the folded case above can answer it. */
+  default: return false;
+  }
+}
+
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
  * means knowing where it starts, which means every field before it is already resolved. */
 static void check_references(Checker *checker, const AstPacket *packet, size_t field_index,
@@ -199,6 +268,11 @@ static void check_packet(Checker *checker, size_t packet_index) {
   uint64_t discriminator_bits = 0;
   bool has_fixed = false;
 
+  /* Check 13 accumulates the packet's width modulo eight rather than its width, because a valof()
+   * field has no width until a frame arrives but can still be known to be a whole number of bytes. */
+  uint64_t byte_residue = 0;
+  bool byte_residue_known = true;
+
   /* First pass: widths, offsets, and everything decidable field by field. */
   for (size_t i = 0; i < packet->field_count; ++i) {
     const AstField *field = &packet->fields[i];
@@ -214,18 +288,19 @@ static void check_packet(Checker *checker, size_t packet_index) {
     }
 
     check_references(checker, packet, i, field->width);
-    check_references(checker, packet, i, field->max);
+    check_references(checker, packet, i, field->reserve);
 
     bool variable = expr_uses_valof(field->width);
     slot->variable = variable;
+    bool width_ok = true;
 
     if (variable) {
       /* Check 5. */
-      if (field->max == NULL) {
+      if (field->reserve == NULL) {
         fail(checker, field->line, field->column, 5,
-             "'%s.%s' has a width that depends on another field, so it must declare a bound with "
-             "'max'; without one it cannot be given a fixed slot in the arena",
-             packet->name, field->name);
+             "'%s.%s' has a width that depends on another field, so it must reserve a slot: write "
+             "'%s[<bytes>]'. Without one it cannot be given a fixed place in the arena",
+             packet->name, field->name, field->name);
       }
     } else {
       /* Check 4. */
@@ -234,39 +309,74 @@ static void check_packet(Checker *checker, size_t packet_index) {
       if (folded == FOLD_DIVIDE_BY_ZERO) {
         fail(checker, field->line, field->column, 4, "'%s.%s' has a width that divides by zero",
              packet->name, field->name);
+        width_ok = false;
       } else if (folded == FOLD_TOO_LARGE) {
         fail(checker, field->line, field->column, 4, "'%s.%s' has an impossibly large width",
              packet->name, field->name);
+        width_ok = false;
       } else if (folded != FOLD_OK || width <= 0) {
         fail(checker, field->line, field->column, 4,
              "'%s.%s' must have a width of at least one bit", packet->name, field->name);
+        width_ok = false;
       } else {
         slot->width_bits = (uint64_t)width;
       }
     }
 
-    /* Check 6. */
-    if (field->max != NULL) {
-      int64_t bound = 0;
-      FoldResult folded = fold(field->max, &bound);
-      if (folded == FOLD_NOT_CONSTANT) {
-        fail(checker, field->max->line, field->max->column, 6,
-             "'%s.%s' has a 'max' that depends on another field; a bound must be a constant, since "
-             "it is what the arena reserves before any frame arrives",
-             packet->name, field->name);
-      } else if (folded != FOLD_OK || bound <= 0) {
-        fail(checker, field->max->line, field->max->column, 6,
-             "'%s.%s' must have a 'max' of at least one bit", packet->name, field->name);
+    /* Check 13, field by field. A width nobody can show to be a whole number of bytes makes the
+     * packet's own length depend on the frame it is carrying, which is exactly what the packet-wide
+     * half of this check is there to prevent. Reported here, against the field responsible, rather
+     * than as a packet that mysteriously does not add up. */
+    if (!width_ok) {
+      byte_residue_known = false;
+    } else {
+      uint64_t residue = 0;
+      if (!residue_mod8(field->width, &residue)) {
+        fail(checker, field->line, field->column, 13,
+             "'%s.%s' has a width that cannot be shown to be a whole number of bytes, so '%s' would "
+             "be a different length for every frame it carries; write the width as a multiple of 8 "
+             "bits, as in 'valof(x) * 8'",
+             packet->name, field->name, packet->name);
+        byte_residue_known = false;
       } else {
-        slot->max_bits = (uint64_t)bound;
+        byte_residue = (byte_residue + residue) % 8;
       }
     }
 
+    /* Check 6. The reservation is written in bytes -- the only number in the language that is --
+     * because it is the size of a slot rather than a position in a frame. It becomes bits here, and
+     * nothing downstream of this line sees bytes again. */
+    if (field->reserve != NULL) {
+      int64_t bound = 0;
+      FoldResult folded = fold(field->reserve, &bound);
+      if (folded == FOLD_NOT_CONSTANT) {
+        fail(checker, field->reserve->line, field->reserve->column, 6,
+             "'%s.%s' reserves a size that depends on another field; a reservation must be a "
+             "constant, since it is what the arena sets aside before any frame arrives",
+             packet->name, field->name);
+      } else if (folded != FOLD_OK || bound <= 0) {
+        fail(checker, field->reserve->line, field->reserve->column, 6,
+             "'%s.%s' must reserve at least one byte", packet->name, field->name);
+      } else {
+        slot->max_bits = (uint64_t)bound * 8;
+      }
+    }
+
+    /* Check 14: a reservation says how much room a field needs when nobody can know until a frame
+     * arrives. A constant-width field already answers that with its width, and a second number could
+     * only ever agree with it or contradict it. */
+    if (width_ok && !variable && field->reserve != NULL) {
+      fail(checker, field->reserve_line, field->reserve_column, 14,
+           "'%s.%s' is %llu bits wide, so its slot is already known and it must not reserve one; "
+           "a reservation belongs only on a field whose width depends on another field",
+           packet->name, field->name, (unsigned long long)slot->width_bits);
+    }
+
     /* Check 9. */
-    if (field->has_fixed && field->max != NULL) {
+    if (field->has_fixed && (variable || field->reserve != NULL)) {
       fail(checker, field->fixed_line, field->fixed_column, 9,
-           "'%s.%s' cannot have both a fixed value and 'max': a width that is not known until a "
-           "frame arrives cannot identify the packet that frame belongs to",
+           "'%s.%s' cannot have both a fixed value and a reservation: a width that is not known "
+           "until a frame arrives cannot identify the packet that frame belongs to",
            packet->name, field->name);
     }
 
@@ -312,6 +422,24 @@ static void check_packet(Checker *checker, size_t packet_index) {
     }
 
     layout->reserved_bits += slot->reserved_bits;
+  }
+
+  /* Check 13, over the packet. Only asked when every width was sound: a packet that already failed
+   * check 4 does not need to be told it does not add up as well. */
+  if (byte_residue_known && packet->field_count > 0 && byte_residue != 0) {
+    if (offset_known) {
+      /* Every width was constant, so the exact total is worth reporting -- the author should not
+       * have to add up their own fields to find out how far off they are. */
+      fail(checker, packet->line, packet->column, 13,
+           "'%s' is %llu bits, which is not a whole number of bytes; a packet must be a multiple of "
+           "8 bits so that a frame of it has an unambiguous byte form",
+           packet->name, (unsigned long long)offset);
+    } else {
+      fail(checker, packet->line, packet->column, 13,
+           "'%s' is not a whole number of bytes: its fields leave %llu bit(s) over. A packet must "
+           "be a multiple of 8 bits so that a frame of it has an unambiguous byte form",
+           packet->name, (unsigned long long)byte_residue);
+    }
   }
 
   /* Check 11. */

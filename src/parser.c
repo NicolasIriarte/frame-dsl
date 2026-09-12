@@ -1,6 +1,7 @@
 #include "parser.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "lexer.h"
 
@@ -173,57 +174,125 @@ static Expr *parse_expression(Parser *parser) {
   return node;
 }
 
-/* One setting, without its terminator: the field form has none. */
-static bool parse_setting_body(Parser *parser, BitOrder *bit_order, bool *bit_written,
-                               ByteOrder *byte_order, bool *byte_written, int *byte_line,
-                               int *byte_column) {
-  if (match(parser, TOK_BIT_ORDER)) {
-    if (match(parser, TOK_MSB_FIRST)) {
-      *bit_order = BIT_ORDER_MSB_FIRST;
-    } else if (match(parser, TOK_LSB_FIRST)) {
-      *bit_order = BIT_ORDER_LSB_FIRST;
-    } else {
-      error_at_current(parser, "'msb_first' or 'lsb_first'");
-      return false;
-    }
-    *bit_written = true;
-    return true;
-  }
+/* ---- Attributes -----------------------------------------------------------------------------
+ *
+ * `@name: value;`. The names live here rather than in the lexer, so none of them is a reserved word
+ * and a field may perfectly well be called `bit_order`. It also means an unknown attribute is
+ * reported by name instead of as a parse failure two tokens further on, and that adding one later --
+ * an enum, a calibration curve -- costs a row in this file and nothing in the grammar.
+ *
+ * The `written` flags are not bookkeeping: check 10 turns on the difference between a byte_order
+ * written on a field and one the field inherited from a block, packet or file. */
+typedef struct {
+  BitOrder bit_order;
+  ByteOrder byte_order;
+  bool bit_written;
+  bool byte_written;
+  int byte_line;
+  int byte_column;
+} Attributes;
 
+/* Everything a declaration inherits arrives with the flags cleared: what the enclosing scope said is
+ * by definition not what was written here. */
+static Attributes inherited(Attributes scope) {
+  scope.bit_written = false;
+  scope.byte_written = false;
+  return scope;
+}
+
+static bool word_is(const Token *token, const char *spelling) {
+  size_t length = strlen(spelling);
+  return token->length == length && memcmp(token->text, spelling, length) == 0;
+}
+
+/* attribute = "@" identifier ":" identifier ";" */
+static bool parse_attribute(Parser *parser, Attributes *attrs) {
   int line = parser->current.line;
   int column = parser->current.column;
-  if (match(parser, TOK_BYTE_ORDER)) {
-    if (match(parser, TOK_BIG_ENDIAN)) {
-      *byte_order = BYTE_ORDER_BIG_ENDIAN;
-    } else if (match(parser, TOK_LITTLE_ENDIAN)) {
-      *byte_order = BYTE_ORDER_LITTLE_ENDIAN;
-    } else {
-      error_at_current(parser, "'big_endian' or 'little_endian'");
-      return false;
-    }
-    *byte_written = true;
-    if (byte_line != NULL) {
-      *byte_line = line;
-      *byte_column = column;
-    }
-    return true;
+  if (!expect(parser, TOK_AT)) {
+    return false;
   }
 
-  return false;
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "an attribute name");
+    return false;
+  }
+  Token name = parser->current;
+  advance(parser);
+
+  if (!expect(parser, TOK_COLON)) {
+    return false;
+  }
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "an attribute value");
+    return false;
+  }
+  Token value = parser->current;
+  advance(parser);
+
+  bool ok = true;
+  if (word_is(&name, "bit_order")) {
+    if (word_is(&value, "msb_first")) {
+      attrs->bit_order = BIT_ORDER_MSB_FIRST;
+    } else if (word_is(&value, "lsb_first")) {
+      attrs->bit_order = BIT_ORDER_LSB_FIRST;
+    } else {
+      diag_add(parser->diags, value.line, value.column, 0,
+               "'bit_order' is 'msb_first' or 'lsb_first', not '%.*s'", (int)value.length, value.text);
+      ok = false;
+    }
+    attrs->bit_written = ok;
+  } else if (word_is(&name, "byte_order")) {
+    if (word_is(&value, "big_endian")) {
+      attrs->byte_order = BYTE_ORDER_BIG_ENDIAN;
+    } else if (word_is(&value, "little_endian")) {
+      attrs->byte_order = BYTE_ORDER_LITTLE_ENDIAN;
+    } else {
+      diag_add(parser->diags, value.line, value.column, 0,
+               "'byte_order' is 'big_endian' or 'little_endian', not '%.*s'", (int)value.length,
+               value.text);
+      ok = false;
+    }
+    attrs->byte_written = ok;
+    /* Positioned at the '@', which is what check 10 points the author at. */
+    attrs->byte_line = line;
+    attrs->byte_column = column;
+  } else {
+    diag_add(parser->diags, name.line, name.column, 0,
+             "unknown attribute '%.*s'; this version knows 'bit_order' and 'byte_order'",
+             (int)name.length, name.text);
+    ok = false;
+  }
+
+  if (!expect(parser, TOK_SEMICOLON)) {
+    return false;
+  }
+  return ok;
 }
 
-static bool at_setting(const Parser *parser) {
-  return check(parser, TOK_BIT_ORDER) || check(parser, TOK_BYTE_ORDER);
+/* attribute_group = "[" attribute { attribute } "]" */
+static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* '[' */
+
+  if (check(parser, TOK_RBRACKET)) {
+    advance(parser);
+    diag_add(parser->diags, line, column, 0,
+             "an attribute group must hold at least one attribute; an empty '[ ]' applies nothing");
+    return false;
+  }
+
+  while (check(parser, TOK_AT)) {
+    if (!parse_attribute(parser, attrs)) {
+      return false;
+    }
+  }
+  return expect(parser, TOK_RBRACKET);
 }
 
-/* field = identifier ":" width [ "max" expression ] [ "=" integer ] { field_setting } ";" */
-static void parse_field(Parser *parser, AstPacket *packet, BitOrder bit_order, ByteOrder byte_order) {
-  /* Each field starts with a clean slate. Suppression exists to stop one mistake being reported as
-   * four consequences of itself, and a field boundary is where those consequences end -- without
-   * this, a field that errors and then happens to resynchronise on its own ';' silently swallows the
-   * next field's error, because nothing ever cleared the flag. */
-  parser->panicking = false;
-
+/* field = identifier [ "[" expression "]" ] ":" width [ "=" integer ] ";" */
+static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   AstField *field = ast_add_field(packet);
   if (field == NULL) {
     parser->out_of_memory = true;
@@ -232,8 +301,12 @@ static void parse_field(Parser *parser, AstPacket *packet, BitOrder bit_order, B
 
   field->line = parser->current.line;
   field->column = parser->current.column;
-  field->bit_order = bit_order;
-  field->byte_order = byte_order;
+  field->bit_order = attrs.bit_order;
+  field->byte_order = attrs.byte_order;
+  field->bit_order_written = attrs.bit_written;
+  field->byte_order_written = attrs.byte_written;
+  field->byte_order_line = attrs.byte_line;
+  field->byte_order_column = attrs.byte_column;
 
   if (!check(parser, TOK_IDENT)) {
     error_at_current(parser, "a field name");
@@ -248,6 +321,20 @@ static void parse_field(Parser *parser, AstPacket *packet, BitOrder bit_order, B
   }
   advance(parser);
 
+  /* The reservation binds to the name, not to the width: it says how big this field's arena slot is,
+   * which is a property of the field rather than of the expression that sizes it per frame. */
+  if (check(parser, TOK_LBRACKET)) {
+    field->reserve_line = parser->current.line;
+    field->reserve_column = parser->current.column;
+    advance(parser);
+    field->reserve = parse_expression(parser);
+    if (!expect(parser, TOK_RBRACKET)) {
+      recover_to_field_end(parser);
+      packet->field_count -= 1;
+      return;
+    }
+  }
+
   if (!expect(parser, TOK_COLON)) {
     recover_to_field_end(parser);
     packet->field_count -= 1;
@@ -255,10 +342,6 @@ static void parse_field(Parser *parser, AstPacket *packet, BitOrder bit_order, B
   }
 
   field->width = parse_expression(parser);
-
-  if (match(parser, TOK_MAX)) {
-    field->max = parse_expression(parser);
-  }
 
   if (match(parser, TOK_EQUALS)) {
     if (!check(parser, TOK_INT)) {
@@ -273,18 +356,84 @@ static void parse_field(Parser *parser, AstPacket *packet, BitOrder bit_order, B
     advance(parser);
   }
 
-  while (at_setting(parser)) {
-    if (!parse_setting_body(parser, &field->bit_order, &field->bit_order_written, &field->byte_order,
-                            &field->byte_order_written, &field->byte_order_line,
-                            &field->byte_order_column)) {
+  if (!expect(parser, TOK_SEMICOLON)) {
+    recover_to_field_end(parser);
+  }
+}
+
+/* declaration = [ attribute_group ] ( field | block )
+ * block       = "block" "{" declaration { declaration } "}" ";"
+ *
+ * A block is an attribute scope and nothing else: its fields are appended to the packet they sit in,
+ * with consecutive offsets and the same flat names they would have had without it. So the AST never
+ * nests, and neither the checker, the layout pass nor the bytecode ever learns that blocks exist.
+ * The named form, which does nest a dotted name, is composition -- see #13. */
+static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scope);
+
+static void parse_block(Parser *parser, AstPacket *packet, Attributes attrs) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* 'block' */
+
+  if (!expect(parser, TOK_LBRACE)) {
+    recover_to_field_end(parser);
+    return;
+  }
+
+  /* What the group on the block said is inherited by the fields inside, not written on them. Check 10
+   * turns on exactly that: a byte_order a block hands down to a sub-byte field is irrelevant there and
+   * meaningful two fields later, while one written on the field means somebody believed otherwise. */
+  Attributes inner = inherited(attrs);
+  size_t before = packet->field_count;
+
+  while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID) &&
+         !parser->out_of_memory) {
+    parse_declaration(parser, packet, inner);
+  }
+
+  if (packet->field_count == before && !parser->panicking) {
+    diag_add(parser->diags, line, column, 0, "a block must declare at least one field");
+  }
+
+  if (!expect(parser, TOK_RBRACE)) {
+    recover_to_field_end(parser);
+    return;
+  }
+  if (!expect(parser, TOK_SEMICOLON)) {
+    recover_to_field_end(parser);
+  }
+}
+
+static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scope) {
+  /* Each declaration starts with a clean slate. Suppression exists to stop one mistake being reported
+   * as four consequences of itself, and a declaration boundary is where those consequences end --
+   * without this, a field that errors and then happens to resynchronise on its own ';' silently
+   * swallows the next field's error, because nothing ever cleared the flag. */
+  parser->panicking = false;
+
+  Attributes attrs = inherited(scope);
+
+  if (check(parser, TOK_LBRACKET)) {
+    if (!parse_attribute_group(parser, &attrs)) {
       recover_to_field_end(parser);
       return;
     }
   }
 
-  if (!expect(parser, TOK_SEMICOLON)) {
+  /* The likeliest mistake, so it gets a message about the rule rather than about the token. */
+  if (check(parser, TOK_AT)) {
+    diag_add(parser->diags, parser->current.line, parser->current.column, 0,
+             "an attribute here belongs in a '[ ... ]' group before the declaration it applies to; a "
+             "bare '@' is a file default and may only appear before the first packet");
     recover_to_field_end(parser);
+    return;
   }
+
+  if (check(parser, TOK_BLOCK)) {
+    parse_block(parser, packet, attrs);
+    return;
+  }
+  parse_field(parser, packet, attrs);
 }
 
 AstFile *parse(const char *source, DiagList *diags) {
@@ -299,25 +448,38 @@ AstFile *parse(const char *source, DiagList *diags) {
   lexer_init(&parser.lexer, source, diags);
   advance(&parser);
 
-  BitOrder file_bit_order = BIT_ORDER_MSB_FIRST;
-  ByteOrder file_byte_order = BYTE_ORDER_BIG_ENDIAN;
-
-  /* File-level settings come before the first packet and apply to the whole file, so there is no
-   * "from this point on" subtlety to reason about. */
-  while (at_setting(&parser)) {
-    bool written = false;
-    if (!parse_setting_body(&parser, &file_bit_order, &written, &file_byte_order, &written, NULL, NULL)) {
-      recover_to_field_end(&parser);
-      continue;
-    }
-    if (!expect(&parser, TOK_SEMICOLON)) {
+  /* A bare attribute is the file default and may only appear here, before the first packet. Anywhere
+   * else it would have to mean either "from this point on" or "the next declaration only", and having
+   * one spelling mean both depending on nesting is how a reader stops being able to tell. */
+  Attributes file_attrs = {
+      .bit_order = BIT_ORDER_MSB_FIRST,
+      .byte_order = BYTE_ORDER_BIG_ENDIAN,
+  };
+  while (check(&parser, TOK_AT)) {
+    if (!parse_attribute(&parser, &file_attrs)) {
       recover_to_field_end(&parser);
     }
   }
 
   while (!check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) && !parser.out_of_memory) {
+    parser.panicking = false;
+
+    Attributes packet_attrs = inherited(file_attrs);
+    if (check(&parser, TOK_LBRACKET)) {
+      if (!parse_attribute_group(&parser, &packet_attrs)) {
+        recover_to_packet_end(&parser);
+        continue;
+      }
+    }
+
     if (!check(&parser, TOK_PKT)) {
-      error_at_current(&parser, "'pkt' or end of file");
+      if (check(&parser, TOK_AT)) {
+        diag_add(parser.diags, parser.current.line, parser.current.column, 0,
+                 "a bare attribute may only appear before the first packet; to set one for a packet, "
+                 "put it in a '[ ... ]' group in front of 'pkt'");
+      } else {
+        error_at_current(&parser, "'pkt' or end of file");
+      }
       recover_to_packet_end(&parser);
       continue;
     }
@@ -351,23 +513,12 @@ AstFile *parse(const char *source, DiagList *diags) {
       continue;
     }
 
-    BitOrder packet_bit_order = file_bit_order;
-    ByteOrder packet_byte_order = file_byte_order;
-    while (at_setting(&parser)) {
-      bool written = false;
-      if (!parse_setting_body(&parser, &packet_bit_order, &written, &packet_byte_order, &written, NULL,
-                              NULL)) {
-        recover_to_field_end(&parser);
-        continue;
-      }
-      if (!expect(&parser, TOK_SEMICOLON)) {
-        recover_to_field_end(&parser);
-      }
-    }
-
+    /* The group in front of 'pkt' is the packet's default, so its fields inherit it rather than
+     * having written it. */
+    Attributes body_attrs = inherited(packet_attrs);
     while (!check(&parser, TOK_RBRACE) && !check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) &&
            !parser.out_of_memory) {
-      parse_field(&parser, packet, packet_bit_order, packet_byte_order);
+      parse_declaration(&parser, packet, body_attrs);
     }
 
     if (!expect(&parser, TOK_RBRACE)) {

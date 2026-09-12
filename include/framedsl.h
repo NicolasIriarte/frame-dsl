@@ -65,7 +65,9 @@ typedef struct {
   bool variable;
   /* The width in bits, when it is not variable. */
   uint64_t width_bits;
-  /* The declared bound in bits, when it is. */
+  /* The reserved slot in bits, when it is. The definition writes this in bytes -- `data[128]:` --
+   * because it sizes storage rather than a position in a frame; it is reported here in bits so that
+   * every number on this struct shares one unit. */
   uint64_t max_bits;
   /* What the arena reserves: the width, or the bound. */
   uint64_t reserved_bits;

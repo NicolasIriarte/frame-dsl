@@ -1,10 +1,10 @@
-// REJECTED: check 12 -- two packets that cannot be told apart.
-//
-// Both have a discriminator, and both pin bits 0..7 to 0xAA. Nothing contradicts, so a frame
-// starting 0xAA satisfies both and the decoder would have to guess. The differing field widths
-// after it are not a discriminator: a decoder does not know the length before it knows the packet.
-//
-// The error should name the pair, not just say a file was ambiguous.
+# REJECTED: check 12 -- two packets that cannot be told apart.
+#
+# Both have a discriminator, and both pin bits 0..7 to 0xAA. Nothing contradicts, so a frame
+# starting 0xAA satisfies both and the decoder would have to guess. The differing field widths
+# after it are not a discriminator: a decoder does not know the length before it knows the packet.
+#
+# The error should name the pair, not just say a file was ambiguous.
 
 pkt TM_ALPHA {
   hdr: 8 = 0xAA;

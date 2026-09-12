@@ -30,11 +30,12 @@ static int us1_tc01_recognises_every_punctuation_token(const TestArguments *args
   DiagList diags;
   diag_init(&diags);
   Token tokens[16];
-  size_t count = tokenise(": ; { } ( ) = + - * /", tokens, 16, &diags);
+  size_t count = tokenise("@ : ; { } [ ] ( ) = + - * /", tokens, 16, &diags);
 
-  const TokenKind expected[] = {TOK_COLON, TOK_SEMICOLON, TOK_LBRACE, TOK_RBRACE,
-                                TOK_LPAREN, TOK_RPAREN,   TOK_EQUALS, TOK_PLUS,
-                                TOK_MINUS,  TOK_STAR,     TOK_SLASH};
+  const TokenKind expected[] = {TOK_AT,     TOK_COLON,    TOK_SEMICOLON, TOK_LBRACE,
+                                TOK_RBRACE, TOK_LBRACKET, TOK_RBRACKET,  TOK_LPAREN,
+                                TOK_RPAREN, TOK_EQUALS,   TOK_PLUS,      TOK_MINUS,
+                                TOK_STAR,   TOK_SLASH};
   size_t expected_count = sizeof(expected) / sizeof(*expected);
 
   int failure = 0;
@@ -59,12 +60,11 @@ static int us1_tc02_recognises_every_keyword(const TestArguments *args) {
   DiagList diags;
   diag_init(&diags);
   Token tokens[16];
-  size_t count = tokenise("pkt valof max bit_order msb_first lsb_first byte_order big_endian little_endian",
-                          tokens, 16, &diags);
+  /* Three, and only three. The attribute names live behind '@' and are ordinary identifiers the
+   * parser looks up, which is what lets a field be called `bit_order`. */
+  size_t count = tokenise("pkt valof block", tokens, 16, &diags);
 
-  const TokenKind expected[] = {TOK_PKT,        TOK_VALOF,      TOK_MAX,
-                                TOK_BIT_ORDER,  TOK_MSB_FIRST,  TOK_LSB_FIRST,
-                                TOK_BYTE_ORDER, TOK_BIG_ENDIAN, TOK_LITTLE_ENDIAN};
+  const TokenKind expected[] = {TOK_PKT, TOK_VALOF, TOK_BLOCK};
   size_t expected_count = sizeof(expected) / sizeof(*expected);
 
   int failure = 0;
@@ -124,18 +124,18 @@ static int us1_tc04_reads_all_three_integer_bases(const TestArguments *args) {
   return failure;
 }
 
-static int us1_tc05_discards_both_comment_forms(const TestArguments *args) {
+static int us1_tc05_discards_comments(const TestArguments *args) {
   (void)args;
 
   DiagList diags;
   diag_init(&diags);
   Token tokens[8];
-  size_t count = tokenise("1 // a line comment\n2 /* a block\n comment */ 3", tokens, 8, &diags);
+  size_t count = tokenise("1 # a comment\n2 # another, to end of file", tokens, 8, &diags);
 
   int failure = 0;
-  if (count != 3 || diags.count != 0) {
+  if (count != 2 || diags.count != 0) {
     failure = __LINE__;
-  } else if (tokens[0].value != 1 || tokens[1].value != 2 || tokens[2].value != 3) {
+  } else if (tokens[0].value != 1 || tokens[1].value != 2) {
     failure = __LINE__;
   }
 
@@ -143,20 +143,20 @@ static int us1_tc05_discards_both_comment_forms(const TestArguments *args) {
   return failure;
 }
 
-/* The line reported is the one that has to be edited: where the comment opened, not where the file
- * happened to end. */
-static int us1_tc06_unterminated_block_comment_names_its_opening_line(const TestArguments *args) {
+/* A comment ends at the newline and nowhere else. There is no block form, so nothing can be left
+ * open, and a '#' cannot swallow the rest of a file by accident. */
+static int us1_tc06_a_comment_ends_at_the_line(const TestArguments *args) {
   (void)args;
 
   DiagList diags;
   diag_init(&diags);
   Token tokens[8];
-  tokenise("1\n2\n/* opened here\nand never closed\n", tokens, 8, &diags);
+  size_t count = tokenise("1 # /* not a block comment\n2\n3", tokens, 8, &diags);
 
   int failure = 0;
-  if (diags.count != 1) {
+  if (count != 3 || diags.count != 0) {
     failure = __LINE__;
-  } else if (diags.items[0].line != 3 || diags.items[0].column != 1) {
+  } else if (tokens[2].value != 3) {
     failure = __LINE__;
   }
 
@@ -191,7 +191,7 @@ static int us1_tc08_rejects_a_stray_character(const TestArguments *args) {
   DiagList diags;
   diag_init(&diags);
   Token tokens[8];
-  tokenise("a @ b", tokens, 8, &diags);
+  tokenise("a $ b", tokens, 8, &diags); /* '@' used to be stray; it is the attribute sigil now */
 
   int failure = diags.count == 1 ? 0 : __LINE__;
   diag_free(&diags);
@@ -232,9 +232,8 @@ void register_user_story1(void) {
   ADD_TEST_CASE(us1_tc02_recognises_every_keyword, "every keyword is recognised", false);
   ADD_TEST_CASE(us1_tc03_keywords_are_not_identifiers, "a keyword is reserved, a longer word is not", false);
   ADD_TEST_CASE(us1_tc04_reads_all_three_integer_bases, "decimal, hex and binary integers read alike", false);
-  ADD_TEST_CASE(us1_tc05_discards_both_comment_forms, "line and block comments are discarded", false);
-  ADD_TEST_CASE(us1_tc06_unterminated_block_comment_names_its_opening_line,
-                "an unterminated block comment reports where it opened", false);
+  ADD_TEST_CASE(us1_tc05_discards_comments, "a '#' comment is discarded", false);
+  ADD_TEST_CASE(us1_tc06_a_comment_ends_at_the_line, "a comment ends at the newline", false);
   ADD_TEST_CASE(us1_tc07_tracks_line_and_column, "tokens carry their line and column", false);
   ADD_TEST_CASE(us1_tc08_rejects_a_stray_character, "a stray character is reported", false);
   ADD_TEST_CASE(us1_tc09_rejects_a_number_run_into_a_name, "a number running into a name is an error", false);

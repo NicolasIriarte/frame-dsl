@@ -11,21 +11,20 @@ typedef enum {
   TOK_IDENT,
   TOK_INT,
 
-  /* Keywords. Reserved: none of these can be an identifier. */
+  /* Keywords. Reserved: none of these can be an identifier. The setting names are deliberately not
+   * here -- they live behind '@' and are ordinary identifiers the parser looks up in a table, so
+   * nothing stops a field being called `bit_order`. */
   TOK_PKT,
   TOK_VALOF,
-  TOK_MAX,
-  TOK_BIT_ORDER,
-  TOK_MSB_FIRST,
-  TOK_LSB_FIRST,
-  TOK_BYTE_ORDER,
-  TOK_BIG_ENDIAN,
-  TOK_LITTLE_ENDIAN,
+  TOK_BLOCK,
 
+  TOK_AT,
   TOK_COLON,
   TOK_SEMICOLON,
   TOK_LBRACE,
   TOK_RBRACE,
+  TOK_LBRACKET,
+  TOK_RBRACKET,
   TOK_LPAREN,
   TOK_RPAREN,
   TOK_EQUALS,

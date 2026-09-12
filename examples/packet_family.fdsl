@@ -1,15 +1,16 @@
-// Several packets in one file, which is the case the distinguishability check exists for.
-//
-// All three pin the same 8 bits, at the same offset, to different values. That is what makes them
-// pairwise distinguishable: it is not enough for each packet to *have* a discriminator, the
-// discriminators have to contradict each other. See docs/design.md, "Deciding distinguishability".
-//
-// This is also why examples/tm_datagram.fdsl and examples/can_frame.fdsl are separate files: one
-// pins bits 0..7 and the other pins bits 12..13, so they constrain disjoint bits and a frame could
-// satisfy both. Put them together and the file is rejected.
+# Several packets in one file, which is the case the distinguishability check exists for.
+#
+# All three pin the same 8 bits, at the same offset, to different values. That is what makes them
+# pairwise distinguishable: it is not enough for each packet to *have* a discriminator, the
+# discriminators have to contradict each other. See docs/design.md, "Deciding distinguishability".
+#
+# This is also why TC_PING and examples/ccsds_space_packet.fdsl are separate files. TC_PING pins
+# bits 0..7 to 0x01 and the space packet pins bits 0..3 to 0000 -- and the first four bits of 0x01
+# are 0000 too. They agree wherever they overlap, so a frame could satisfy both and the decoder
+# would have no basis to choose. Put them together and the file is rejected.
 
-bit_order  msb_first;
-byte_order big_endian;
+@bit_order:  msb_first;
+@byte_order: big_endian;
 
 pkt TC_PING {
   type: 8 = 0x01;
@@ -25,6 +26,6 @@ pkt TC_SET_MODE {
 pkt TC_PAYLOAD {
   type: 8 = 0x03;
   seq: 16;
-  len: 16;                          // counts payload bytes
-  body: valof(len) * 8 max 2048;
+  len: 16;                           # counts payload bytes
+  body[256]: valof(len) * 8;
 };

@@ -125,7 +125,7 @@ a zeroed struct that looks like a real field.
 | `name` | as written in the definition |
 | `variable` | width depends on another field, so it is only known per frame |
 | `width_bits` | the width, when it is not variable (`0` when it is) |
-| `max_bits` | the declared bound, when it is (`0` when it is not) |
+| `max_bits` | the reserved slot **in bits**, when it is (`0` when it is not). The definition writes it in bytes, as `data[128]:` |
 | `reserved_bits` | what the arena reserves: the width, or the bound |
 | `offset_known` | false for every field after a variable-width one |
 | `offset_bits` | where it starts, when that is known |

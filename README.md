@@ -24,11 +24,13 @@ When a frame changes, the definition file changes. The program does not get rebu
 A definition file declares packets. Widths are in bits, everywhere:
 
 ```
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
 pkt TM_DATAGRAM_02 {
-  some_header: 8 = 0xAA;          // a fixed value: this is what identifies the packet
-  len:         32;                // counts payload bytes
-  data:        valof(len) * 8     // ...so the conversion to bits is written out
-               max 1024;          // and bounded, so the field gets a fixed arena slot
+  some_header: 8 = 0xAA;        # a fixed value: this is what identifies the packet
+  len:         32;              # counts payload bytes
+  data[128]:   valof(len) * 8;  # 128 bytes of arena; the width is worked out per frame
   crc:         16;
 };
 ```
@@ -38,9 +40,10 @@ Three things that are load-bearing rather than incidental:
 - **Every width is in bits**, and `valof(x)` is the referenced field's raw value. Length fields
   rarely count exactly what follows them, so the arithmetic is written at the use site instead of
   being inferred from a convention.
-- **A `valof()` field must declare a `max`.** The arena reserves the bound up front, so encoding and
-  decoding never allocate, and a frame claiming more than the bound is an error rather than a
-  surprise.
+- **A `valof()` field must reserve a slot**, written `name[bytes]` on the field's name. The arena
+  sets that much aside up front, so encoding and decoding never allocate, and a frame claiming more
+  than the reservation is an error rather than a surprise. It is the one number in the language
+  written in bytes: it sizes memory, not a position in a frame.
 - **A decodable packet must carry at least one fixed-value field.** Definitions whose packets cannot
   be told apart are rejected when the file loads, not when a frame arrives on a live link.
 

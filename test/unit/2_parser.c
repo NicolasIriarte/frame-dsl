@@ -92,11 +92,11 @@ static int us2_tc05_parses_a_whole_packet(const TestArguments *args) {
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("bit_order msb_first;\n"
+  AstFile *file = parse("@bit_order: msb_first;\n"
                         "pkt TM {\n"
                         "  hdr: 8 = 0xAA;\n"
                         "  len: 32;\n"
-                        "  data: valof(len) * 8 max 1024;\n"
+                        "  data[128]: valof(len) * 8;\n"
                         "};\n",
                         &diags);
 
@@ -109,10 +109,10 @@ static int us2_tc05_parses_a_whole_packet(const TestArguments *args) {
       failure = __LINE__;
     } else if (!packet->fields[0].has_fixed || packet->fields[0].fixed != 0xAA) {
       failure = __LINE__;
-    } else if (packet->fields[1].has_fixed || packet->fields[1].max != NULL) {
+    } else if (packet->fields[1].has_fixed || packet->fields[1].reserve != NULL) {
       failure = __LINE__;
-    } else if (packet->fields[2].max == NULL || eval(packet->fields[2].max) != 1024) {
-      failure = __LINE__;
+    } else if (packet->fields[2].reserve == NULL || eval(packet->fields[2].reserve) != 128) {
+      failure = __LINE__; /* the reservation is in bytes, as written */
     } else if (packet->fields[2].width == NULL || packet->fields[2].width->kind != EXPR_BINARY) {
       failure = __LINE__;
     } else if (strcmp(packet->fields[2].width->lhs->reference, "len") != 0) {
@@ -131,13 +131,13 @@ static int us2_tc06_resolves_settings_innermost_first(const TestArguments *args)
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("bit_order msb_first;\n"
-                        "byte_order big_endian;\n"
+  AstFile *file = parse("@bit_order: msb_first;\n"
+                        "@byte_order: big_endian;\n"
+                        "[ @byte_order: little_endian; ]\n"
                         "pkt TM {\n"
-                        "  byte_order little_endian;\n"
                         "  a: 32;\n"
-                        "  b: 32 byte_order big_endian;\n"
-                        "  c: 4 bit_order lsb_first;\n"
+                        "  [ @byte_order: big_endian; ] b: 32;\n"
+                        "  [ @bit_order: lsb_first; ] c: 4;\n"
                         "};\n",
                         &diags);
 
@@ -209,12 +209,34 @@ static int us2_tc09_rejects_a_reserved_word_as_a_field_name(const TestArguments 
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("pkt TM { max: 8; };", &diags);
+  AstFile *file = parse("pkt TM { valof: 8; };", &diags);
 
   int failure = 0;
   if (diags.count < 1) {
     failure = __LINE__;
   } else if (strstr(diags.items[0].message, "field name") == NULL) {
+    failure = __LINE__;
+  }
+
+  ast_free(file);
+  diag_free(&diags);
+  return failure;
+}
+
+/* `max` stopped being reserved when the bound moved into brackets. Pinned because the fixture above
+ * used to be `max: 8;`, and a word quietly staying reserved after nothing needs it is the kind of
+ * thing nobody notices until they name a field after it. */
+static int us2_tc11_max_is_no_longer_a_reserved_word(const TestArguments *args) {
+  (void)args;
+
+  DiagList diags;
+  diag_init(&diags);
+  AstFile *file = parse("pkt TM { hdr: 8 = 0xAA; max: 8; };", &diags);
+
+  int failure = 0;
+  if (diags.count != 0 || file == NULL || file->packet_count != 1) {
+    failure = __LINE__;
+  } else if (strcmp(file->packets[0].fields[1].name, "max") != 0) {
     failure = __LINE__;
   }
 
@@ -254,10 +276,12 @@ void register_user_story2(void) {
   ADD_TEST_CASE(us2_tc02_subtraction_is_left_associative, "8 - 2 - 3 parses as 3", false);
   ADD_TEST_CASE(us2_tc03_parentheses_override_precedence, "(1 + 2) * 3 parses as 9", false);
   ADD_TEST_CASE(us2_tc04_division_binds_like_multiplication, "2 + 12 / 3 / 2 parses as 4", false);
-  ADD_TEST_CASE(us2_tc05_parses_a_whole_packet, "a packet's fields, fixed value and max all survive", false);
+  ADD_TEST_CASE(us2_tc05_parses_a_whole_packet, "a packet's fields, fixed value and reservation all survive", false);
   ADD_TEST_CASE(us2_tc06_resolves_settings_innermost_first, "settings resolve field > packet > file", false);
   ADD_TEST_CASE(us2_tc07_syntax_error_reports_line_and_column, "a syntax error carries its position", false);
   ADD_TEST_CASE(us2_tc08_reports_more_than_the_first_error, "several errors are reported in one run", false);
+  ADD_TEST_CASE(us2_tc11_max_is_no_longer_a_reserved_word,
+                "'max' is an ordinary name now the bound is in brackets", false);
   ADD_TEST_CASE(us2_tc09_rejects_a_reserved_word_as_a_field_name, "a reserved word is not a field name", false);
   ADD_TEST_CASE(us2_tc10_diagnostics_come_back_in_file_order, "diagnostics are ordered by position", false);
 }

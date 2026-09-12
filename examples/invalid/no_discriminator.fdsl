@@ -1,14 +1,18 @@
-// REJECTED: check 11 -- every packet must have at least one fixed-value field.
-//
-// Nothing here identifies the packet, so a decoder handed a buffer has no way to conclude it is
-// this one. This is TM_DATAGRAM_01 exactly as the original sketch wrote it.
+# REJECTED: check 11 -- every packet must have at least one fixed-value field.
+#
+# Nothing here identifies the packet, so a decoder handed a buffer has no way to conclude it is this
+# one. It is the CCSDS primary header from ../ccsds_space_packet.fdsl with the two fixed values
+# dropped: the standard pins `version` to 000 and, for telemetry, `type` to 0, and without them the
+# same field list stops being decodable.
+#
+# It is 48 bits, deliberately: a fixture should fail the one check it is named for and no other.
 
-pkt TM_DATAGRAM_01 {
-  base: 11;
-  rtr: 1;
-  ide: 1;
-  r0: 1;
-  dlc: 4;
-  data_field: 8;
-  seq: 15;
+pkt TM_UNIDENTIFIED {
+  version:       3;
+  type:          1;
+  sec_hdr_flag:  1;
+  apid:         11;
+  seq_flags:     2;
+  seq_count:    14;
+  data_length:  16;
 };

@@ -41,7 +41,13 @@ typedef struct {
   int column;
 
   Expr *width;
-  Expr *max; /* NULL when absent */
+
+  /* The arena reservation written as `name[bytes]:`, or NULL when there is none. In BYTES, unlike
+   * every other number in the language, because it is storage rather than layout -- see
+   * manual/language.md. check_file() converts it to bits once and nothing downstream sees bytes. */
+  Expr *reserve;
+  int reserve_line;
+  int reserve_column;
 
   bool has_fixed;
   uint64_t fixed;
