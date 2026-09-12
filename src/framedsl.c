@@ -5,13 +5,9 @@
 #include <string.h>
 
 #include "check.h"
+#include "definition.h"
 #include "diag.h"
 #include "parser.h"
-
-struct FramedslDefinition {
-  AstFile *ast;
-  Layout *layout;
-};
 
 struct FramedslResult {
   FramedslStatus status;
@@ -97,6 +93,7 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
   } else {
     result->definition.ast = ast;
     result->definition.layout = layout;
+    result->definition.tag = definition_next_tag();
     result->have_definition = true;
     result->status = FRAMEDSL_OK;
   }

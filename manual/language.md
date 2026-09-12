@@ -107,11 +107,11 @@ count: 8 = 170;       # decimal
 
 ### Scalars and bit strings
 
-A field of **64 bits or fewer** is a scalar: an unsigned integer, read and written with the scalar
-API (`framedsl_set_u32`, `framedsl_get_u32`, and so on).
+A field of **64 bits or fewer** is a scalar: an unsigned integer, read and written with
+`framedsl_set_u64()` and `framedsl_get_u64()`.
 
 A field **wider than 64 bits** -- including every `valof()`-sized field -- is a bit string, read and
-written as bytes with the array API (`framedsl_set_arr`, `framedsl_get_arr`).
+written as bytes with `framedsl_set_bytes()` and `framedsl_get_bytes()`.
 
 The rule is the width alone. Nothing else has to be declared.
 

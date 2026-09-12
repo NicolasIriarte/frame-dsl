@@ -8,16 +8,21 @@ which field gives another field's length -- is data, not code. A program links t
 loads a definition file at startup, and addresses fields by name:
 
 ```c
-framedsl_set_u32(ctx, "TM_DATAGRAM_02.len", 2);
-framedsl_set_arr(ctx, "TM_DATAGRAM_02.data", data, sizeof(data));
+FramedslFieldId len, payload;
+framedsl_find(definition, "TM_DATAGRAM_02.len",  &len);
+framedsl_find(definition, "TM_DATAGRAM_02.data", &payload);
+
+framedsl_set_u64(frame, len, 2);
+framedsl_set_bytes(frame, payload, data, sizeof(data));
 ```
 
 When a frame changes, the definition file changes. The program does not get rebuilt.
 
-> **Status: early.** The language is being specified now, and the runtime does not exist yet. What
-> builds today is a skeleton -- a binary that logs a line, and a test runner with one placeholder
-> story in it. See [issue tracker](http://100.125.208.18:3000/nico/Frame-DSL/issues) for what is
-> actually in flight. Nothing here is stable, and nothing is published.
+> **Status: early.** A definition file loads, is checked, and can be asked what is in it; a frame
+> holds a value for every field and hands it back. What does not exist yet is the part that turns
+> those values into bytes -- the bytecode, the encoder and the decoder. See the
+> [issue tracker](http://100.125.208.18:3000/nico/Frame-DSL/issues) for what is in flight. Nothing
+> here is stable, and nothing is published.
 
 ## What it looks like
 

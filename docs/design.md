@@ -40,7 +40,17 @@ user ever sees; the definition file is the only input.
 
 ## The arena
 
-One allocation at load time, holding a dedicated slot for every field of every packet.
+One allocation, holding a dedicated slot for every field of every packet.
+
+It belongs to a **frame** rather than to the definition, so the allocation happens at
+`framedsl_frame_new()` rather than at load. That keeps the definition const and shareable -- two
+frames of one protocol can be in flight at once, and a decoder does not have to wait for an encoder
+-- while changing nothing about the property that matters: once a frame exists, nothing allocates
+again for as long as it lives.
+
+The frame *is* the allocation. Its header, the slot descriptors and the bytes those slots point at
+are three regions of one block, carved up at creation. Three separate mallocs would have behaved
+identically; one means a reader checking the no-allocation claim has a single call to look at.
 
 - A field of **64 bits or fewer** gets a `uint64_t`-sized slot and is a scalar.
 - A field **wider than 64 bits** gets a byte-aligned slot of `ceil(width / 8)` bytes.
@@ -66,6 +76,16 @@ concern of the calling program.
 
 Sizing is worst case by construction: a packet's arena cost is fixed when the file loads, so a
 definition that would not fit is rejected then, with a number, rather than discovered later.
+
+**A scalar occupies a `uint64_t` whatever its declared width.** An 11-bit field costs eight bytes in
+the arena rather than two. That is deliberate: reading one is then a load rather than a masked
+assembly of bytes, and the arena is sized once at startup against a budget nobody is paying per
+frame. Packing them would trade the hot path for memory that was never scarce.
+
+**There is no "unset".** The arena starts zeroed and a slot keeps whatever was last written to it, so
+a field nobody touched encodes as zero. Tracking which fields a caller had set would cost a bit per
+field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
+reasonably meant to leave at zero.
 
 ## Layout, bit ordering and endianness
 
@@ -267,12 +287,5 @@ an engineering value alongside the raw one. It means the language gains a per-fi
 does not mean anything about the layout rules changes, which is the property worth preserving now.
 
 ## Deliberately unsettled
-
-**The C API.** The sketch in issue #2 -- `framedsl_set_u32("PKT.field", v)` with errors accumulated
-by `|=` -- does not survive scrutiny: it has no context handle, so there can only ever be one loaded
-definition; it looks a field up by string on every call; and `|=` over error codes turns two
-different failures into a third value that means neither. It needs a context handle, field handles
-resolved once, a caller-owned encode buffer, and an error mechanism that reports *which* call failed.
-That is a runtime concern rather than a language one, and it has its own issue.
 
 **Multiple definition files**, includes, and namespacing. One file, one load, for now.
