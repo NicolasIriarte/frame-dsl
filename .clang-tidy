@@ -1,0 +1,63 @@
+---
+Checks: "
+         bugprone-suspicious-semicolon,
+         bugprone-suspicious-string-compare,
+         # modernize-use-nullptr,
+         readability-identifier-naming,
+         readability-suspicious-call-argument,
+         readability-braces-around-statements,
+         cppcoreguidelines-no-malloc,
+"
+HeaderFilterRegex: 'include/*'
+WarningsAsErrors: '*'
+CheckOptions:
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+#   - key: readability-identifier-naming.ClassCase
+#     value: CamelCase
+
+#   - key: readability-identifier-naming.GlobalFunctionCase
+#     value: lower_case
+
+#   - key: readability-identifier-naming.FunctionCase
+#     value: lower_case
+
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+
+#   - key: readability-identifier-naming.LocalConstexprVariableCase
+#     value: UPPER_CASE
+
+#   - key: readability-identifier-naming.GlobalConstexprVariableCase
+#     value: UPPER_CASE
+  - key: readability-identifier-naming.StaticConstantCase
+    value: UPPER_CASE
+
+#   - key: readability-identifier-naming.GlobalVariableCase
+#     value: lower_case
+
+#   - key: readability-identifier-naming.NamespaceCase
+#     value: CamelCase
+
+#   - key: readability-identifier-naming.AbstractClassPrefix
+#     value: I
+
+#   - key: readability-identifier-naming.PublicMemberCase
+#     value: lower_case
+
+#   - key: readability-identifier-naming.PrivateMemberCase
+#     value: lower_case
+#   - key: readability-identifier-naming.PrivateMemberPrefix
+#     value: _
+
+#   - key: readability-identifier-naming.PrivateMethodCase
+#     value: CamelCase
+#   - key: readability-identifier-naming.PrivateMethodPrefix
+#     value: _
+
+#   - key: readability-identifier-naming.ClassConstexprCase
+#     value: UPPER_CASE
+
+#   - key: readability-identifier-naming.ConstexprVariableCase
+#     value: UPPER_CASE
+
