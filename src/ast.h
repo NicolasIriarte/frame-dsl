@@ -27,7 +27,7 @@ typedef struct Expr {
   int line;
   int column;
 
-  uint64_t literal;      /* EXPR_LITERAL */
+  uint64_t literal; /* EXPR_LITERAL */
   const char *reference; /* EXPR_VALOF */
 
   char op; /* EXPR_BINARY: one of + - * / */

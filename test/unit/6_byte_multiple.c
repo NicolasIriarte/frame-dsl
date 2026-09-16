@@ -38,7 +38,9 @@ static bool rejected_by(const char *source, int wanted, char *message, size_t me
   return found;
 }
 
-static bool rejects(const char *source) { return rejected_by(source, 13, NULL, 0); }
+static bool rejects(const char *source) {
+  return rejected_by(source, 13, NULL, 0);
+}
 
 /* Loads cleanly: no diagnostic at all, not merely no check-13 diagnostic. A source that trips some
  * other check while under test for this one is a test that stopped measuring what it names. */
@@ -80,9 +82,10 @@ static int us6_tc02_rejects_a_packet_that_is_not(const TestArguments *args) {
 /* The author should not have to add up their own fields to learn how far off they are. */
 static int us6_tc03_reports_the_total_for_a_constant_width_packet(const TestArguments *args) {
   (void)args;
-  char message[512] = {0};
-  if (!rejected_by("pkt A { base: 11 = 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };", 13,
-                   message, sizeof(message))) {
+  char message[512] = { 0 };
+  if (!rejected_by(
+        "pkt A { base: 11 = 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };", 13, message, sizeof(message)
+      )) {
     FORCE_FAILURE();
   }
   if (strstr(message, "41 bits") == NULL) {
@@ -169,25 +172,29 @@ static int us6_tc11_does_not_pile_on_after_a_bad_width(const TestArguments *args
 
 void register_user_story6(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us6_tc01_accepts_a_packet_that_is_a_whole_number_of_bytes,
-                "sub-byte fields summing to a byte multiple are accepted", false);
-  ADD_TEST_CASE(us6_tc02_rejects_a_packet_that_is_not,
-                "a packet that is not a byte multiple is rejected", false);
-  ADD_TEST_CASE(us6_tc03_reports_the_total_for_a_constant_width_packet,
-                "the diagnostic reports the packet's total width", false);
+  ADD_TEST_CASE(
+    us6_tc01_accepts_a_packet_that_is_a_whole_number_of_bytes,
+    "sub-byte fields summing to a byte multiple are accepted",
+    false
+  );
+  ADD_TEST_CASE(us6_tc02_rejects_a_packet_that_is_not, "a packet that is not a byte multiple is rejected", false);
+  ADD_TEST_CASE(
+    us6_tc03_reports_the_total_for_a_constant_width_packet, "the diagnostic reports the packet's total width", false
+  );
   ADD_TEST_CASE(us6_tc04_accepts_a_valof_width_in_bytes, "valof(n) * 8 is accepted", false);
-  ADD_TEST_CASE(us6_tc05_accepts_a_product_whose_other_factor_is_unknown,
-                "(valof(n) + 1) * 8 is accepted", false);
-  ADD_TEST_CASE(us6_tc06_accepts_a_byte_multiple_built_by_arithmetic,
-                "valof(n) * 16 - 32 is accepted", false);
-  ADD_TEST_CASE(us6_tc07_rejects_a_valof_width_that_is_not_a_byte_multiple,
-                "valof(n) * 3 is rejected", false);
-  ADD_TEST_CASE(us6_tc08_rejects_a_byte_multiple_it_cannot_see,
-                "the analysis is conservative, deliberately", false);
-  ADD_TEST_CASE(us6_tc09_accepts_a_product_with_a_byte_multiple_factor,
-                "a byte-multiple factor anywhere in a product is enough", false);
-  ADD_TEST_CASE(us6_tc10_rejects_an_odd_constant_part,
-                "a byte-sized variable field does not excuse an odd constant part", false);
-  ADD_TEST_CASE(us6_tc11_does_not_pile_on_after_a_bad_width,
-                "a width that failed check 4 is not reported again as check 13", false);
+  ADD_TEST_CASE(us6_tc05_accepts_a_product_whose_other_factor_is_unknown, "(valof(n) + 1) * 8 is accepted", false);
+  ADD_TEST_CASE(us6_tc06_accepts_a_byte_multiple_built_by_arithmetic, "valof(n) * 16 - 32 is accepted", false);
+  ADD_TEST_CASE(us6_tc07_rejects_a_valof_width_that_is_not_a_byte_multiple, "valof(n) * 3 is rejected", false);
+  ADD_TEST_CASE(us6_tc08_rejects_a_byte_multiple_it_cannot_see, "the analysis is conservative, deliberately", false);
+  ADD_TEST_CASE(
+    us6_tc09_accepts_a_product_with_a_byte_multiple_factor,
+    "a byte-multiple factor anywhere in a product is enough",
+    false
+  );
+  ADD_TEST_CASE(
+    us6_tc10_rejects_an_odd_constant_part, "a byte-sized variable field does not excuse an odd constant part", false
+  );
+  ADD_TEST_CASE(
+    us6_tc11_does_not_pile_on_after_a_bad_width, "a width that failed check 4 is not reported again as check 13", false
+  );
 }

@@ -36,8 +36,15 @@ static void error_at_current(Parser *parser, const char *expected) {
     return;
   }
   parser->panicking = true;
-  diag_add(parser->diags, parser->current.line, parser->current.column, 0, "expected %s, found %s",
-           expected, token_describe(&parser->current));
+  diag_add(
+    parser->diags,
+    parser->current.line,
+    parser->current.column,
+    0,
+    "expected %s, found %s",
+    expected,
+    token_describe(&parser->current)
+  );
 }
 
 static bool expect(Parser *parser, TokenKind kind) {
@@ -239,8 +246,15 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     } else if (word_is(&value, "lsb_first")) {
       attrs->bit_order = BIT_ORDER_LSB_FIRST;
     } else {
-      diag_add(parser->diags, value.line, value.column, 0,
-               "'bit_order' is 'msb_first' or 'lsb_first', not '%.*s'", (int)value.length, value.text);
+      diag_add(
+        parser->diags,
+        value.line,
+        value.column,
+        0,
+        "'bit_order' is 'msb_first' or 'lsb_first', not '%.*s'",
+        (int)value.length,
+        value.text
+      );
       ok = false;
     }
     attrs->bit_written = ok;
@@ -252,9 +266,15 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     } else if (word_is(&value, "little_endian")) {
       attrs->byte_order = BYTE_ORDER_LITTLE_ENDIAN;
     } else {
-      diag_add(parser->diags, value.line, value.column, 0,
-               "'byte_order' is 'big_endian' or 'little_endian', not '%.*s'", (int)value.length,
-               value.text);
+      diag_add(
+        parser->diags,
+        value.line,
+        value.column,
+        0,
+        "'byte_order' is 'big_endian' or 'little_endian', not '%.*s'",
+        (int)value.length,
+        value.text
+      );
       ok = false;
     }
     attrs->byte_written = ok;
@@ -262,9 +282,15 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     attrs->byte_line = line;
     attrs->byte_column = column;
   } else {
-    diag_add(parser->diags, name.line, name.column, 0,
-             "unknown attribute '%.*s'; this version knows 'bit_order' and 'byte_order'",
-             (int)name.length, name.text);
+    diag_add(
+      parser->diags,
+      name.line,
+      name.column,
+      0,
+      "unknown attribute '%.*s'; this version knows 'bit_order' and 'byte_order'",
+      (int)name.length,
+      name.text
+    );
     ok = false;
   }
 
@@ -282,8 +308,13 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
 
   if (check(parser, TOK_RBRACKET)) {
     advance(parser);
-    diag_add(parser->diags, line, column, 0,
-             "an attribute group must hold at least one attribute; an empty '[ ]' applies nothing");
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "an attribute group must hold at least one attribute; an empty '[ ]' applies nothing"
+    );
     return false;
   }
 
@@ -392,8 +423,8 @@ static void parse_block(Parser *parser, AstPacket *packet, Attributes attrs) {
   Attributes inner = inherited(attrs);
   size_t before = packet->field_count;
 
-  while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID) &&
-         !parser->out_of_memory) {
+  while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID)
+         && !parser->out_of_memory) {
     parse_declaration(parser, packet, inner);
   }
 
@@ -428,9 +459,14 @@ static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scop
 
   /* The likeliest mistake, so it gets a message about the rule rather than about the token. */
   if (check(parser, TOK_AT)) {
-    diag_add(parser->diags, parser->current.line, parser->current.column, 0,
-             "an attribute here belongs in a '[ ... ]' group before the declaration it applies to; a "
-             "bare '@' is a file default and may only appear before the first packet");
+    diag_add(
+      parser->diags,
+      parser->current.line,
+      parser->current.column,
+      0,
+      "an attribute here belongs in a '[ ... ]' group before the declaration it applies to; a "
+      "bare '@' is a file default and may only appear before the first packet"
+    );
     recover_to_field_end(parser);
     return;
   }
@@ -443,7 +479,7 @@ static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scop
 }
 
 AstFile *parse(const char *source, DiagList *diags) {
-  Parser parser = {0};
+  Parser parser = { 0 };
   parser.diags = diags;
   parser.file = ast_new();
   if (parser.file == NULL) {
@@ -458,8 +494,8 @@ AstFile *parse(const char *source, DiagList *diags) {
    * else it would have to mean either "from this point on" or "the next declaration only", and having
    * one spelling mean both depending on nesting is how a reader stops being able to tell. */
   Attributes file_attrs = {
-      .bit_order = BIT_ORDER_MSB_FIRST,
-      .byte_order = BYTE_ORDER_BIG_ENDIAN,
+    .bit_order = BIT_ORDER_MSB_FIRST,
+    .byte_order = BYTE_ORDER_BIG_ENDIAN,
   };
   while (check(&parser, TOK_AT)) {
     if (!parse_attribute(&parser, &file_attrs)) {
@@ -480,9 +516,14 @@ AstFile *parse(const char *source, DiagList *diags) {
 
     if (!check(&parser, TOK_PKT)) {
       if (check(&parser, TOK_AT)) {
-        diag_add(parser.diags, parser.current.line, parser.current.column, 0,
-                 "a bare attribute may only appear before the first packet; to set one for a packet, "
-                 "put it in a '[ ... ]' group in front of 'pkt'");
+        diag_add(
+          parser.diags,
+          parser.current.line,
+          parser.current.column,
+          0,
+          "a bare attribute may only appear before the first packet; to set one for a packet, "
+          "put it in a '[ ... ]' group in front of 'pkt'"
+        );
       } else {
         error_at_current(&parser, "'pkt' or end of file");
       }
@@ -522,8 +563,8 @@ AstFile *parse(const char *source, DiagList *diags) {
     /* The group in front of 'pkt' is the packet's default, so its fields inherit it rather than
      * having written it. */
     Attributes body_attrs = inherited(packet_attrs);
-    while (!check(&parser, TOK_RBRACE) && !check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) &&
-           !parser.out_of_memory) {
+    while (!check(&parser, TOK_RBRACE) && !check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID)
+           && !parser.out_of_memory) {
       parse_declaration(&parser, packet, body_attrs);
     }
 

@@ -177,11 +177,9 @@ size_t framedsl_field_count(const FramedslDefinition *definition, size_t packet)
 
 /* Copies the field's description into `*out`. False if either index is out of range, leaving `*out`
  * untouched. */
-bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t field,
-                    FramedslField *out);
+bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t field, FramedslField *out);
 
-bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, const char *name,
-                         size_t *index);
+bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, const char *name, size_t *index);
 
 /* ---- Frames ---------------------------------------------------------------------------------
  *
@@ -208,8 +206,7 @@ bool framedsl_find(const FramedslDefinition *definition, const char *dotted, Fra
 
 /* The same id `framedsl_find()` would return, for a field already located by index. False if either
  * index is out of range. */
-bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size_t field,
-                       FramedslFieldId *out);
+bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size_t field, FramedslFieldId *out);
 
 /* ---- What a frame holds ----------------------------------------------------------------------
  *
@@ -245,14 +242,18 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
  * A fixed-width field takes exactly its own byte count -- its size is not negotiable, and accepting
  * fewer bytes would leave the rest of the field holding whatever was there before. A variable-width
  * field takes anything up to what it reserved, and remembers how much arrived. */
-FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes,
-                                  size_t length);
+FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes, size_t length);
 
 /* Copies the bytes present into `out` and writes how many to `*length`. If `capacity` is too small,
  * returns FRAMEDSL_ERROR_BUFFER and writes the size needed to `*length` instead, so a caller can size
  * a buffer from the answer rather than from a guess. */
-FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id, uint8_t *out,
-                                  size_t capacity, size_t *length);
+FramedslStatus framedsl_get_bytes(
+  const FramedslFrame *frame,
+  FramedslFieldId id,
+  uint8_t *out,
+  size_t capacity,
+  size_t *length
+);
 
 /* Bytes the field currently holds: its fixed size, or how much the last framedsl_set_bytes() put
  * there. 0 if the id does not address a bit-string field this frame is holding -- it has no status to
@@ -283,8 +284,7 @@ size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id);
  * definition does not have, FRAMEDSL_ERROR_RANGE for a width that overflows, exceeds what the field
  * reserved, or disagrees with the bytes set on the field it sizes. `status` may be NULL if the reason
  * is not wanted. Nothing is allocated, and on failure nothing is left for the caller to read. */
-const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length,
-                               FramedslStatus *status);
+const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length, FramedslStatus *status);
 
 /* The same encode, writing into a buffer the caller already has rather than lending one.
  *
@@ -305,8 +305,13 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
  * in that case** -- not a partial frame, not the bytes that would have fit.
  *
  * Every other failure is framedsl_encode()'s, for the same reasons. Nothing is allocated. */
-FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet, uint8_t *buffer,
-                                    size_t capacity, size_t *length);
+FramedslStatus framedsl_encode_into(
+  FramedslFrame *frame,
+  const char *packet,
+  uint8_t *buffer,
+  size_t capacity,
+  size_t *length
+);
 
 /* Reads a frame out of `buffer` into `frame`, and returns the name of the packet it turned out to be.
  *
@@ -338,8 +343,13 @@ FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet, ui
  * frame holding nothing -- so every field reads back FRAMEDSL_ERROR_ABSENT rather than a value out of
  * a half-decoded frame. A caller who ignores the return value is told by the next call instead of
  * being handed a number. Nothing is read past `buffer + length`, and nothing is allocated. */
-const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t length,
-                            size_t *consumed, FramedslStatus *status);
+const char *framedsl_decode(
+  FramedslFrame *frame,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *consumed,
+  FramedslStatus *status
+);
 
 #ifdef __cplusplus
 }

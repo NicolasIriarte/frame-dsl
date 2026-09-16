@@ -195,8 +195,8 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
   }
   /* Collected from the file a second time, because the first call left its words in the shared
    * buffer this one is about to overwrite. */
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL ||
-      !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &values)) {
+  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+      || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &values)) {
     FORCE_FAILURE();
   }
 
@@ -204,8 +204,7 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
   for (size_t n = 0; n < names.count; ++n) {
     for (size_t v = 0; v < values.count; ++v) {
       char definition[256];
-      snprintf(definition, sizeof(definition), "@%s: %s;\npkt A { x: 8 = 1; };", names.words[n],
-               values.words[v]);
+      snprintf(definition, sizeof(definition), "@%s: %s;\npkt A { x: 8 = 1; };", names.words[n], values.words[v]);
       /* A value belongs to one attribute, so most pairings are rejected. What matters is that every
        * name pairs with at least one value -- a name nothing accepts is a name that has gone. */
       if (loads(definition)) {
@@ -235,14 +234,13 @@ static int us9_tc03_every_keyword_the_lexer_has_is_in_the_mode(const TestArgumen
   (void)args;
 
   WordList lexer;
-  if (slurp(SOURCE_DIR, "lexer.c") == NULL ||
-      !collect_table(source_buffer, "KEYWORDS[] = {", "};", &lexer)) {
+  if (slurp(SOURCE_DIR, "lexer.c") == NULL || !collect_table(source_buffer, "KEYWORDS[] = {", "};", &lexer)) {
     FORCE_FAILURE();
   }
 
   WordList mode;
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL ||
-      !collect_elisp_list(source_buffer, "frame-dsl-keywords", &mode)) {
+  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+      || !collect_elisp_list(source_buffer, "frame-dsl-keywords", &mode)) {
     FORCE_FAILURE();
   }
 
@@ -262,23 +260,21 @@ static int us9_tc04_every_attribute_the_parser_has_is_in_the_mode(const TestArgu
 
   WordList parser_names;
   WordList parser_values;
-  if (slurp(SOURCE_DIR, "parser.c") == NULL ||
-      !collect_word_is(source_buffer, "name", &parser_names)) {
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "name", &parser_names)) {
     FORCE_FAILURE();
   }
-  if (slurp(SOURCE_DIR, "parser.c") == NULL ||
-      !collect_word_is(source_buffer, "value", &parser_values)) {
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "value", &parser_values)) {
     FORCE_FAILURE();
   }
 
   WordList mode_names;
   WordList mode_values;
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL ||
-      !collect_elisp_list(source_buffer, "frame-dsl-attribute-names", &mode_names)) {
+  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+      || !collect_elisp_list(source_buffer, "frame-dsl-attribute-names", &mode_names)) {
     FORCE_FAILURE();
   }
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL ||
-      !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &mode_values)) {
+  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+      || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &mode_values)) {
     FORCE_FAILURE();
   }
 
@@ -304,19 +300,17 @@ static int us9_tc05_the_word_lists_are_actually_found(const TestArguments *args)
   (void)args;
 
   WordList list;
-  if (slurp(SOURCE_DIR, "lexer.c") == NULL ||
-      !collect_table(source_buffer, "KEYWORDS[] = {", "};", &list)) {
+  if (slurp(SOURCE_DIR, "lexer.c") == NULL || !collect_table(source_buffer, "KEYWORDS[] = {", "};", &list)) {
     return __LINE__;
   }
   /* The three the grammar names: pkt, valof, block. Asserted as a number so that a scan which
    * started matching the wrong thing is caught rather than absorbed. */
-  if (list.count != 3 || !list_has(&list, "pkt") || !list_has(&list, "valof") ||
-      !list_has(&list, "block")) {
+  if (list.count != 3 || !list_has(&list, "pkt") || !list_has(&list, "valof") || !list_has(&list, "block")) {
     return __LINE__;
   }
 
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL ||
-      !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &list)) {
+  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+      || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &list)) {
     return __LINE__;
   }
   if (list.count != 4 || !list_has(&list, "msb_first") || !list_has(&list, "little_endian")) {
@@ -332,14 +326,25 @@ static int us9_tc05_the_word_lists_are_actually_found(const TestArguments *args)
 
 void register_user_story9(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us9_tc01_every_word_the_mode_reserves_is_reserved,
-                "every word the mode calls a keyword is rejected as a field name", false);
-  ADD_TEST_CASE(us9_tc02_every_attribute_the_mode_knows_is_accepted,
-                "every attribute the mode knows is one the parser accepts", false);
-  ADD_TEST_CASE(us9_tc03_every_keyword_the_lexer_has_is_in_the_mode,
-                "a keyword added to the lexer and not to the mode is caught", false);
-  ADD_TEST_CASE(us9_tc04_every_attribute_the_parser_has_is_in_the_mode,
-                "an attribute added to the parser and not to the mode is caught", false);
-  ADD_TEST_CASE(us9_tc05_the_word_lists_are_actually_found,
-                "the scan finds the tables it claims to compare", true);
+  ADD_TEST_CASE(
+    us9_tc01_every_word_the_mode_reserves_is_reserved,
+    "every word the mode calls a keyword is rejected as a field name",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc02_every_attribute_the_mode_knows_is_accepted,
+    "every attribute the mode knows is one the parser accepts",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc03_every_keyword_the_lexer_has_is_in_the_mode,
+    "a keyword added to the lexer and not to the mode is caught",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc04_every_attribute_the_parser_has_is_in_the_mode,
+    "an attribute added to the parser and not to the mode is caught",
+    false
+  );
+  ADD_TEST_CASE(us9_tc05_the_word_lists_are_actually_found, "the scan finds the tables it claims to compare", true);
 }

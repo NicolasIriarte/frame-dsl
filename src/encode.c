@@ -33,8 +33,14 @@ static void write_bit(uint8_t *out, uint64_t index, bool set) {
  * `msb_first` puts the value's most significant bit at the earliest stream bit the field occupies;
  * `lsb_first` puts its least significant bit there. They are genuinely different placements rather
  * than one being the other read backwards, which is why both exist. */
-static void write_scalar(uint8_t *out, uint64_t offset, uint64_t width, uint64_t value,
-                         BitOrder bit_order, ByteOrder byte_order) {
+static void write_scalar(
+  uint8_t *out,
+  uint64_t offset,
+  uint64_t width,
+  uint64_t value,
+  BitOrder bit_order,
+  ByteOrder byte_order
+) {
   /* byte_order reorders the bytes of a value, so it only means anything when there are whole bytes
    * sitting on byte boundaries. Check 10 rejects anyone writing it where that is untrue; inherited,
    * it simply does not apply here. */
@@ -47,8 +53,7 @@ static void write_scalar(uint8_t *out, uint64_t offset, uint64_t width, uint64_t
   }
 
   for (uint64_t j = 0; j < width; ++j) {
-    uint64_t bit = bit_order == BIT_ORDER_MSB_FIRST ? (value >> (width - 1 - j)) & 1
-                                                     : (value >> j) & 1;
+    uint64_t bit = bit_order == BIT_ORDER_MSB_FIRST ? (value >> (width - 1 - j)) & 1 : (value >> j) & 1;
     write_bit(out, offset + j, bit != 0);
   }
 }
@@ -82,8 +87,13 @@ static void gather_slots(const FramedslFrame *frame, size_t packet, size_t count
 }
 
 /* The width this field has in this frame, in bits. */
-static bool resolve_width(const FramedslFrame *frame, const FieldInstruction *instruction,
-                          const uint64_t *slots, uint64_t *width, FramedslStatus *status) {
+static bool resolve_width(
+  const FramedslFrame *frame,
+  const FieldInstruction *instruction,
+  const uint64_t *slots,
+  uint64_t *width,
+  FramedslStatus *status
+) {
   (void)frame;
 
   if (!instruction->variable) {
@@ -104,8 +114,7 @@ static bool resolve_width(const FramedslFrame *frame, const FieldInstruction *in
   return true;
 }
 
-const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length,
-                               FramedslStatus *status) {
+const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length, FramedslStatus *status) {
   FramedslStatus ignored = FRAMEDSL_OK;
   if (status == NULL) {
     status = &ignored;
@@ -150,11 +159,9 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
     if (instruction->has_fixed) {
       /* From the definition, never from the arena: a caller cannot emit a frame that fails to
        * identify itself, whatever they put in the slot. */
-      write_scalar(frame->output, offset, width, instruction->fixed, instruction->bit_order,
-                   instruction->byte_order);
+      write_scalar(frame->output, offset, width, instruction->fixed, instruction->bit_order, instruction->byte_order);
     } else if (instruction->is_scalar) {
-      write_scalar(frame->output, offset, width, slots[f], instruction->bit_order,
-                   instruction->byte_order);
+      write_scalar(frame->output, offset, width, slots[f], instruction->bit_order, instruction->byte_order);
     } else {
       /* A variable field's width comes from the expression, and the bytes come from the arena. Those
        * two can disagree -- a caller who sets `len` to 12 and then twenty bytes of `data` has
@@ -193,8 +200,13 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
  *
  * A NULL buffer with a capacity of zero is the useful degenerate case: it is how a caller asks how
  * big the frame would be, and it answers without writing anywhere. */
-FramedslStatus framedsl_encode_into(FramedslFrame *frame, const char *packet, uint8_t *buffer,
-                                    size_t capacity, size_t *length) {
+FramedslStatus framedsl_encode_into(
+  FramedslFrame *frame,
+  const char *packet,
+  uint8_t *buffer,
+  size_t capacity,
+  size_t *length
+) {
   if (length == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }

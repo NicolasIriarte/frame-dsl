@@ -19,8 +19,13 @@ static bool read_bit(const uint8_t *buffer, uint64_t index) {
 /* Reads `width` bits at `offset` back into the value they came from, undoing what encode.c laid
  * down. `lsb_first` is not `msb_first` reversed: each puts a different bit of the value at the
  * earliest stream position, so each has to be undone on its own terms. */
-static uint64_t read_scalar(const uint8_t *buffer, uint64_t offset, uint64_t width,
-                            BitOrder bit_order, ByteOrder byte_order) {
+static uint64_t read_scalar(
+  const uint8_t *buffer,
+  uint64_t offset,
+  uint64_t width,
+  BitOrder bit_order,
+  ByteOrder byte_order
+) {
   uint64_t value = 0;
 
   for (uint64_t j = 0; j < width; ++j) {
@@ -74,8 +79,13 @@ static bool matches(const PacketLayout *packet, const uint8_t *buffer, size_t le
   return true;
 }
 
-const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t length,
-                            size_t *consumed, FramedslStatus *status) {
+const char *framedsl_decode(
+  FramedslFrame *frame,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *consumed,
+  FramedslStatus *status
+) {
   FramedslStatus ignored = FRAMEDSL_OK;
   if (status == NULL) {
     status = &ignored;
@@ -126,7 +136,7 @@ const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t 
 
   /* Filled in as the walk goes, because a valof() width reads a field this walk has already decoded
    * -- which check 7 guarantees is one it has passed. */
-  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET] = {0};
+  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET] = { 0 };
 
   uint64_t offset = 0;
   for (size_t f = 0; f < program->field_count; ++f) {
@@ -156,8 +166,7 @@ const char *framedsl_decode(FramedslFrame *frame, const uint8_t *buffer, size_t 
     }
 
     if (instruction->is_scalar) {
-      uint64_t value =
-          read_scalar(buffer, offset, width, instruction->bit_order, instruction->byte_order);
+      uint64_t value = read_scalar(buffer, offset, width, instruction->bit_order, instruction->byte_order);
       slots[f] = value;
       memcpy(frame->arena + slot->offset, &value, sizeof(value));
     } else {

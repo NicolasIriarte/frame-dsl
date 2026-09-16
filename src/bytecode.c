@@ -28,17 +28,24 @@ static bool uses_valof(const Expr *expr) {
  * divides by zero, so this only has to agree with it, not re-report it. */
 static uint64_t fold(const Expr *expr) {
   switch (expr->kind) {
-  case EXPR_LITERAL: return expr->literal;
-  case EXPR_VALOF: return 0; /* unreachable: callers check uses_valof() first */
+  case EXPR_LITERAL:
+    return expr->literal;
+  case EXPR_VALOF:
+    return 0; /* unreachable: callers check uses_valof() first */
   case EXPR_BINARY: {
     uint64_t lhs = fold(expr->lhs);
     uint64_t rhs = fold(expr->rhs);
     switch (expr->op) {
-    case '+': return lhs + rhs;
-    case '-': return lhs - rhs;
-    case '*': return lhs * rhs;
-    case '/': return rhs == 0 ? 0 : lhs / rhs;
-    default: return 0;
+    case '+':
+      return lhs + rhs;
+    case '-':
+      return lhs - rhs;
+    case '*':
+      return lhs * rhs;
+    case '/':
+      return rhs == 0 ? 0 : lhs / rhs;
+    default:
+      return 0;
     }
   }
   }
@@ -67,7 +74,7 @@ typedef struct {
 } Emitter;
 
 static void emit(Emitter *emitter, WidthOp op, uint64_t operand) {
-  emitter->code[emitter->length++] = (WidthInstruction){.op = op, .operand = operand};
+  emitter->code[emitter->length++] = (WidthInstruction){ .op = op, .operand = operand };
 }
 
 /* The field index a valof() names. Check 7 has already established it exists and is earlier, so a
@@ -95,10 +102,18 @@ static void compile_expr(Emitter *emitter, const AstPacket *packet, const Expr *
   compile_expr(emitter, packet, expr->lhs);
   compile_expr(emitter, packet, expr->rhs);
   switch (expr->op) {
-  case '+': emit(emitter, OP_ADD, 0); break;
-  case '-': emit(emitter, OP_SUB, 0); break;
-  case '*': emit(emitter, OP_MUL, 0); break;
-  default: emit(emitter, OP_DIV, 0); break;
+  case '+':
+    emit(emitter, OP_ADD, 0);
+    break;
+  case '-':
+    emit(emitter, OP_SUB, 0);
+    break;
+  case '*':
+    emit(emitter, OP_MUL, 0);
+    break;
+  default:
+    emit(emitter, OP_DIV, 0);
+    break;
   }
 }
 
@@ -147,9 +162,8 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 
   size_t packets_offset = round_up(sizeof(Program), alignof(PacketProgram));
   size_t fields_offset =
-      round_up(packets_offset + file->packet_count * sizeof(PacketProgram), alignof(FieldInstruction));
-  size_t code_offset =
-      round_up(fields_offset + field_total * sizeof(FieldInstruction), alignof(WidthInstruction));
+    round_up(packets_offset + file->packet_count * sizeof(PacketProgram), alignof(FieldInstruction));
+  size_t code_offset = round_up(fields_offset + field_total * sizeof(FieldInstruction), alignof(WidthInstruction));
   size_t total = code_offset + code_total * sizeof(WidthInstruction);
 
   uint8_t *block = calloc(1, total);
@@ -161,7 +175,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
   Program *program = (Program *)block;
   PacketProgram *packets = (PacketProgram *)(block + packets_offset);
   FieldInstruction *fields = (FieldInstruction *)(block + fields_offset);
-  Emitter emitter = {.code = (WidthInstruction *)(block + code_offset), .length = 0};
+  Emitter emitter = { .code = (WidthInstruction *)(block + code_offset), .length = 0 };
 
   program->packets = packets;
   program->packet_count = file->packet_count;
@@ -180,15 +194,15 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
       FieldInstruction *instruction = &fields[next_field++];
 
       *instruction = (FieldInstruction){
-          .field = (uint32_t)f,
-          .variable = slot->variable,
-          .width_bits = slot->variable ? 0 : slot->width_bits,
-          .max_bits = slot->variable ? slot->max_bits : slot->width_bits,
-          .is_scalar = slot->is_scalar,
-          .has_fixed = field->has_fixed,
-          .fixed = field->has_fixed ? field->fixed : 0,
-          .bit_order = field->bit_order,
-          .byte_order = field->byte_order,
+        .field = (uint32_t)f,
+        .variable = slot->variable,
+        .width_bits = slot->variable ? 0 : slot->width_bits,
+        .max_bits = slot->variable ? slot->max_bits : slot->width_bits,
+        .is_scalar = slot->is_scalar,
+        .has_fixed = field->has_fixed,
+        .fixed = field->has_fixed ? field->fixed : 0,
+        .bit_order = field->bit_order,
+        .byte_order = field->byte_order,
       };
 
       if (!slot->variable) {
@@ -203,10 +217,17 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
       instruction->width.stack_depth = stack_depth(instruction->width.code, instruction->width.length);
 
       if (instruction->width.stack_depth > WIDTH_STACK_MAX) {
-        diag_add(diags, field->line, field->column, 0,
-                 "'%s.%s' has a width expression nested too deeply to evaluate; this build allows a "
-                 "depth of %d",
-                 packet->name, field->name, WIDTH_STACK_MAX);
+        diag_add(
+          diags,
+          field->line,
+          field->column,
+          0,
+          "'%s.%s' has a width expression nested too deeply to evaluate; this build allows a "
+          "depth of %d",
+          packet->name,
+          field->name,
+          WIDTH_STACK_MAX
+        );
         free(block);
         return NULL;
       }
@@ -250,7 +271,9 @@ bool width_program_eval(const WidthProgram *program, const uint64_t *slots, uint
       uint64_t lhs = stack[depth - 1];
 
       switch (instruction->op) {
-      case OP_ADD: lhs += rhs; break;
+      case OP_ADD:
+        lhs += rhs;
+        break;
       case OP_SUB:
         /* Unsigned, so a width that would go negative wraps rather than being caught by a sign. A
          * length field claiming less than the header it counts is exactly how that happens. */

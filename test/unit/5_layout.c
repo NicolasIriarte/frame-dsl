@@ -35,8 +35,8 @@ static int us5_tc01_assigns_bit_offsets_in_declaration_order(const TestArguments
     failure = __LINE__;
   } else {
     const FieldLayout *fields = layout->packets[0].fields;
-    if (fields[0].offset_bits != 0 || fields[1].offset_bits != 8 || fields[2].offset_bits != 19 ||
-        fields[3].offset_bits != 20) {
+    if (fields[0].offset_bits != 0 || fields[1].offset_bits != 8 || fields[2].offset_bits != 19
+        || fields[3].offset_bits != 20) {
       failure = __LINE__;
     } else if (layout->packets[0].reserved_bits != 24) {
       failure = __LINE__;
@@ -151,13 +151,15 @@ static int us5_tc05_byte_order_swaps_the_bytes_that_are_pinned(const TestArgumen
 
 void register_user_story5(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us5_tc01_assigns_bit_offsets_in_declaration_order,
-                "fields are laid out in declaration order", false);
-  ADD_TEST_CASE(us5_tc02_offsets_stop_being_known_after_a_variable_field,
-                "offsets stop being constant after a variable field", false);
+  ADD_TEST_CASE(us5_tc01_assigns_bit_offsets_in_declaration_order, "fields are laid out in declaration order", false);
+  ADD_TEST_CASE(
+    us5_tc02_offsets_stop_being_known_after_a_variable_field,
+    "offsets stop being constant after a variable field",
+    false
+  );
   ADD_TEST_CASE(us5_tc03_marks_wide_fields_as_bit_strings, "over 64 bits is a bit string", false);
-  ADD_TEST_CASE(us5_tc04_bit_order_changes_which_stream_bits_are_pinned,
-                "bit_order changes the pinned pattern", false);
-  ADD_TEST_CASE(us5_tc05_byte_order_swaps_the_bytes_that_are_pinned,
-                "little_endian pins what big_endian does byte-swapped", false);
+  ADD_TEST_CASE(us5_tc04_bit_order_changes_which_stream_bits_are_pinned, "bit_order changes the pinned pattern", false);
+  ADD_TEST_CASE(
+    us5_tc05_byte_order_swaps_the_bytes_that_are_pinned, "little_endian pins what big_endian does byte-swapped", false
+  );
 }

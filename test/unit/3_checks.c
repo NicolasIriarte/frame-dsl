@@ -115,11 +115,18 @@ void register_user_story3(void) {
   ADD_TEST_CASE(us3_tc01_rejects_a_duplicate_packet_name, "check 1: duplicate packet name", false);
   ADD_TEST_CASE(us3_tc02_rejects_a_duplicate_field_name, "check 2: duplicate field name", false);
   ADD_TEST_CASE(us3_tc03_rejects_a_zero_width_field, "check 4: a width must be at least one bit", false);
-  ADD_TEST_CASE(us3_tc04_rejects_a_valof_width_without_a_reservation, "check 5: a valof() width needs a reservation", false);
-  ADD_TEST_CASE(us3_tc05_rejects_a_reservation_that_is_not_constant,
-                "check 6: a reservation must be constant", false);
+  ADD_TEST_CASE(
+    us3_tc04_rejects_a_valof_width_without_a_reservation, "check 5: a valof() width needs a reservation", false
+  );
+  ADD_TEST_CASE(us3_tc05_rejects_a_reservation_that_is_not_constant, "check 6: a reservation must be constant", false);
   ADD_TEST_CASE(us3_tc06_rejects_a_valof_naming_a_later_field, "check 7: valof() must look backwards", false);
   ADD_TEST_CASE(us3_tc07_rejects_a_valof_naming_another_packets_field, "check 7: valof() cannot cross packets", false);
-  ADD_TEST_CASE(us3_tc08_rejects_a_fixed_value_too_wide_for_its_field, "check 8: a fixed value must fit its width", false);
-  ADD_TEST_CASE(us3_tc09_rejects_a_field_with_both_fixed_value_and_max, "check 9: a field cannot be both variable and a discriminator", false);
+  ADD_TEST_CASE(
+    us3_tc08_rejects_a_fixed_value_too_wide_for_its_field, "check 8: a fixed value must fit its width", false
+  );
+  ADD_TEST_CASE(
+    us3_tc09_rejects_a_field_with_both_fixed_value_and_max,
+    "check 9: a field cannot be both variable and a discriminator",
+    false
+  );
 }

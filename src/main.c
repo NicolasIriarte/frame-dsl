@@ -40,9 +40,13 @@ static void describe(const FramedslDefinition *definition) {
   for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
     size_t fields = framedsl_field_count(definition, p);
 
-    log_info("pkt %s: %zu field%s, %llu bits reserved", framedsl_packet_name(definition, p), fields,
-             fields == 1 ? "" : "s",
-             (unsigned long long)framedsl_packet_reserved_bits(definition, p));
+    log_info(
+      "pkt %s: %zu field%s, %llu bits reserved",
+      framedsl_packet_name(definition, p),
+      fields,
+      fields == 1 ? "" : "s",
+      (unsigned long long)framedsl_packet_reserved_bits(definition, p)
+    );
 
     for (size_t f = 0; f < fields; ++f) {
       FramedslField field;
@@ -57,14 +61,19 @@ static void describe(const FramedslDefinition *definition) {
 
       if (field.variable) {
         /* Reported in the unit it was written in, so the line can be compared with the file. */
-        log_info("    %-14s %s, variable, reserves %llu bytes", field.name, offset,
-                 (unsigned long long)(field.max_bits / 8));
+        log_info(
+          "    %-14s %s, variable, reserves %llu bytes", field.name, offset, (unsigned long long)(field.max_bits / 8)
+        );
       } else if (field.has_fixed) {
-        log_info("    %-14s %s, %llu bits = %#llx", field.name, offset,
-                 (unsigned long long)field.width_bits, (unsigned long long)field.fixed);
+        log_info(
+          "    %-14s %s, %llu bits = %#llx",
+          field.name,
+          offset,
+          (unsigned long long)field.width_bits,
+          (unsigned long long)field.fixed
+        );
       } else {
-        log_info("    %-14s %s, %llu bits", field.name, offset,
-                 (unsigned long long)field.width_bits);
+        log_info("    %-14s %s, %llu bits", field.name, offset, (unsigned long long)field.width_bits);
       }
     }
   }
@@ -91,8 +100,7 @@ static int hex_value(char c) {
 }
 
 static bool is_separator(char c) {
-  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',' || c == ':' || c == '-' ||
-         c == '_' || c == '.';
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',' || c == ':' || c == '-' || c == '_' || c == '.';
 }
 
 /* Bytes into `out`, count into `*length`. False on a problem, having said what it was. */
@@ -165,8 +173,12 @@ static void format_bytes(const uint8_t *bytes, size_t length, char *out, size_t 
 }
 
 /* Prints every field of the packet that was decoded. */
-static void report_frame(const FramedslDefinition *definition, const FramedslFrame *frame,
-                         const char *name, size_t consumed) {
+static void report_frame(
+  const FramedslDefinition *definition,
+  const FramedslFrame *frame,
+  const char *name,
+  size_t consumed
+) {
   size_t packet = 0;
   if (!framedsl_find_packet(definition, name, &packet)) {
     return;
@@ -177,16 +189,14 @@ static void report_frame(const FramedslDefinition *definition, const FramedslFra
   for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
     FramedslField field;
     FramedslFieldId id;
-    if (!framedsl_field(definition, packet, f, &field) ||
-        !framedsl_field_id(definition, packet, f, &id)) {
+    if (!framedsl_field(definition, packet, f, &field) || !framedsl_field_id(definition, packet, f, &id)) {
       continue;
     }
 
     if (field.is_scalar) {
       uint64_t value = 0;
       if (framedsl_get_u64(frame, id, &value) == FRAMEDSL_OK) {
-        log_info("    %-14s %llu (%#llx)", field.name, (unsigned long long)value,
-                 (unsigned long long)value);
+        log_info("    %-14s %llu (%#llx)", field.name, (unsigned long long)value, (unsigned long long)value);
       }
       continue;
     }
@@ -221,8 +231,7 @@ static const char *decode_problem(FramedslStatus status) {
 
 /* Walks the capture frame by frame, which is what `consumed` is for: a packet with a valof() field
  * has no length until it has been decoded, so a caller cannot find the next one without this. */
-static int decode_capture(const FramedslDefinition *definition, const uint8_t *bytes,
-                          size_t length) {
+static int decode_capture(const FramedslDefinition *definition, const uint8_t *bytes, size_t length) {
   FramedslFrame *frame = framedsl_frame_new(definition);
   if (frame == NULL) {
     log_fail("out of memory");
@@ -236,8 +245,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   while (offset < length) {
     size_t consumed = 0;
     FramedslStatus why = FRAMEDSL_OK;
-    const char *name =
-        framedsl_decode(frame, bytes + offset, length - offset, &consumed, &why);
+    const char *name = framedsl_decode(frame, bytes + offset, length - offset, &consumed, &why);
 
     if (name == NULL) {
       /* The offset is in the message because a capture holding several frames fails somewhere, and
@@ -253,8 +261,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   }
 
   if (status == 0) {
-    log_info("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length,
-             length == 1 ? "" : "s");
+    log_info("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
   }
 
   framedsl_frame_free(frame);
@@ -321,8 +328,12 @@ int main(int argc, char **argv) {
     }
 
     describe(definition);
-    log_info("%s: ok, %zu packet%s", framedsl_source_name(result),
-             framedsl_packet_count(definition), framedsl_packet_count(definition) == 1 ? "" : "s");
+    log_info(
+      "%s: ok, %zu packet%s",
+      framedsl_source_name(result),
+      framedsl_packet_count(definition),
+      framedsl_packet_count(definition) == 1 ? "" : "s"
+    );
     status = 0;
     break;
   }

@@ -9,12 +9,12 @@
 #include "framedsl.h"
 #include "testsuite.h"
 
-#define DEFINITION_A                                                                               \
-  "pkt TM_A {\n"                                                                                   \
-  "  hdr: 8 = 0xAA;\n"                                                                             \
-  "  len: 32;\n"                                                                                   \
-  "  data[128]: valof(len) * 8;\n"                                                                \
-  "  crc: 16;\n"                                                                                   \
+#define DEFINITION_A                                                                                                   \
+  "pkt TM_A {\n"                                                                                                       \
+  "  hdr: 8 = 0xAA;\n"                                                                                                 \
+  "  len: 32;\n"                                                                                                       \
+  "  data[128]: valof(len) * 8;\n"                                                                                     \
+  "  crc: 16;\n"                                                                                                       \
   "};\n"
 
 #define DEFINITION_B "pkt TM_B { hdr: 8 = 0xBB; seq: 16; };\n"
@@ -52,9 +52,11 @@ static int us2_tc02_reports_every_problem_not_only_the_first(const TestArguments
   (void)args;
 
   /* Two packets, each with its own mistake: a fixed value too wide, and no discriminator at all. */
-  FramedslResult *result = framedsl_load_string("pkt A { k: 4 = 0xFF; b: 16; };\n"
-                                                "pkt B { x: 8; y: 8; };\n",
-                                                "two.fdsl");
+  FramedslResult *result = framedsl_load_string(
+    "pkt A { k: 4 = 0xFF; b: 16; };\n"
+    "pkt B { x: 8; y: 8; };\n",
+    "two.fdsl"
+  );
 
   int failure = 0;
   if (framedsl_status(result) != FRAMEDSL_ERROR_INVALID) {
@@ -175,16 +177,18 @@ static int us2_tc06_describes_a_variable_field_as_variable(const TestArguments *
 static int us2_tc07_reports_resolved_bit_and_byte_order(const TestArguments *args) {
   (void)args;
 
-  FramedslResult *result = framedsl_load_string("@byte_order: big_endian;\n"
-                                                "[ @byte_order: little_endian; ]\n"
-                                                "pkt P {\n"
-                                                "  hdr: 8 = 0x01;\n"
-                                                "  a: 32;\n"
-                                                "  [ @byte_order: big_endian; ] b: 32;\n"
-                                                "  [ @bit_order: lsb_first; ] c: 4;\n"
-                                                "  d: 4;\n" /* brings P to 80 bits: check 13 */
-                                                "};\n",
-                                                "orders.fdsl");
+  FramedslResult *result = framedsl_load_string(
+    "@byte_order: big_endian;\n"
+    "[ @byte_order: little_endian; ]\n"
+    "pkt P {\n"
+    "  hdr: 8 = 0x01;\n"
+    "  a: 32;\n"
+    "  [ @byte_order: big_endian; ] b: 32;\n"
+    "  [ @bit_order: lsb_first; ] c: 4;\n"
+    "  d: 4;\n" /* brings P to 80 bits: check 13 */
+    "};\n",
+    "orders.fdsl"
+  );
 
   int failure = 0;
   const FramedslDefinition *definition = framedsl_definition(result);
@@ -194,8 +198,8 @@ static int us2_tc07_reports_resolved_bit_and_byte_order(const TestArguments *arg
 
   if (!framedsl_ok(result)) {
     failure = __LINE__;
-  } else if (!framedsl_field(definition, 0, 1, &a) || !framedsl_field(definition, 0, 2, &b) ||
-             !framedsl_field(definition, 0, 3, &c)) {
+  } else if (!framedsl_field(definition, 0, 1, &a) || !framedsl_field(definition, 0, 2, &b)
+             || !framedsl_field(definition, 0, 3, &c)) {
     failure = __LINE__;
   } else if (a.byte_order != FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN) {
     failure = __LINE__; /* inherited from the packet */
@@ -292,18 +296,17 @@ static int us2_tc10_loads_the_examples_from_disk(const TestArguments *args) {
 
 void register_user_story2(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us2_tc01_two_definitions_can_be_open_at_once,
-                "two definitions load at once and are independent", true);
-  ADD_TEST_CASE(us2_tc02_reports_every_problem_not_only_the_first,
-                "a failed load reports every problem", false);
+  ADD_TEST_CASE(us2_tc01_two_definitions_can_be_open_at_once, "two definitions load at once and are independent", true);
+  ADD_TEST_CASE(us2_tc02_reports_every_problem_not_only_the_first, "a failed load reports every problem", false);
   ADD_TEST_CASE(us2_tc03_a_diagnostic_carries_a_position, "a diagnostic carries line and column", false);
-  ADD_TEST_CASE(us2_tc04_a_missing_file_is_not_an_invalid_one,
-                "a missing file is a different status from a bad one", false);
+  ADD_TEST_CASE(
+    us2_tc04_a_missing_file_is_not_an_invalid_one, "a missing file is a different status from a bad one", false
+  );
   ADD_TEST_CASE(us2_tc05_finds_packets_and_fields_by_name, "packets and fields are found by name", false);
-  ADD_TEST_CASE(us2_tc06_describes_a_variable_field_as_variable,
-                "a variable field reports its bound, not a width", false);
-  ADD_TEST_CASE(us2_tc07_reports_resolved_bit_and_byte_order,
-                "bit and byte order come back resolved", false);
+  ADD_TEST_CASE(
+    us2_tc06_describes_a_variable_field_as_variable, "a variable field reports its bound, not a width", false
+  );
+  ADD_TEST_CASE(us2_tc07_reports_resolved_bit_and_byte_order, "bit and byte order come back resolved", false);
   ADD_TEST_CASE(us2_tc08_out_of_range_indices_are_refused, "an out-of-range index is refused", false);
   ADD_TEST_CASE(us2_tc09_null_arguments_are_survivable, "every entry point survives NULL", false);
   ADD_TEST_CASE(us2_tc10_loads_the_examples_from_disk, "an example loads from disk and measures up", false);

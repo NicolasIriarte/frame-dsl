@@ -105,14 +105,14 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
       offset = round_up(offset, alignof(uint64_t));
 
       frame->slots[slot] = (Slot){
-          .offset = offset,
-          .capacity = slot_bytes(field),
-          /* A fixed-width field is always exactly as long as it is; only a variable one starts
-           * empty, and zero is a length it can legitimately have. */
-          .length = field->variable ? 0 : slot_bytes(field),
-          .width_bits = field->variable ? 0 : field->width_bits,
-          .is_scalar = field->is_scalar,
-          .variable = field->variable,
+        .offset = offset,
+        .capacity = slot_bytes(field),
+        /* A fixed-width field is always exactly as long as it is; only a variable one starts
+         * empty, and zero is a length it can legitimately have. */
+        .length = field->variable ? 0 : slot_bytes(field),
+        .width_bits = field->variable ? 0 : field->width_bits,
+        .is_scalar = field->is_scalar,
+        .variable = field->variable,
       };
 
       offset += frame->slots[slot].capacity;
@@ -144,9 +144,12 @@ bool frame_holds(const FramedslFrame *frame, FramedslFieldId id) {
   switch (frame->holds) {
   /* Every slot is the caller's own value, including the ones they have not written yet -- which is
    * the "there is no unset" rule, and is only about values a caller owns. */
-  case HOLDS_CALLER_VALUES: return true;
-  case HOLDS_DECODED_PACKET: return id.packet == frame->held_packet;
-  case HOLDS_NOTHING: break;
+  case HOLDS_CALLER_VALUES:
+    return true;
+  case HOLDS_DECODED_PACKET:
+    return id.packet == frame->held_packet;
+  case HOLDS_NOTHING:
+    break;
   }
   return false;
 }
@@ -167,8 +170,7 @@ Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id) {
   return &frame->slots[frame->packet_base[id.packet] + id.field];
 }
 
-bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size_t field,
-                       FramedslFieldId *out) {
+bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size_t field, FramedslFieldId *out) {
   if (definition == NULL || out == NULL || packet >= definition->ast->packet_count) {
     return false;
   }
@@ -176,9 +178,9 @@ bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size
     return false;
   }
   *out = (FramedslFieldId){
-      .owner = definition->tag,
-      .packet = (uint32_t)packet,
-      .field = (uint32_t)field,
+    .owner = definition->tag,
+    .packet = (uint32_t)packet,
+    .field = (uint32_t)field,
   };
   return true;
 }
@@ -250,8 +252,7 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   return FRAMEDSL_OK;
 }
 
-FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes,
-                                  size_t length) {
+FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes, size_t length) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
@@ -279,8 +280,13 @@ FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, cons
   return FRAMEDSL_OK;
 }
 
-FramedslStatus framedsl_get_bytes(const FramedslFrame *frame, FramedslFieldId id, uint8_t *out,
-                                  size_t capacity, size_t *length) {
+FramedslStatus framedsl_get_bytes(
+  const FramedslFrame *frame,
+  FramedslFieldId id,
+  uint8_t *out,
+  size_t capacity,
+  size_t *length
+) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }

@@ -65,132 +65,124 @@ typedef struct {
 } Row;
 
 /* A scalar, set and read back as the same value. */
-#define SCALAR(dotted, value) {(dotted), false, (value), NULL, 0, (value)}
+#define SCALAR(dotted, value) { (dotted), false, (value), NULL, 0, (value) }
 /* A scalar set to one thing and read back as another: a discriminator the caller wrote over. */
-#define SCALAR_READS(dotted, set, back) {(dotted), false, (set), NULL, 0, (back)}
+#define SCALAR_READS(dotted, set, back) { (dotted), false, (set), NULL, 0, (back) }
 /* A bit string. `reads_back` is unused; the bytes are compared directly. */
-#define BYTES(dotted, array) {(dotted), true, 0, (array), sizeof(array), 0}
+#define BYTES(dotted, array) { (dotted), true, 0, (array), sizeof(array), 0 }
 
-static const uint8_t nine_bytes[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-static const uint8_t nine_nibbles[9] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11};
-static const uint8_t three_bytes[3] = {1, 2, 3};
-static const uint8_t eight_bytes[8] = {1, 2, 3, 4, 5, 6, 7, 8};
-static const uint8_t two_bytes[2] = {0xAA, 0xBB};
+static const uint8_t nine_bytes[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+static const uint8_t nine_nibbles[9] = { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11 };
+static const uint8_t three_bytes[3] = { 1, 2, 3 };
+static const uint8_t eight_bytes[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+static const uint8_t two_bytes[2] = { 0xAA, 0xBB };
 
 static const Field byte_aligned[] = {
-    SCALAR("BYTE_ALIGNED.seq", 0x1234),
-    SCALAR("BYTE_ALIGNED.tail", 0x5F),
+  SCALAR("BYTE_ALIGNED.seq", 0x1234),
+  SCALAR("BYTE_ALIGNED.tail", 0x5F),
 };
 
 static const Field sub_byte[] = {
-    SCALAR("SUB_BYTE.sec", 1),
-    SCALAR("SUB_BYTE.apid", 0x555),
-    SCALAR("SUB_BYTE.seq_flags", 3),
-    SCALAR("SUB_BYTE.seq_count", 1),
+  SCALAR("SUB_BYTE.sec", 1),
+  SCALAR("SUB_BYTE.apid", 0x555),
+  SCALAR("SUB_BYTE.seq_flags", 3),
+  SCALAR("SUB_BYTE.seq_count", 1),
 };
 
 static const Field bit_order[] = {
-    SCALAR("BIT_ORDER.a", 0x0F),
-    SCALAR("BIT_ORDER.b", 0x0F),
+  SCALAR("BIT_ORDER.a", 0x0F),
+  SCALAR("BIT_ORDER.b", 0x0F),
 };
 
 static const Field byte_order[] = {
-    SCALAR("BYTE_ORDER.big", 0x11223344),
-    SCALAR("BYTE_ORDER.little", 0x11223344),
+  SCALAR("BYTE_ORDER.big", 0x11223344),
+  SCALAR("BYTE_ORDER.little", 0x11223344),
 };
 
 static const Field fixed_over[] = {
-    /* Written over with 0x55, and it must come back as the 0xAA the definition pins. */
-    SCALAR_READS("FIXED_OVER.hdr", 0x55, 0xAA),
-    SCALAR("FIXED_OVER.body", 0x01),
+  /* Written over with 0x55, and it must come back as the 0xAA the definition pins. */
+  SCALAR_READS("FIXED_OVER.hdr", 0x55, 0xAA),
+  SCALAR("FIXED_OVER.body", 0x01),
 };
 
 static const Field bit_string[] = {
-    BYTES("BIT_STRING.wide", nine_bytes),
+  BYTES("BIT_STRING.wide", nine_bytes),
 };
 
 static const Field bit_string_offset[] = {
-    BYTES("BIT_STRING_OFFSET.wide", nine_nibbles),
-    SCALAR("BIT_STRING_OFFSET.pad", 0x5),
+  BYTES("BIT_STRING_OFFSET.wide", nine_nibbles),
+  SCALAR("BIT_STRING_OFFSET.pad", 0x5),
 };
 
 static const Field variable_empty[] = {
-    SCALAR("VARIABLE.len", 0),
-    SCALAR("VARIABLE.crc", 0xC7),
+  SCALAR("VARIABLE.len", 0),
+  SCALAR("VARIABLE.crc", 0xC7),
 };
 
 static const Field variable_middling[] = {
-    SCALAR("VARIABLE.len", 3),
-    BYTES("VARIABLE.data", three_bytes),
-    SCALAR("VARIABLE.crc", 0xC7),
+  SCALAR("VARIABLE.len", 3),
+  BYTES("VARIABLE.data", three_bytes),
+  SCALAR("VARIABLE.crc", 0xC7),
 };
 
 static const Field variable_full[] = {
-    SCALAR("VARIABLE.len", 8),
-    BYTES("VARIABLE.data", eight_bytes),
-    SCALAR("VARIABLE.crc", 0xC7),
+  SCALAR("VARIABLE.len", 8),
+  BYTES("VARIABLE.data", eight_bytes),
+  SCALAR("VARIABLE.crc", 0xC7),
 };
 
 static const Field family_ping[] = {
-    SCALAR("TC_PING.seq", 0x0009),
+  SCALAR("TC_PING.seq", 0x0009),
 };
 
 static const Field family_set_mode[] = {
-    SCALAR("TC_SET_MODE.seq", 0x1234),
-    SCALAR("TC_SET_MODE.mode", 0x7F),
+  SCALAR("TC_SET_MODE.seq", 0x1234),
+  SCALAR("TC_SET_MODE.mode", 0x7F),
 };
 
 static const Field family_payload[] = {
-    SCALAR("TC_PAYLOAD.len", 2),
-    BYTES("TC_PAYLOAD.body", two_bytes),
-    SCALAR("TC_PAYLOAD.crc", 0xC7),
+  SCALAR("TC_PAYLOAD.len", 2),
+  BYTES("TC_PAYLOAD.body", two_bytes),
+  SCALAR("TC_PAYLOAD.crc", 0xC7),
 };
 
-static const uint8_t bytes_byte_aligned[] = {0xAA, 0x12, 0x34, 0x5F};
-static const uint8_t bytes_sub_byte[] = {0x0D, 0x55, 0xC0, 0x01};
-static const uint8_t bytes_bit_order[] = {0xAA, 0x0F, 0xF0};
-static const uint8_t bytes_byte_order[] = {0xBB, 0x11, 0x22, 0x33, 0x44,
-                                           0x44, 0x33, 0x22, 0x11, 0xBB};
-static const uint8_t bytes_fixed_over[] = {0xAA, 0x01};
-static const uint8_t bytes_bit_string[] = {0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-static const uint8_t bytes_bit_string_offset[] = {0xA1, 0x23, 0x45, 0x67, 0x89,
-                                                  0xAB, 0xCD, 0xEF, 0x01, 0x15};
-static const uint8_t bytes_variable_empty[] = {0xAA, 0x00, 0xC7};
-static const uint8_t bytes_variable_middling[] = {0xAA, 0x03, 1, 2, 3, 0xC7};
-static const uint8_t bytes_variable_full[] = {0xAA, 0x08, 1, 2, 3, 4, 5, 6, 7, 8, 0xC7};
-static const uint8_t bytes_family_ping[] = {0x01, 0x00, 0x09};
-static const uint8_t bytes_family_set_mode[] = {0x02, 0x12, 0x34, 0x7F};
-static const uint8_t bytes_family_payload[] = {0x03, 0x02, 0xAA, 0xBB, 0xC7};
+static const uint8_t bytes_byte_aligned[] = { 0xAA, 0x12, 0x34, 0x5F };
+static const uint8_t bytes_sub_byte[] = { 0x0D, 0x55, 0xC0, 0x01 };
+static const uint8_t bytes_bit_order[] = { 0xAA, 0x0F, 0xF0 };
+static const uint8_t bytes_byte_order[] = { 0xBB, 0x11, 0x22, 0x33, 0x44, 0x44, 0x33, 0x22, 0x11, 0xBB };
+static const uint8_t bytes_fixed_over[] = { 0xAA, 0x01 };
+static const uint8_t bytes_bit_string[] = { 0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+static const uint8_t bytes_bit_string_offset[] = { 0xA1, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x15 };
+static const uint8_t bytes_variable_empty[] = { 0xAA, 0x00, 0xC7 };
+static const uint8_t bytes_variable_middling[] = { 0xAA, 0x03, 1, 2, 3, 0xC7 };
+static const uint8_t bytes_variable_full[] = { 0xAA, 0x08, 1, 2, 3, 4, 5, 6, 7, 8, 0xC7 };
+static const uint8_t bytes_family_ping[] = { 0x01, 0x00, 0x09 };
+static const uint8_t bytes_family_set_mode[] = { 0x02, 0x12, 0x34, 0x7F };
+static const uint8_t bytes_family_payload[] = { 0x03, 0x02, 0xAA, 0xBB, 0xC7 };
 
-#define ROW(what, file, packet, fields, bytes)                                                     \
-  {(what), (file), (packet), (fields), sizeof(fields) / sizeof(*(fields)), (bytes), sizeof(bytes)}
+#define ROW(what, file, packet, fields, bytes)                                                                         \
+  { (what), (file), (packet), (fields), sizeof(fields) / sizeof(*(fields)), (bytes), sizeof(bytes) }
 
 static const Row ROWS[] = {
-    ROW("whole-byte fields in declaration order", "byte_aligned.fdsl", "BYTE_ALIGNED", byte_aligned,
-        bytes_byte_aligned),
-    ROW("sub-byte fields packing and straddling", "sub_byte.fdsl", "SUB_BYTE", sub_byte,
-        bytes_sub_byte),
-    ROW("lsb_first beside msb_first", "bit_order.fdsl", "BIT_ORDER", bit_order, bytes_bit_order),
-    ROW("little_endian swapping only its own field", "byte_order.fdsl", "BYTE_ORDER", byte_order,
-        bytes_byte_order),
-    ROW("a discriminator the caller wrote over", "fixed_over.fdsl", "FIXED_OVER", fixed_over,
-        bytes_fixed_over),
-    ROW("a bit string wider than a scalar", "bit_string.fdsl", "BIT_STRING", bit_string,
-        bytes_bit_string),
-    ROW("a bit string off a byte boundary", "bit_string_offset.fdsl", "BIT_STRING_OFFSET",
-        bit_string_offset, bytes_bit_string_offset),
-    ROW("a valof() field at zero", "variable.fdsl", "VARIABLE", variable_empty,
-        bytes_variable_empty),
-    ROW("a valof() field at a middling length", "variable.fdsl", "VARIABLE", variable_middling,
-        bytes_variable_middling),
-    ROW("a valof() field at exactly its reservation", "variable.fdsl", "VARIABLE", variable_full,
-        bytes_variable_full),
-    ROW("one of three packets, the shortest", "family.fdsl", "TC_PING", family_ping,
-        bytes_family_ping),
-    ROW("one of three packets, a fixed-width one", "family.fdsl", "TC_SET_MODE", family_set_mode,
-        bytes_family_set_mode),
-    ROW("one of three packets, the variable one", "family.fdsl", "TC_PAYLOAD", family_payload,
-        bytes_family_payload),
+  ROW("whole-byte fields in declaration order", "byte_aligned.fdsl", "BYTE_ALIGNED", byte_aligned, bytes_byte_aligned),
+  ROW("sub-byte fields packing and straddling", "sub_byte.fdsl", "SUB_BYTE", sub_byte, bytes_sub_byte),
+  ROW("lsb_first beside msb_first", "bit_order.fdsl", "BIT_ORDER", bit_order, bytes_bit_order),
+  ROW("little_endian swapping only its own field", "byte_order.fdsl", "BYTE_ORDER", byte_order, bytes_byte_order),
+  ROW("a discriminator the caller wrote over", "fixed_over.fdsl", "FIXED_OVER", fixed_over, bytes_fixed_over),
+  ROW("a bit string wider than a scalar", "bit_string.fdsl", "BIT_STRING", bit_string, bytes_bit_string),
+  ROW(
+    "a bit string off a byte boundary",
+    "bit_string_offset.fdsl",
+    "BIT_STRING_OFFSET",
+    bit_string_offset,
+    bytes_bit_string_offset
+  ),
+  ROW("a valof() field at zero", "variable.fdsl", "VARIABLE", variable_empty, bytes_variable_empty),
+  ROW("a valof() field at a middling length", "variable.fdsl", "VARIABLE", variable_middling, bytes_variable_middling),
+  ROW("a valof() field at exactly its reservation", "variable.fdsl", "VARIABLE", variable_full, bytes_variable_full),
+  ROW("one of three packets, the shortest", "family.fdsl", "TC_PING", family_ping, bytes_family_ping),
+  ROW("one of three packets, a fixed-width one", "family.fdsl", "TC_SET_MODE", family_set_mode, bytes_family_set_mode),
+  ROW("one of three packets, the variable one", "family.fdsl", "TC_PAYLOAD", family_payload, bytes_family_payload),
 };
 
 #define ROW_COUNT (sizeof(ROWS) / sizeof(*ROWS))
@@ -202,8 +194,7 @@ static const Row ROWS[] = {
  * bytes differ -- which byte and both values. */
 static void complain(const Row *row, size_t index, const char *fmt, ...) {
   va_list arguments;
-  fprintf(stderr, "\n  corpus row %zu (%s, %s): %s\n    ", index, row->file, row->packet,
-          row->what);
+  fprintf(stderr, "\n  corpus row %zu (%s, %s): %s\n    ", index, row->file, row->packet, row->what);
   va_start(arguments, fmt);
   vfprintf(stderr, fmt, arguments);
   va_end(arguments);
@@ -220,8 +211,12 @@ static size_t first_difference(const uint8_t *left, const uint8_t *right, size_t
   return length;
 }
 
-static bool set_field(FramedslFrame *frame, const FramedslDefinition *definition, const Field *field,
-                      FramedslFieldId *id) {
+static bool set_field(
+  FramedslFrame *frame,
+  const FramedslDefinition *definition,
+  const Field *field,
+  FramedslFieldId *id
+) {
   if (!framedsl_find(definition, field->dotted, id)) {
     return false;
   }
@@ -245,9 +240,12 @@ static int run_row(const Row *row, size_t index) {
   int failure = 0;
 
   if (!framedsl_ok(result)) {
-    complain(row, index, "the definition did not load: %s",
-             framedsl_diagnostic_count(result) > 0 ? framedsl_diagnostic(result, 0)->message
-                                                   : "no diagnostic");
+    complain(
+      row,
+      index,
+      "the definition did not load: %s",
+      framedsl_diagnostic_count(result) > 0 ? framedsl_diagnostic(result, 0)->message : "no diagnostic"
+    );
     failure = __LINE__;
   } else if (sender == NULL || receiver == NULL) {
     complain(row, index, "could not create a frame");
@@ -279,8 +277,7 @@ static int run_row(const Row *row, size_t index) {
     } else {
       size_t at = first_difference(encoded, row->expected, length);
       if (at != length) {
-        complain(row, index, "byte %zu is 0x%02X, expected 0x%02X", at, encoded[at],
-                 row->expected[at]);
+        complain(row, index, "byte %zu is 0x%02X, expected 0x%02X", at, encoded[at], row->expected[at]);
         failure = __LINE__;
       }
     }
@@ -292,8 +289,7 @@ static int run_row(const Row *row, size_t index) {
   if (failure == 0) {
     FramedslStatus status = FRAMEDSL_OK;
     size_t consumed = 0;
-    const char *packet =
-        framedsl_decode(receiver, row->expected, row->expected_length, &consumed, &status);
+    const char *packet = framedsl_decode(receiver, row->expected, row->expected_length, &consumed, &status);
 
     if (packet == NULL) {
       complain(row, index, "decode refused the bytes (status %d)", (int)status);
@@ -319,21 +315,21 @@ static int run_row(const Row *row, size_t index) {
     }
 
     if (field->is_bytes) {
-      uint8_t read[64] = {0};
+      uint8_t read[64] = { 0 };
       size_t read_length = 0;
 
       if (framedsl_get_bytes(receiver, id, read, sizeof(read), &read_length) != FRAMEDSL_OK) {
         complain(row, index, "%s could not be read back", field->dotted);
         failure = __LINE__;
       } else if (read_length != field->length) {
-        complain(row, index, "%s came back %zu bytes, set as %zu", field->dotted, read_length,
-                 field->length);
+        complain(row, index, "%s came back %zu bytes, set as %zu", field->dotted, read_length, field->length);
         failure = __LINE__;
       } else {
         size_t at = first_difference(read, field->bytes, read_length);
         if (at != read_length) {
-          complain(row, index, "%s byte %zu came back 0x%02X, set as 0x%02X", field->dotted, at,
-                   read[at], field->bytes[at]);
+          complain(
+            row, index, "%s byte %zu came back 0x%02X, set as 0x%02X", field->dotted, at, read[at], field->bytes[at]
+          );
           failure = __LINE__;
         }
       }
@@ -345,8 +341,14 @@ static int run_row(const Row *row, size_t index) {
       complain(row, index, "%s could not be read back", field->dotted);
       failure = __LINE__;
     } else if (value != field->reads_back) {
-      complain(row, index, "%s came back %llu, expected %llu", field->dotted,
-               (unsigned long long)value, (unsigned long long)field->reads_back);
+      complain(
+        row,
+        index,
+        "%s came back %llu, expected %llu",
+        field->dotted,
+        (unsigned long long)value,
+        (unsigned long long)field->reads_back
+      );
       failure = __LINE__;
     }
   }
@@ -430,20 +432,18 @@ static int us7_tc03_a_wrong_byte_would_be_caught(const TestArguments *args) {
       failure = __LINE__;
     } else {
       /* The last byte, which is a value in every row rather than a discriminator. */
-      uint8_t corrupted[64] = {0};
+      uint8_t corrupted[64] = { 0 };
       memcpy(corrupted, row->expected, row->expected_length);
       corrupted[row->expected_length - 1] ^= 0xFF;
 
       FramedslStatus status = FRAMEDSL_OK;
-      const char *packet =
-          framedsl_decode(frame, corrupted, row->expected_length, NULL, &status);
+      const char *packet = framedsl_decode(frame, corrupted, row->expected_length, NULL, &status);
 
       /* Either it is no longer this packet, or it is and something differs. What must not happen is
        * the altered bytes producing the row's values anyway, which would mean the comparison is
        * reading something other than the frame. */
       if (packet != NULL && strcmp(packet, row->packet) == 0) {
-        if (first_difference(corrupted, row->expected, row->expected_length) ==
-            row->expected_length) {
+        if (first_difference(corrupted, row->expected, row->expected_length) == row->expected_length) {
           failure = __LINE__;
         }
       }
@@ -460,10 +460,7 @@ static int us7_tc03_a_wrong_byte_would_be_caught(const TestArguments *args) {
 
 void register_user_story7(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us7_tc01_every_row_round_trips,
-                "every row encodes to its bytes and decodes back to its values", true);
-  ADD_TEST_CASE(us7_tc02_every_corpus_file_is_used, "every file in the corpus is named by a row",
-                false);
-  ADD_TEST_CASE(us7_tc03_a_wrong_byte_would_be_caught, "a changed byte does not go unnoticed",
-                false);
+  ADD_TEST_CASE(us7_tc01_every_row_round_trips, "every row encodes to its bytes and decodes back to its values", true);
+  ADD_TEST_CASE(us7_tc02_every_corpus_file_is_used, "every file in the corpus is named by a row", false);
+  ADD_TEST_CASE(us7_tc03_a_wrong_byte_would_be_caught, "a changed byte does not go unnoticed", false);
 }

@@ -34,7 +34,7 @@ void diag_free(DiagList *list);
 
 /* printf-style. Silently drops past DIAG_MAX, recording that it did. */
 void diag_add(DiagList *list, int line, int column, int check, const char *fmt, ...)
-    __attribute__((format(printf, 5, 6)));
+  __attribute__((format(printf, 5, 6)));
 
 /* Sorted by position, so output reads in file order however the passes found things. */
 void diag_sort(DiagList *list);

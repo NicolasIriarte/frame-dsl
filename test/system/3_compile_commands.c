@@ -61,9 +61,10 @@ static int us3_tc01_exists_and_covers_every_source_file(const TestArguments *arg
 
   int failure = 0;
   /* One entry per C file under src, test/unit and test/system -- including this one. */
-  const char *expected[] = {"src/main.c", "src/lexer.c", "src/parser.c",     "src/check.c",
-                            "src/framedsl.c", "test/unit/1_lexer.c", "test/system/1_cli.c",
-                            "test/system/3_compile_commands.c"};
+  const char *expected[] = { "src/main.c",          "src/lexer.c",
+                             "src/parser.c",        "src/check.c",
+                             "src/framedsl.c",      "test/unit/1_lexer.c",
+                             "test/system/1_cli.c", "test/system/3_compile_commands.c" };
 
   for (size_t i = 0; i < sizeof(expected) / sizeof(*expected); ++i) {
     if (strstr(text, expected[i]) == NULL) {
@@ -165,11 +166,8 @@ static int us3_tc04_system_entries_do_not_see_src(const TestArguments *args) {
 
 void register_user_story3(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us3_tc01_exists_and_covers_every_source_file,
-                "compile_commands.json covers every source file", true);
+  ADD_TEST_CASE(us3_tc01_exists_and_covers_every_source_file, "compile_commands.json covers every source file", true);
   ADD_TEST_CASE(us3_tc02_records_absolute_paths, "paths are absolute", false);
-  ADD_TEST_CASE(us3_tc03_define_values_keep_their_quotes,
-                "define values keep their quotes through JSON", false);
-  ADD_TEST_CASE(us3_tc04_system_entries_do_not_see_src,
-                "a system test entry gets include/ but not src/", false);
+  ADD_TEST_CASE(us3_tc03_define_values_keep_their_quotes, "define values keep their quotes through JSON", false);
+  ADD_TEST_CASE(us3_tc04_system_entries_do_not_see_src, "a system test entry gets include/ but not src/", false);
 }

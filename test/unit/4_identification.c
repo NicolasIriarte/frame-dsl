@@ -107,9 +107,11 @@ static int us4_tc06_rejects_packets_whose_discriminators_do_not_overlap(const Te
 
 static int us4_tc07_accepts_packets_pinning_one_offset_to_different_values(const TestArguments *args) {
   (void)args;
-  if (!accepted("pkt A { t: 8 = 0x01; n: 16; };\n"
-                "pkt B { t: 8 = 0x02; m: 32; };\n"
-                "pkt C { t: 8 = 0x03; k: 8; };")) {
+  if (!accepted(
+        "pkt A { t: 8 = 0x01; n: 16; };\n"
+        "pkt B { t: 8 = 0x02; m: 32; };\n"
+        "pkt C { t: 8 = 0x03; k: 8; };"
+      )) {
     FORCE_FAILURE();
   }
   return 0;
@@ -129,8 +131,8 @@ static int us4_tc08_names_both_packets_in_an_ambiguity(const TestArguments *args
     Layout *layout = check_file(file, &diags);
     bool named_both = false;
     for (size_t i = 0; i < diags.count; ++i) {
-      if (diags.items[i].check == 12 && strstr(diags.items[i].message, "ALPHA") != NULL &&
-          strstr(diags.items[i].message, "BETA") != NULL) {
+      if (diags.items[i].check == 12 && strstr(diags.items[i].message, "ALPHA") != NULL
+          && strstr(diags.items[i].message, "BETA") != NULL) {
         named_both = true;
       }
     }
@@ -149,20 +151,34 @@ static int us4_tc08_names_both_packets_in_an_ambiguity(const TestArguments *args
 
 void register_user_story4(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us4_tc01_rejects_byte_order_written_on_a_sub_byte_field,
-                "check 10: byte_order written on a field with no bytes", false);
-  ADD_TEST_CASE(us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field,
-                "check 10: an inherited byte_order is not an error", false);
-  ADD_TEST_CASE(us4_tc03_rejects_byte_order_on_a_field_off_a_byte_boundary,
-                "check 10: byte_order on a field off a byte boundary", false);
-  ADD_TEST_CASE(us4_tc04_rejects_a_packet_with_no_fixed_field,
-                "check 11: a packet needs a discriminator", false);
-  ADD_TEST_CASE(us4_tc05_rejects_packets_pinning_the_same_bits_alike,
-                "check 12: same bits, same values, indistinguishable", false);
-  ADD_TEST_CASE(us4_tc06_rejects_packets_whose_discriminators_do_not_overlap,
-                "check 12: discriminators must contradict, not merely exist", false);
-  ADD_TEST_CASE(us4_tc07_accepts_packets_pinning_one_offset_to_different_values,
-                "check 12: a shared type field tells packets apart", false);
-  ADD_TEST_CASE(us4_tc08_names_both_packets_in_an_ambiguity,
-                "check 12: the message names both packets", false);
+  ADD_TEST_CASE(
+    us4_tc01_rejects_byte_order_written_on_a_sub_byte_field,
+    "check 10: byte_order written on a field with no bytes",
+    false
+  );
+  ADD_TEST_CASE(
+    us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field,
+    "check 10: an inherited byte_order is not an error",
+    false
+  );
+  ADD_TEST_CASE(
+    us4_tc03_rejects_byte_order_on_a_field_off_a_byte_boundary,
+    "check 10: byte_order on a field off a byte boundary",
+    false
+  );
+  ADD_TEST_CASE(us4_tc04_rejects_a_packet_with_no_fixed_field, "check 11: a packet needs a discriminator", false);
+  ADD_TEST_CASE(
+    us4_tc05_rejects_packets_pinning_the_same_bits_alike, "check 12: same bits, same values, indistinguishable", false
+  );
+  ADD_TEST_CASE(
+    us4_tc06_rejects_packets_whose_discriminators_do_not_overlap,
+    "check 12: discriminators must contradict, not merely exist",
+    false
+  );
+  ADD_TEST_CASE(
+    us4_tc07_accepts_packets_pinning_one_offset_to_different_values,
+    "check 12: a shared type field tells packets apart",
+    false
+  );
+  ADD_TEST_CASE(us4_tc08_names_both_packets_in_an_ambiguity, "check 12: the message names both packets", false);
 }

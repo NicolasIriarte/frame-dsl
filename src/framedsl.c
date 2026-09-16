@@ -54,10 +54,10 @@ static bool publish_diagnostics(FramedslResult *result) {
 
   for (size_t i = 0; i < result->diags.count; ++i) {
     result->public_diags[i] = (FramedslDiagnostic){
-        .line = result->diags.items[i].line,
-        .column = result->diags.items[i].column,
-        .check = result->diags.items[i].check,
-        .message = result->diags.items[i].message,
+      .line = result->diags.items[i].line,
+      .column = result->diags.items[i].column,
+      .check = result->diags.items[i].check,
+      .message = result->diags.items[i].message,
     };
   }
   return true;
@@ -251,8 +251,7 @@ size_t framedsl_field_count(const FramedslDefinition *definition, size_t packet)
   return definition->ast->packets[packet].field_count;
 }
 
-bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t field,
-                    FramedslField *out) {
+bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t field, FramedslField *out) {
   if (definition == NULL || out == NULL || packet >= definition->ast->packet_count) {
     return false;
   }
@@ -265,27 +264,25 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
   const FieldLayout *slot = &definition->layout->packets[packet].fields[field];
 
   *out = (FramedslField){
-      .name = ast_field->name,
-      .variable = slot->variable,
-      .width_bits = slot->variable ? 0 : slot->width_bits,
-      .max_bits = slot->variable ? slot->max_bits : 0,
-      .reserved_bits = slot->reserved_bits,
-      .offset_known = slot->offset_known,
-      .offset_bits = slot->offset_known ? slot->offset_bits : 0,
-      .is_scalar = slot->is_scalar,
-      .has_fixed = ast_field->has_fixed,
-      .fixed = ast_field->has_fixed ? ast_field->fixed : 0,
-      .bit_order = ast_field->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST
-                                                               : FRAMEDSL_BIT_ORDER_MSB_FIRST,
-      .byte_order = ast_field->byte_order == BYTE_ORDER_LITTLE_ENDIAN
-                        ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN
-                        : FRAMEDSL_BYTE_ORDER_BIG_ENDIAN,
+    .name = ast_field->name,
+    .variable = slot->variable,
+    .width_bits = slot->variable ? 0 : slot->width_bits,
+    .max_bits = slot->variable ? slot->max_bits : 0,
+    .reserved_bits = slot->reserved_bits,
+    .offset_known = slot->offset_known,
+    .offset_bits = slot->offset_known ? slot->offset_bits : 0,
+    .is_scalar = slot->is_scalar,
+    .has_fixed = ast_field->has_fixed,
+    .fixed = ast_field->has_fixed ? ast_field->fixed : 0,
+    .bit_order =
+      ast_field->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST : FRAMEDSL_BIT_ORDER_MSB_FIRST,
+    .byte_order = ast_field->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN
+                                                                    : FRAMEDSL_BYTE_ORDER_BIG_ENDIAN,
   };
   return true;
 }
 
-bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, const char *name,
-                         size_t *index) {
+bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, const char *name, size_t *index) {
   if (definition == NULL || name == NULL || packet >= definition->ast->packet_count) {
     return false;
   }

@@ -17,7 +17,7 @@ typedef struct {
 
 /* Runs the binary with `arguments`, capturing stdout and stderr together. */
 static Run run_with(const char *arguments) {
-  Run run = {.status = -1, .output = {0}};
+  Run run = { .status = -1, .output = { 0 } };
 
   char command[2048];
   snprintf(command, sizeof(command), "%s %s 2>&1", FRAMEDSL_BIN, arguments);
@@ -42,7 +42,9 @@ static Run run_with(const char *arguments) {
   return run;
 }
 
-static Run run_on(const char *path) { return run_with(path); }
+static Run run_on(const char *path) {
+  return run_with(path);
+}
 
 /* Runs the binary against an example, decoding `hex`. The quoting is the tool's advertised shape:
  * one argument holding the whole capture, separators and all. */
@@ -62,8 +64,7 @@ static int expect_parses(const char *name) {
 static int us1_tc01_parses_every_valid_example(const TestArguments *args) {
   (void)args;
 
-  const char *names[] = {"tm_datagram.fdsl", "ccsds_space_packet.fdsl", "packet_family.fdsl",
-                         "bit_order.fdsl"};
+  const char *names[] = { "tm_datagram.fdsl", "ccsds_space_packet.fdsl", "packet_family.fdsl", "bit_order.fdsl" };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     int failure = expect_parses(names[i]);
     if (failure != 0) {
@@ -86,13 +87,17 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
     const char *name;
     int check;
   } cases[] = {
-      {"invalid/no_discriminator.fdsl", 11},   {"invalid/unbounded_valof.fdsl", 5},
-      {"invalid/ambiguous_packets.fdsl", 12},  {"invalid/forward_valof.fdsl", 7},
-      {"invalid/value_too_wide.fdsl", 8},      {"invalid/byte_order_unaligned.fdsl", 10},
-      {"invalid/odd_packet.fdsl", 13},         {"invalid/odd_valof_width.fdsl", 13},
-      {"invalid/reservation_on_fixed_width.fdsl", 14},
-      {"invalid/order_on_a_bit_string.fdsl", 15},
-      {"invalid/valof_on_a_bit_string.fdsl", 16},
+    { "invalid/no_discriminator.fdsl",           11 },
+    { "invalid/unbounded_valof.fdsl",            5  },
+    { "invalid/ambiguous_packets.fdsl",          12 },
+    { "invalid/forward_valof.fdsl",              7  },
+    { "invalid/value_too_wide.fdsl",             8  },
+    { "invalid/byte_order_unaligned.fdsl",       10 },
+    { "invalid/odd_packet.fdsl",                 13 },
+    { "invalid/odd_valof_width.fdsl",            13 },
+    { "invalid/reservation_on_fixed_width.fdsl", 14 },
+    { "invalid/order_on_a_bit_string.fdsl",      15 },
+    { "invalid/valof_on_a_bit_string.fdsl",      16 },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
@@ -114,8 +119,7 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
 }
 
 /* Each case gets a private, already-empty directory to write to. */
-static int write_file(const TestArguments *args, const char *name, const char *content, char *path,
-                      size_t path_size) {
+static int write_file(const TestArguments *args, const char *name, const char *content, char *path, size_t path_size) {
   snprintf(path, path_size, "%s/%s", args->tmp_dir, name);
   FILE *handle = fopen(path, "w");
   if (handle == NULL) {
@@ -240,8 +244,8 @@ static int us1_tc08_decodes_a_frame_and_names_its_fields(const TestArguments *ar
 static int us1_tc09_accepts_hex_however_it_is_written(const TestArguments *args) {
   (void)args;
 
-  const char *forms[] = {"010009", "01 00 09", "01:00:09", "0x01,0x00,0x09", "01-00-09"};
-  const char *flags[] = {"-d", "--decode"};
+  const char *forms[] = { "010009", "01 00 09", "01:00:09", "0x01,0x00,0x09", "01-00-09" };
+  const char *flags[] = { "-d", "--decode" };
 
   for (size_t f = 0; f < sizeof(flags) / sizeof(*flags); ++f) {
     for (size_t i = 0; i < sizeof(forms) / sizeof(*forms); ++i) {
@@ -263,10 +267,10 @@ static int us1_tc10_refuses_hex_that_is_not_hex(const TestArguments *args) {
     const char *hex;
     const char *expected;
   } cases[] = {
-      {"01 00 0", "odd number of digits"},
-      {"01 ZZ", "not a hex digit"},
-      {"0 1 00 09", "one digit"},
-      {"", "no bytes"},
+    { "01 00 0",   "odd number of digits" },
+    { "01 ZZ",     "not a hex digit"      },
+    { "0 1 00 09", "one digit"            },
+    { "",          "no bytes"             },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
@@ -288,13 +292,12 @@ static int us1_tc10_refuses_hex_that_is_not_hex(const TestArguments *args) {
 static int us1_tc11_walks_a_capture_of_several_frames(const TestArguments *args) {
   (void)args;
 
-  Run run = decode_example("packet_family.fdsl", "-d",
-                           "01 00 01  03 00 02 00 02 AA BB  02 00 02 09");
+  Run run = decode_example("packet_family.fdsl", "-d", "01 00 01  03 00 02 00 02 AA BB  02 00 02 09");
   if (run.status != 0) {
     FORCE_FAILURE();
   }
-  if (strstr(run.output, "TC_PING") == NULL || strstr(run.output, "TC_PAYLOAD") == NULL ||
-      strstr(run.output, "TC_SET_MODE") == NULL) {
+  if (strstr(run.output, "TC_PING") == NULL || strstr(run.output, "TC_PAYLOAD") == NULL
+      || strstr(run.output, "TC_SET_MODE") == NULL) {
     FORCE_FAILURE();
   }
   /* The payload's bytes, and its length as it arrived rather than the 256 it reserved. */
@@ -316,9 +319,9 @@ static int us1_tc12_tells_the_decode_failures_apart(const TestArguments *args) {
     const char *hex;
     const char *expected;
   } cases[] = {
-      {"FF 00 00 00", "no packet"},
-      {"02 12", "ran out"},
-      {"03 00 00 FF FF", "claims more"},
+    { "FF 00 00 00",    "no packet"   },
+    { "02 12",          "ran out"     },
+    { "03 00 00 FF FF", "claims more" },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
@@ -335,8 +338,7 @@ static int us1_tc12_tells_the_decode_failures_apart(const TestArguments *args) {
   return 0;
 }
 
-static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(
-    const TestArguments *args) {
+static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(const TestArguments *args) {
   (void)args;
 
   char arguments[512];
@@ -364,25 +366,38 @@ static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(
 void register_user_story1(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us1_tc01_parses_every_valid_example, "every example in examples/ parses", true);
-  ADD_TEST_CASE(us1_tc02_rejects_each_invalid_example_for_its_documented_check,
-                "each invalid example is rejected for the check it names", false);
-  ADD_TEST_CASE(us1_tc03_reports_a_syntax_error_with_its_position,
-                "a syntax error is reported with file, line and column", false);
+  ADD_TEST_CASE(
+    us1_tc02_rejects_each_invalid_example_for_its_documented_check,
+    "each invalid example is rejected for the check it names",
+    false
+  );
+  ADD_TEST_CASE(
+    us1_tc03_reports_a_syntax_error_with_its_position, "a syntax error is reported with file, line and column", false
+  );
   ADD_TEST_CASE(us1_tc04_reports_every_error_in_one_run, "several errors are reported in one run", false);
-  ADD_TEST_CASE(us1_tc05_a_missing_file_is_distinguishable_from_a_bad_one,
-                "a missing file exits differently from a malformed one", false);
+  ADD_TEST_CASE(
+    us1_tc05_a_missing_file_is_distinguishable_from_a_bad_one,
+    "a missing file exits differently from a malformed one",
+    false
+  );
   ADD_TEST_CASE(us1_tc06_reports_what_it_found, "a successful run names the packets it read", false);
   ADD_TEST_CASE(us1_tc07_no_arguments_is_a_usage_error, "running with no arguments explains itself", false);
-  ADD_TEST_CASE(us1_tc08_decodes_a_frame_and_names_its_fields,
-                "-d decodes a frame and prints its fields", false);
-  ADD_TEST_CASE(us1_tc09_accepts_hex_however_it_is_written,
-                "hex is accepted with any separators, under either flag", false);
-  ADD_TEST_CASE(us1_tc10_refuses_hex_that_is_not_hex,
-                "malformed hex is refused, naming the mistake", false);
-  ADD_TEST_CASE(us1_tc11_walks_a_capture_of_several_frames,
-                "a capture of several frames is walked frame by frame", false);
-  ADD_TEST_CASE(us1_tc12_tells_the_decode_failures_apart,
-                "unrecognised, truncated and over-bound are told apart at the terminal", false);
-  ADD_TEST_CASE(us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works,
-                "-d needs hex, takes either position, and describing still works", false);
+  ADD_TEST_CASE(us1_tc08_decodes_a_frame_and_names_its_fields, "-d decodes a frame and prints its fields", false);
+  ADD_TEST_CASE(
+    us1_tc09_accepts_hex_however_it_is_written, "hex is accepted with any separators, under either flag", false
+  );
+  ADD_TEST_CASE(us1_tc10_refuses_hex_that_is_not_hex, "malformed hex is refused, naming the mistake", false);
+  ADD_TEST_CASE(
+    us1_tc11_walks_a_capture_of_several_frames, "a capture of several frames is walked frame by frame", false
+  );
+  ADD_TEST_CASE(
+    us1_tc12_tells_the_decode_failures_apart,
+    "unrecognised, truncated and over-bound are told apart at the terminal",
+    false
+  );
+  ADD_TEST_CASE(
+    us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works,
+    "-d needs hex, takes either position, and describing still works",
+    false
+  );
 }

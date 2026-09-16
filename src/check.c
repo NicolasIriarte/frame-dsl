@@ -17,7 +17,7 @@ typedef struct {
 } Checker;
 
 static void fail(Checker *checker, int line, int column, int check, const char *fmt, ...)
-    __attribute__((format(printf, 5, 6)));
+  __attribute__((format(printf, 5, 6)));
 
 static void fail(Checker *checker, int line, int column, int check, const char *fmt, ...) {
   checker->failed = true;
@@ -73,8 +73,12 @@ static FoldResult fold(const Expr *expr, int64_t *out) {
     }
 
     switch (expr->op) {
-    case '+': *out = lhs + rhs; break;
-    case '-': *out = lhs - rhs; break;
+    case '+':
+      *out = lhs + rhs;
+      break;
+    case '-':
+      *out = lhs - rhs;
+      break;
     case '*':
       if (lhs != 0 && (rhs > WIDTH_CEILING / lhs || rhs < -WIDTH_CEILING / lhs)) {
         return FOLD_TOO_LARGE;
@@ -87,7 +91,8 @@ static FoldResult fold(const Expr *expr, int64_t *out) {
       }
       *out = lhs / rhs;
       break;
-    default: return FOLD_NOT_CONSTANT;
+    default:
+      return FOLD_NOT_CONSTANT;
     }
 
     if (*out > WIDTH_CEILING) {
@@ -177,14 +182,20 @@ static bool residue_mod8(const Expr *expr, uint64_t *out) {
     return true;
 
   /* Division does not distribute over the modulus, so only the folded case above can answer it. */
-  default: return false;
+  default:
+    return false;
   }
 }
 
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
  * means knowing where it starts, which means every field before it is already resolved. */
-static void check_references(Checker *checker, size_t packet_index, const AstPacket *packet,
-                             size_t field_index, const Expr *expr) {
+static void check_references(
+  Checker *checker,
+  size_t packet_index,
+  const AstPacket *packet,
+  size_t field_index,
+  const Expr *expr
+) {
   if (expr == NULL) {
     return;
   }
@@ -205,10 +216,16 @@ static void check_references(Checker *checker, size_t packet_index, const AstPac
        * be. */
       const FieldLayout *referenced = &checker->layout->packets[packet_index].fields[i];
       if (!referenced->is_scalar) {
-        fail(checker, expr->line, expr->column, 16,
-             "valof(%s) names a field of more than %d bits, which has no single value to compute a "
-             "width from; only a scalar can size another field",
-             expr->reference, FRAMEDSL_SCALAR_MAX_BITS);
+        fail(
+          checker,
+          expr->line,
+          expr->column,
+          16,
+          "valof(%s) names a field of more than %d bits, which has no single value to compute a "
+          "width from; only a scalar can size another field",
+          expr->reference,
+          FRAMEDSL_SCALAR_MAX_BITS
+        );
       }
       return;
     }
@@ -218,16 +235,21 @@ static void check_references(Checker *checker, size_t packet_index, const AstPac
    * second is usually a field belonging to another packet. */
   for (size_t i = field_index; i < packet->field_count; ++i) {
     if (strcmp(packet->fields[i].name, expr->reference) == 0) {
-      fail(checker, expr->line, expr->column, 7,
-           "valof(%s) names a field declared later in '%s'; a width can only depend on a field "
-           "already read",
-           expr->reference, packet->name);
+      fail(
+        checker,
+        expr->line,
+        expr->column,
+        7,
+        "valof(%s) names a field declared later in '%s'; a width can only depend on a field "
+        "already read",
+        expr->reference,
+        packet->name
+      );
       return;
     }
   }
 
-  fail(checker, expr->line, expr->column, 7, "valof(%s) names no field in '%s'", expr->reference,
-       packet->name);
+  fail(checker, expr->line, expr->column, 7, "valof(%s) names no field in '%s'", expr->reference, packet->name);
 }
 
 /* ---- Fixed-bit projection (check 12) -------------------------------------------------------- */
@@ -245,8 +267,7 @@ static void bits_set(uint8_t *bits, size_t index) {
 /* Lays a fixed value onto the stream bits its field occupies, applying that field's bit order and
  * byte order first -- the question is which *stream* bits are pinned, not which bits of the value
  * are. */
-static void project(const AstField *field, uint64_t offset, uint64_t width, uint8_t *mask,
-                    uint8_t *value) {
+static void project(const AstField *field, uint64_t offset, uint64_t width, uint8_t *mask, uint8_t *value) {
   uint64_t wire = field->fixed;
 
   if (field->byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
@@ -258,8 +279,7 @@ static void project(const AstField *field, uint64_t offset, uint64_t width, uint
   }
 
   for (uint64_t j = 0; j < width; ++j) {
-    uint64_t bit = field->bit_order == BIT_ORDER_MSB_FIRST ? (wire >> (width - 1 - j)) & 1
-                                                           : (wire >> j) & 1;
+    uint64_t bit = field->bit_order == BIT_ORDER_MSB_FIRST ? (wire >> (width - 1 - j)) & 1 : (wire >> j) & 1;
     bits_set(mask, (size_t)(offset + j));
     if (bit != 0) {
       bits_set(value, (size_t)(offset + j));
@@ -298,8 +318,7 @@ static void check_packet(Checker *checker, size_t packet_index) {
     /* Check 2. */
     for (size_t j = 0; j < i; ++j) {
       if (strcmp(packet->fields[j].name, field->name) == 0) {
-        fail(checker, field->line, field->column, 2, "'%s' already has a field called '%s'",
-             packet->name, field->name);
+        fail(checker, field->line, field->column, 2, "'%s' already has a field called '%s'", packet->name, field->name);
         break;
       }
     }
@@ -314,26 +333,42 @@ static void check_packet(Checker *checker, size_t packet_index) {
     if (variable) {
       /* Check 5. */
       if (field->reserve == NULL) {
-        fail(checker, field->line, field->column, 5,
-             "'%s.%s' has a width that depends on another field, so it must reserve a slot: write "
-             "'%s[<bytes>]'. Without one it cannot be given a fixed place in the arena",
-             packet->name, field->name, field->name);
+        fail(
+          checker,
+          field->line,
+          field->column,
+          5,
+          "'%s.%s' has a width that depends on another field, so it must reserve a slot: write "
+          "'%s[<bytes>]'. Without one it cannot be given a fixed place in the arena",
+          packet->name,
+          field->name,
+          field->name
+        );
       }
     } else {
       /* Check 4. */
       int64_t width = 0;
       FoldResult folded = fold(field->width, &width);
       if (folded == FOLD_DIVIDE_BY_ZERO) {
-        fail(checker, field->line, field->column, 4, "'%s.%s' has a width that divides by zero",
-             packet->name, field->name);
+        fail(
+          checker, field->line, field->column, 4, "'%s.%s' has a width that divides by zero", packet->name, field->name
+        );
         width_ok = false;
       } else if (folded == FOLD_TOO_LARGE) {
-        fail(checker, field->line, field->column, 4, "'%s.%s' has an impossibly large width",
-             packet->name, field->name);
+        fail(
+          checker, field->line, field->column, 4, "'%s.%s' has an impossibly large width", packet->name, field->name
+        );
         width_ok = false;
       } else if (folded != FOLD_OK || width <= 0) {
-        fail(checker, field->line, field->column, 4,
-             "'%s.%s' must have a width of at least one bit", packet->name, field->name);
+        fail(
+          checker,
+          field->line,
+          field->column,
+          4,
+          "'%s.%s' must have a width of at least one bit",
+          packet->name,
+          field->name
+        );
         width_ok = false;
       } else {
         slot->width_bits = (uint64_t)width;
@@ -349,11 +384,18 @@ static void check_packet(Checker *checker, size_t packet_index) {
     } else {
       uint64_t residue = 0;
       if (!residue_mod8(field->width, &residue)) {
-        fail(checker, field->line, field->column, 13,
-             "'%s.%s' has a width that cannot be shown to be a whole number of bytes, so '%s' would "
-             "be a different length for every frame it carries; write the width as a multiple of 8 "
-             "bits, as in 'valof(x) * 8'",
-             packet->name, field->name, packet->name);
+        fail(
+          checker,
+          field->line,
+          field->column,
+          13,
+          "'%s.%s' has a width that cannot be shown to be a whole number of bytes, so '%s' would "
+          "be a different length for every frame it carries; write the width as a multiple of 8 "
+          "bits, as in 'valof(x) * 8'",
+          packet->name,
+          field->name,
+          packet->name
+        );
         byte_residue_known = false;
       } else {
         byte_residue = (byte_residue + residue) % 8;
@@ -367,13 +409,26 @@ static void check_packet(Checker *checker, size_t packet_index) {
       int64_t bound = 0;
       FoldResult folded = fold(field->reserve, &bound);
       if (folded == FOLD_NOT_CONSTANT) {
-        fail(checker, field->reserve->line, field->reserve->column, 6,
-             "'%s.%s' reserves a size that depends on another field; a reservation must be a "
-             "constant, since it is what the arena sets aside before any frame arrives",
-             packet->name, field->name);
+        fail(
+          checker,
+          field->reserve->line,
+          field->reserve->column,
+          6,
+          "'%s.%s' reserves a size that depends on another field; a reservation must be a "
+          "constant, since it is what the arena sets aside before any frame arrives",
+          packet->name,
+          field->name
+        );
       } else if (folded != FOLD_OK || bound <= 0) {
-        fail(checker, field->reserve->line, field->reserve->column, 6,
-             "'%s.%s' must reserve at least one byte", packet->name, field->name);
+        fail(
+          checker,
+          field->reserve->line,
+          field->reserve->column,
+          6,
+          "'%s.%s' must reserve at least one byte",
+          packet->name,
+          field->name
+        );
       } else {
         slot->max_bits = (uint64_t)bound * 8;
       }
@@ -383,18 +438,31 @@ static void check_packet(Checker *checker, size_t packet_index) {
      * arrives. A constant-width field already answers that with its width, and a second number could
      * only ever agree with it or contradict it. */
     if (width_ok && !variable && field->reserve != NULL) {
-      fail(checker, field->reserve_line, field->reserve_column, 14,
-           "'%s.%s' is %llu bits wide, so its slot is already known and it must not reserve one; "
-           "a reservation belongs only on a field whose width depends on another field",
-           packet->name, field->name, (unsigned long long)slot->width_bits);
+      fail(
+        checker,
+        field->reserve_line,
+        field->reserve_column,
+        14,
+        "'%s.%s' is %llu bits wide, so its slot is already known and it must not reserve one; "
+        "a reservation belongs only on a field whose width depends on another field",
+        packet->name,
+        field->name,
+        (unsigned long long)slot->width_bits
+      );
     }
 
     /* Check 9. */
     if (field->has_fixed && (variable || field->reserve != NULL)) {
-      fail(checker, field->fixed_line, field->fixed_column, 9,
-           "'%s.%s' cannot have both a fixed value and a reservation: a width that is not known "
-           "until a frame arrives cannot identify the packet that frame belongs to",
-           packet->name, field->name);
+      fail(
+        checker,
+        field->fixed_line,
+        field->fixed_column,
+        9,
+        "'%s.%s' cannot have both a fixed value and a reservation: a width that is not known "
+        "until a frame arrives cannot identify the packet that frame belongs to",
+        packet->name,
+        field->name
+      );
     }
 
     slot->reserved_bits = variable ? slot->max_bits : slot->width_bits;
@@ -407,9 +475,17 @@ static void check_packet(Checker *checker, size_t packet_index) {
       has_fixed = true;
       uint64_t width = slot->width_bits;
       if (!variable && width > 0 && width < 64 && field->fixed >= ((uint64_t)1 << width)) {
-        fail(checker, field->fixed_line, field->fixed_column, 8,
-             "'%s.%s' is %llu bits, which cannot hold the value %#llx", packet->name, field->name,
-             (unsigned long long)width, (unsigned long long)field->fixed);
+        fail(
+          checker,
+          field->fixed_line,
+          field->fixed_column,
+          8,
+          "'%s.%s' is %llu bits, which cannot hold the value %#llx",
+          packet->name,
+          field->name,
+          (unsigned long long)width,
+          (unsigned long long)field->fixed
+        );
       }
     }
 
@@ -420,11 +496,17 @@ static void check_packet(Checker *checker, size_t packet_index) {
      * this field and meaningful to the next one. */
     if (width_ok && !slot->is_scalar && (field->bit_order_written || field->byte_order_written)) {
       bool byte = field->byte_order_written;
-      fail(checker, byte ? field->byte_order_line : field->bit_order_line,
-           byte ? field->byte_order_column : field->bit_order_column, 15,
-           "'%s.%s' is a bit string, not a number, so '%s' cannot apply to it; it is written to the "
-           "frame as the bytes it was given",
-           packet->name, field->name, byte ? "byte_order" : "bit_order");
+      fail(
+        checker,
+        byte ? field->byte_order_line : field->bit_order_line,
+        byte ? field->byte_order_column : field->bit_order_column,
+        15,
+        "'%s.%s' is a bit string, not a number, so '%s' cannot apply to it; it is written to the "
+        "frame as the bytes it was given",
+        packet->name,
+        field->name,
+        byte ? "byte_order" : "bit_order"
+      );
     }
 
     /* Check 10. Only a byte_order *written here* is an error: one inherited from packet or file
@@ -432,14 +514,28 @@ static void check_packet(Checker *checker, size_t packet_index) {
      * ones. What is worth rejecting is somebody writing a setting that cannot do anything. */
     if (field->byte_order_written && slot->is_scalar && slot->width_bits > 0) {
       if (slot->width_bits % 8 != 0) {
-        fail(checker, field->byte_order_line, field->byte_order_column, 10,
-             "'%s.%s' is %llu bits, so it has no bytes to reorder and 'byte_order' cannot apply",
-             packet->name, field->name, (unsigned long long)slot->width_bits);
+        fail(
+          checker,
+          field->byte_order_line,
+          field->byte_order_column,
+          10,
+          "'%s.%s' is %llu bits, so it has no bytes to reorder and 'byte_order' cannot apply",
+          packet->name,
+          field->name,
+          (unsigned long long)slot->width_bits
+        );
       } else if (offset_known && offset % 8 != 0) {
-        fail(checker, field->byte_order_line, field->byte_order_column, 10,
-             "'%s.%s' starts at bit %llu, which is not a byte boundary, so 'byte_order' cannot "
-             "apply",
-             packet->name, field->name, (unsigned long long)offset);
+        fail(
+          checker,
+          field->byte_order_line,
+          field->byte_order_column,
+          10,
+          "'%s.%s' starts at bit %llu, which is not a byte boundary, so 'byte_order' cannot "
+          "apply",
+          packet->name,
+          field->name,
+          (unsigned long long)offset
+        );
       }
     }
 
@@ -461,24 +557,41 @@ static void check_packet(Checker *checker, size_t packet_index) {
     if (offset_known) {
       /* Every width was constant, so the exact total is worth reporting -- the author should not
        * have to add up their own fields to find out how far off they are. */
-      fail(checker, packet->line, packet->column, 13,
-           "'%s' is %llu bits, which is not a whole number of bytes; a packet must be a multiple of "
-           "8 bits so that a frame of it has an unambiguous byte form",
-           packet->name, (unsigned long long)offset);
+      fail(
+        checker,
+        packet->line,
+        packet->column,
+        13,
+        "'%s' is %llu bits, which is not a whole number of bytes; a packet must be a multiple of "
+        "8 bits so that a frame of it has an unambiguous byte form",
+        packet->name,
+        (unsigned long long)offset
+      );
     } else {
-      fail(checker, packet->line, packet->column, 13,
-           "'%s' is not a whole number of bytes: its fields leave %llu bit(s) over. A packet must "
-           "be a multiple of 8 bits so that a frame of it has an unambiguous byte form",
-           packet->name, (unsigned long long)byte_residue);
+      fail(
+        checker,
+        packet->line,
+        packet->column,
+        13,
+        "'%s' is not a whole number of bytes: its fields leave %llu bit(s) over. A packet must "
+        "be a multiple of 8 bits so that a frame of it has an unambiguous byte form",
+        packet->name,
+        (unsigned long long)byte_residue
+      );
     }
   }
 
   /* Check 11. */
   if (!has_fixed && packet->field_count > 0) {
-    fail(checker, packet->line, packet->column, 11,
-         "'%s' has no field with a fixed value, so nothing identifies it; a decoder handed a buffer "
-         "has no way to conclude the frame is this packet",
-         packet->name);
+    fail(
+      checker,
+      packet->line,
+      packet->column,
+      11,
+      "'%s' has no field with a fixed value, so nothing identifies it; a decoder handed a buffer "
+      "has no way to conclude the frame is this packet",
+      packet->name
+    );
   }
 
   /* Second pass: project the fixed fields that sit at a constant offset. */
@@ -495,8 +608,8 @@ static void check_packet(Checker *checker, size_t packet_index) {
     for (size_t i = 0; i < packet->field_count; ++i) {
       const AstField *field = &packet->fields[i];
       const FieldLayout *slot = &layout->fields[i];
-      if (!field->has_fixed || slot->variable || !slot->offset_known || slot->width_bits == 0 ||
-          slot->width_bits > 64) {
+      if (!field->has_fixed || slot->variable || !slot->offset_known || slot->width_bits == 0
+          || slot->width_bits > 64) {
         continue;
       }
       if (slot->offset_bits + slot->width_bits > discriminator_bits) {
@@ -520,9 +633,8 @@ static void check_distinguishable(Checker *checker) {
       const PacketLayout *lhs = &layout->packets[a];
       const PacketLayout *rhs = &layout->packets[b];
 
-      size_t shared_bits = lhs->discriminator_bits < rhs->discriminator_bits
-                               ? lhs->discriminator_bits
-                               : rhs->discriminator_bits;
+      size_t shared_bits =
+        lhs->discriminator_bits < rhs->discriminator_bits ? lhs->discriminator_bits : rhs->discriminator_bits;
       size_t shared_bytes = (shared_bits + 7) / 8;
 
       bool contradicts = false;
@@ -536,10 +648,16 @@ static void check_distinguishable(Checker *checker) {
 
       if (!contradicts) {
         const AstPacket *packet = &checker->file->packets[b];
-        fail(checker, packet->line, packet->column, 12,
-             "'%s' and '%s' cannot be told apart: no bit is fixed to different values in both, so a "
-             "frame could satisfy either",
-             checker->file->packets[a].name, checker->file->packets[b].name);
+        fail(
+          checker,
+          packet->line,
+          packet->column,
+          12,
+          "'%s' and '%s' cannot be told apart: no bit is fixed to different values in both, so a "
+          "frame could satisfy either",
+          checker->file->packets[a].name,
+          checker->file->packets[b].name
+        );
       }
     }
   }
@@ -560,14 +678,20 @@ Layout *check_file(const AstFile *file, DiagList *diags) {
   }
   layout->packet_count = file->packet_count;
 
-  Checker checker = {.file = file, .diags = diags, .layout = layout, .failed = false};
+  Checker checker = { .file = file, .diags = diags, .layout = layout, .failed = false };
 
   /* Check 1. */
   for (size_t i = 0; i < file->packet_count; ++i) {
     for (size_t j = 0; j < i; ++j) {
       if (strcmp(file->packets[j].name, file->packets[i].name) == 0) {
-        fail(&checker, file->packets[i].line, file->packets[i].column, 1,
-             "there is already a packet called '%s'", file->packets[i].name);
+        fail(
+          &checker,
+          file->packets[i].line,
+          file->packets[i].column,
+          1,
+          "there is already a packet called '%s'",
+          file->packets[i].name
+        );
         break;
       }
     }

@@ -63,14 +63,13 @@ static int us8_tc01_a_constant_packet_compiles_field_by_field(const TestArgument
 
   int failure = 0;
   const PacketProgram *packet = &compiled.program->packets[0];
-  const uint64_t widths[] = {8, 11, 1, 4};
+  const uint64_t widths[] = { 8, 11, 1, 4 };
 
   if (compiled.program->packet_count != 1 || packet->field_count != 4) {
     failure = __LINE__;
   } else {
     for (size_t i = 0; i < 4; ++i) {
-      if (packet->fields[i].field != i || packet->fields[i].width_bits != widths[i] ||
-          packet->fields[i].variable) {
+      if (packet->fields[i].field != i || packet->fields[i].width_bits != widths[i] || packet->fields[i].variable) {
         failure = __LINE__;
         break;
       }
@@ -168,7 +167,7 @@ static int us8_tc05_a_nested_expression_evaluates_correctly(const TestArguments 
   }
 
   int failure = 0;
-  const uint64_t slots[] = {0, 9, 0};
+  const uint64_t slots[] = { 0, 9, 0 };
   uint64_t width = 0;
 
   if (!width_program_eval(&compiled.program->packets[0].fields[2].width, slots, &width)) {
@@ -190,10 +189,10 @@ static int us8_tc06_every_operator_evaluates(const TestArguments *args) {
     const char *width;
     uint64_t expected;
   } cases[] = {
-      {"valof(n) * 8 + 16", 656},
-      {"valof(n) * 8 - 16", 624},
-      {"valof(n) * 8", 640},
-      {"valof(n) / 8 * 8", 80},
+    { "valof(n) * 8 + 16", 656 },
+    { "valof(n) * 8 - 16", 624 },
+    { "valof(n) * 8",      640 },
+    { "valof(n) / 8 * 8",  80  },
   };
 
   int failure = 0;
@@ -207,7 +206,7 @@ static int us8_tc06_every_operator_evaluates(const TestArguments *args) {
       FORCE_FAILURE();
     }
 
-    const uint64_t slots[] = {0, 80, 0};
+    const uint64_t slots[] = { 0, 80, 0 };
     uint64_t width = 0;
     if (!width_program_eval(&compiled.program->packets[0].fields[2].width, slots, &width)) {
       failure = __LINE__;
@@ -225,8 +224,7 @@ static int us8_tc07_the_stack_depth_is_the_true_maximum(const TestArguments *arg
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[512]: valof(n) * 8 + valof(n) * 8; };",
-                      &compiled)) {
+  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[512]: valof(n) * 8 + valof(n) * 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -258,7 +256,7 @@ static int us8_tc08_a_runaway_width_is_refused(const TestArguments *args) {
 
   int failure = 0;
   const WidthProgram *program = &compiled.program->packets[0].fields[2].width;
-  const uint64_t huge[] = {0, UINT64_MAX, 0};
+  const uint64_t huge[] = { 0, UINT64_MAX, 0 };
   uint64_t width = 0;
 
   if (width_program_eval(program, huge, &width)) {
@@ -278,7 +276,7 @@ static int us8_tc08_a_runaway_width_is_refused(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  const uint64_t small[] = {0, 1, 0};
+  const uint64_t small[] = { 0, 1, 0 };
   if (width_program_eval(&second.program->packets[0].fields[2].width, small, &width)) {
     failure = __LINE__; /* 1 * 8 - 32 */
   }
@@ -317,15 +315,19 @@ static int us8_tc10_orders_are_carried_resolved(const TestArguments *args) {
 
   Compiled inherited;
   Compiled written;
-  bool ok = compile_source("pkt A { h: 8 = 0xAA;\n"
-                           "  [ @byte_order: little_endian; ]\n"
-                           "  block { a: 32; };\n"
-                           "};",
-                           &inherited) &&
-            compile_source("pkt A { h: 8 = 0xAA;\n"
-                           "  [ @byte_order: little_endian; ] a: 32;\n"
-                           "};",
-                           &written);
+  bool ok = compile_source(
+              "pkt A { h: 8 = 0xAA;\n"
+              "  [ @byte_order: little_endian; ]\n"
+              "  block { a: 32; };\n"
+              "};",
+              &inherited
+            )
+            && compile_source(
+              "pkt A { h: 8 = 0xAA;\n"
+              "  [ @byte_order: little_endian; ] a: 32;\n"
+              "};",
+              &written
+            );
 
   int failure = 0;
   if (!ok) {
@@ -333,8 +335,7 @@ static int us8_tc10_orders_are_carried_resolved(const TestArguments *args) {
   } else {
     const FieldInstruction *from_block = &inherited.program->packets[0].fields[1];
     const FieldInstruction *from_field = &written.program->packets[0].fields[1];
-    if (from_block->byte_order != BYTE_ORDER_LITTLE_ENDIAN ||
-        from_block->byte_order != from_field->byte_order) {
+    if (from_block->byte_order != BYTE_ORDER_LITTLE_ENDIAN || from_block->byte_order != from_field->byte_order) {
       failure = __LINE__;
     } else if (from_block->bit_order != from_field->bit_order) {
       failure = __LINE__;
@@ -359,8 +360,7 @@ static int us8_tc11_several_packets_compile_independently(const TestArguments *a
   int failure = 0;
   if (compiled.program->packet_count != 2) {
     failure = __LINE__;
-  } else if (compiled.program->packets[0].field_count != 2 ||
-             compiled.program->packets[1].field_count != 3) {
+  } else if (compiled.program->packets[0].field_count != 2 || compiled.program->packets[1].field_count != 3) {
     failure = __LINE__;
   } else if (compiled.program->packets[1].fields[0].fixed != 2) {
     failure = __LINE__;
@@ -379,10 +379,10 @@ static int us8_tc12_every_example_compiles(const TestArguments *args) {
    * system -- examples/ is walked by the system tests, which drive the real binary over the real
    * files. */
   const char *sources[] = {
-      "@bit_order: msb_first;\npkt A { h: 8 = 0xAA; n: 32; d[128]: valof(n) * 8; c: 16; };",
-      "pkt A { v: 3 = 0b000; t: 1 = 0b0; f: 1; i: 11; s: 2; q: 14; l: 16;"
-      " u[65536]: (valof(l) + 1) * 8; };",
-      "pkt A { t: 8 = 1; s: 16; };\npkt B { t: 8 = 2; s: 16; m: 8; };",
+    "@bit_order: msb_first;\npkt A { h: 8 = 0xAA; n: 32; d[128]: valof(n) * 8; c: 16; };",
+    "pkt A { v: 3 = 0b000; t: 1 = 0b0; f: 1; i: 11; s: 2; q: 14; l: 16;"
+    " u[65536]: (valof(l) + 1) * 8; };",
+    "pkt A { t: 8 = 1; s: 16; };\npkt B { t: 8 = 2; s: 16; m: 8; };",
   };
 
   int failure = 0;
@@ -400,26 +400,20 @@ static int us8_tc12_every_example_compiles(const TestArguments *args) {
 
 void register_user_story8(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us8_tc01_a_constant_packet_compiles_field_by_field,
-                "one instruction per field, in declaration order", false);
-  ADD_TEST_CASE(us8_tc02_a_constant_width_compiles_to_no_program,
-                "a constant width costs no evaluation", false);
-  ADD_TEST_CASE(us8_tc03_a_valof_width_compiles_to_postfix,
-                "valof(n) * 8 compiles to SLOT LIT MUL", false);
-  ADD_TEST_CASE(us8_tc04_constant_subtrees_are_folded, "a constant subtree folds to one literal",
-                false);
-  ADD_TEST_CASE(us8_tc05_a_nested_expression_evaluates_correctly,
-                "(valof(n) + 1) * 8 evaluates in the right order", false);
+  ADD_TEST_CASE(
+    us8_tc01_a_constant_packet_compiles_field_by_field, "one instruction per field, in declaration order", false
+  );
+  ADD_TEST_CASE(us8_tc02_a_constant_width_compiles_to_no_program, "a constant width costs no evaluation", false);
+  ADD_TEST_CASE(us8_tc03_a_valof_width_compiles_to_postfix, "valof(n) * 8 compiles to SLOT LIT MUL", false);
+  ADD_TEST_CASE(us8_tc04_constant_subtrees_are_folded, "a constant subtree folds to one literal", false);
+  ADD_TEST_CASE(
+    us8_tc05_a_nested_expression_evaluates_correctly, "(valof(n) + 1) * 8 evaluates in the right order", false
+  );
   ADD_TEST_CASE(us8_tc06_every_operator_evaluates, "+ - * / all evaluate", false);
-  ADD_TEST_CASE(us8_tc07_the_stack_depth_is_the_true_maximum,
-                "the computed stack depth is the real maximum", false);
-  ADD_TEST_CASE(us8_tc08_a_runaway_width_is_refused,
-                "an overflowing or negative width is refused per frame", false);
-  ADD_TEST_CASE(us8_tc09_a_fixed_field_carries_its_value,
-                "a fixed value travels on the instruction", false);
-  ADD_TEST_CASE(us8_tc10_orders_are_carried_resolved,
-                "inherited and written orders compile identically", false);
-  ADD_TEST_CASE(us8_tc11_several_packets_compile_independently,
-                "each packet gets its own instructions", false);
+  ADD_TEST_CASE(us8_tc07_the_stack_depth_is_the_true_maximum, "the computed stack depth is the real maximum", false);
+  ADD_TEST_CASE(us8_tc08_a_runaway_width_is_refused, "an overflowing or negative width is refused per frame", false);
+  ADD_TEST_CASE(us8_tc09_a_fixed_field_carries_its_value, "a fixed value travels on the instruction", false);
+  ADD_TEST_CASE(us8_tc10_orders_are_carried_resolved, "inherited and written orders compile identically", false);
+  ADD_TEST_CASE(us8_tc11_several_packets_compile_independently, "each packet gets its own instructions", false);
   ADD_TEST_CASE(us8_tc12_every_example_compiles, "the example shapes all compile", false);
 }

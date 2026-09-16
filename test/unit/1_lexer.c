@@ -32,10 +32,9 @@ static int us1_tc01_recognises_every_punctuation_token(const TestArguments *args
   Token tokens[16];
   size_t count = tokenise("@ : ; { } [ ] ( ) = + - * /", tokens, 16, &diags);
 
-  const TokenKind expected[] = {TOK_AT,     TOK_COLON,    TOK_SEMICOLON, TOK_LBRACE,
-                                TOK_RBRACE, TOK_LBRACKET, TOK_RBRACKET,  TOK_LPAREN,
-                                TOK_RPAREN, TOK_EQUALS,   TOK_PLUS,      TOK_MINUS,
-                                TOK_STAR,   TOK_SLASH};
+  const TokenKind expected[] = { TOK_AT,       TOK_COLON,    TOK_SEMICOLON, TOK_LBRACE, TOK_RBRACE,
+                                 TOK_LBRACKET, TOK_RBRACKET, TOK_LPAREN,    TOK_RPAREN, TOK_EQUALS,
+                                 TOK_PLUS,     TOK_MINUS,    TOK_STAR,      TOK_SLASH };
   size_t expected_count = sizeof(expected) / sizeof(*expected);
 
   int failure = 0;
@@ -64,7 +63,7 @@ static int us1_tc02_recognises_every_keyword(const TestArguments *args) {
    * parser looks up, which is what lets a field be called `bit_order`. */
   size_t count = tokenise("pkt valof block", tokens, 16, &diags);
 
-  const TokenKind expected[] = {TOK_PKT, TOK_VALOF, TOK_BLOCK};
+  const TokenKind expected[] = { TOK_PKT, TOK_VALOF, TOK_BLOCK };
   size_t expected_count = sizeof(expected) / sizeof(*expected);
 
   int failure = 0;

@@ -21,11 +21,16 @@ static long long eval(const Expr *expr) {
     return -1;
   case EXPR_BINARY:
     switch (expr->op) {
-    case '+': return eval(expr->lhs) + eval(expr->rhs);
-    case '-': return eval(expr->lhs) - eval(expr->rhs);
-    case '*': return eval(expr->lhs) * eval(expr->rhs);
-    case '/': return eval(expr->lhs) / eval(expr->rhs);
-    default: return -1;
+    case '+':
+      return eval(expr->lhs) + eval(expr->rhs);
+    case '-':
+      return eval(expr->lhs) - eval(expr->rhs);
+    case '*':
+      return eval(expr->lhs) * eval(expr->rhs);
+    case '/':
+      return eval(expr->lhs) / eval(expr->rhs);
+    default:
+      return -1;
     }
   }
   return -1;
@@ -92,13 +97,15 @@ static int us2_tc05_parses_a_whole_packet(const TestArguments *args) {
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("@bit_order: msb_first;\n"
-                        "pkt TM {\n"
-                        "  hdr: 8 = 0xAA;\n"
-                        "  len: 32;\n"
-                        "  data[128]: valof(len) * 8;\n"
-                        "};\n",
-                        &diags);
+  AstFile *file = parse(
+    "@bit_order: msb_first;\n"
+    "pkt TM {\n"
+    "  hdr: 8 = 0xAA;\n"
+    "  len: 32;\n"
+    "  data[128]: valof(len) * 8;\n"
+    "};\n",
+    &diags
+  );
 
   int failure = 0;
   if (diags.count != 0 || file == NULL || file->packet_count != 1) {
@@ -131,15 +138,17 @@ static int us2_tc06_resolves_settings_innermost_first(const TestArguments *args)
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("@bit_order: msb_first;\n"
-                        "@byte_order: big_endian;\n"
-                        "[ @byte_order: little_endian; ]\n"
-                        "pkt TM {\n"
-                        "  a: 32;\n"
-                        "  [ @byte_order: big_endian; ] b: 32;\n"
-                        "  [ @bit_order: lsb_first; ] c: 4;\n"
-                        "};\n",
-                        &diags);
+  AstFile *file = parse(
+    "@bit_order: msb_first;\n"
+    "@byte_order: big_endian;\n"
+    "[ @byte_order: little_endian; ]\n"
+    "pkt TM {\n"
+    "  a: 32;\n"
+    "  [ @byte_order: big_endian; ] b: 32;\n"
+    "  [ @bit_order: lsb_first; ] c: 4;\n"
+    "};\n",
+    &diags
+  );
 
   int failure = 0;
   if (diags.count != 0 || file == NULL || file->packet_count != 1) {
@@ -190,12 +199,14 @@ static int us2_tc08_reports_more_than_the_first_error(const TestArguments *args)
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("pkt TM {\n"
-                        "  a 8;\n"   /* missing ':' */
-                        "  b: ;\n"   /* missing width */
-                        "  c: 8\n"   /* missing ';' */
-                        "};\n",
-                        &diags);
+  AstFile *file = parse(
+    "pkt TM {\n"
+    "  a 8;\n" /* missing ':' */
+    "  b: ;\n" /* missing width */
+    "  c: 8\n" /* missing ';' */
+    "};\n",
+    &diags
+  );
 
   int failure = diags.count >= 3 ? 0 : __LINE__;
 
@@ -280,8 +291,9 @@ void register_user_story2(void) {
   ADD_TEST_CASE(us2_tc06_resolves_settings_innermost_first, "settings resolve field > packet > file", false);
   ADD_TEST_CASE(us2_tc07_syntax_error_reports_line_and_column, "a syntax error carries its position", false);
   ADD_TEST_CASE(us2_tc08_reports_more_than_the_first_error, "several errors are reported in one run", false);
-  ADD_TEST_CASE(us2_tc11_max_is_no_longer_a_reserved_word,
-                "'max' is an ordinary name now the bound is in brackets", false);
+  ADD_TEST_CASE(
+    us2_tc11_max_is_no_longer_a_reserved_word, "'max' is an ordinary name now the bound is in brackets", false
+  );
   ADD_TEST_CASE(us2_tc09_rejects_a_reserved_word_as_a_field_name, "a reserved word is not a field name", false);
   ADD_TEST_CASE(us2_tc10_diagnostics_come_back_in_file_order, "diagnostics are ordered by position", false);
 }

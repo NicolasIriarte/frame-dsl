@@ -14,16 +14,16 @@
 #include "framedsl.h"
 #include "testsuite.h"
 
-#define DEFINITION                                                                                 \
-  "@bit_order:  msb_first;\n"                                                                      \
-  "@byte_order: big_endian;\n"                                                                     \
-  "pkt TM_A {\n"                                                                                   \
-  "  hdr:       8 = 0xAA;\n"                                                                       \
-  "  len:      32;\n"                                                                              \
-  "  wide:     72;\n"           /* over 64 bits: a bit string, nine bytes */                       \
-  "  data[16]: valof(len) * 8;\n"                                                                  \
-  "  crc:      16;\n"                                                                              \
-  "};\n"                                                                                           \
+#define DEFINITION                                                                                                     \
+  "@bit_order:  msb_first;\n"                                                                                          \
+  "@byte_order: big_endian;\n"                                                                                         \
+  "pkt TM_A {\n"                                                                                                       \
+  "  hdr:       8 = 0xAA;\n"                                                                                           \
+  "  len:      32;\n"                                                                                                  \
+  "  wide:     72;\n" /* over 64 bits: a bit string, nine bytes */                                                     \
+  "  data[16]: valof(len) * 8;\n"                                                                                      \
+  "  crc:      16;\n"                                                                                                  \
+  "};\n"                                                                                                               \
   "pkt TM_B { hdr: 8 = 0xBB; seq: 16; };\n"
 
 /* ---- Helpers --------------------------------------------------------------------------------- */
@@ -62,8 +62,7 @@ static int us4_tc01_a_new_frame_reads_zero_everywhere(const TestArguments *args)
     for (size_t f = 0; f < framedsl_field_count(fixture.definition, p) && failure == 0; ++f) {
       FramedslFieldId id;
       FramedslField described;
-      if (!framedsl_field_id(fixture.definition, p, f, &id) ||
-          !framedsl_field(fixture.definition, p, f, &described)) {
+      if (!framedsl_field_id(fixture.definition, p, f, &id) || !framedsl_field(fixture.definition, p, f, &described)) {
         failure = __LINE__;
         break;
       }
@@ -144,19 +143,17 @@ static int us4_tc04_the_wrong_accessor_for_the_field_is_an_error(const TestArgum
 
   FramedslFieldId len;
   FramedslFieldId wide;
-  uint8_t buffer[16] = {0};
+  uint8_t buffer[16] = { 0 };
   size_t length = 0;
   int failure = 0;
 
-  if (!framedsl_find(fixture.definition, "TM_A.len", &len) ||
-      !framedsl_find(fixture.definition, "TM_A.wide", &wide)) {
+  if (!framedsl_find(fixture.definition, "TM_A.len", &len) || !framedsl_find(fixture.definition, "TM_A.wide", &wide)) {
     failure = __LINE__;
   } else if (framedsl_set_u64(fixture.frame, wide, 1) != FRAMEDSL_ERROR_FIELD) {
     failure = __LINE__; /* 72 bits is a bit string */
   } else if (framedsl_set_bytes(fixture.frame, len, buffer, 4) != FRAMEDSL_ERROR_FIELD) {
     failure = __LINE__; /* 32 bits is a scalar */
-  } else if (framedsl_get_bytes(fixture.frame, len, buffer, sizeof(buffer), &length) !=
-             FRAMEDSL_ERROR_FIELD) {
+  } else if (framedsl_get_bytes(fixture.frame, len, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_FIELD) {
     failure = __LINE__;
   }
 
@@ -173,8 +170,8 @@ static int us4_tc05_a_wide_fixed_field_round_trips(const TestArguments *args) {
   }
 
   /* 72 bits is nine bytes, and a fixed-width field takes exactly its own size. */
-  const uint8_t written[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-  uint8_t read[16] = {0};
+  const uint8_t written[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  uint8_t read[16] = { 0 };
   size_t length = 0;
   FramedslFieldId wide;
   int failure = 0;
@@ -204,8 +201,8 @@ static int us4_tc06_a_variable_field_remembers_its_length(const TestArguments *a
     FORCE_FAILURE();
   }
 
-  const uint8_t payload[5] = {9, 8, 7, 6, 5};
-  uint8_t read[32] = {0};
+  const uint8_t payload[5] = { 9, 8, 7, 6, 5 };
+  uint8_t read[32] = { 0 };
   size_t length = 99;
   FramedslFieldId data;
   int failure = 0;
@@ -222,8 +219,8 @@ static int us4_tc06_a_variable_field_remembers_its_length(const TestArguments *a
     failure = __LINE__;
   } else if (length != sizeof(payload) || memcmp(read, payload, sizeof(payload)) != 0) {
     failure = __LINE__;
-  } else if (framedsl_set_bytes(fixture.frame, data, payload, 0) != FRAMEDSL_OK ||
-             framedsl_byte_length(fixture.frame, data) != 0) {
+  } else if (framedsl_set_bytes(fixture.frame, data, payload, 0) != FRAMEDSL_OK
+             || framedsl_byte_length(fixture.frame, data) != 0) {
     failure = __LINE__;
   }
 
@@ -240,20 +237,20 @@ static int us4_tc07_a_shorter_value_clears_what_it_replaced(const TestArguments 
     FORCE_FAILURE();
   }
 
-  const uint8_t longer[8] = {1, 1, 1, 1, 1, 1, 1, 1};
-  const uint8_t shorter[2] = {2, 2};
-  uint8_t read[32] = {0};
+  const uint8_t longer[8] = { 1, 1, 1, 1, 1, 1, 1, 1 };
+  const uint8_t shorter[2] = { 2, 2 };
+  uint8_t read[32] = { 0 };
   size_t length = 0;
   FramedslFieldId data;
   int failure = 0;
 
   if (!framedsl_find(fixture.definition, "TM_A.data", &data)) {
     failure = __LINE__;
-  } else if (framedsl_set_bytes(fixture.frame, data, longer, sizeof(longer)) != FRAMEDSL_OK ||
-             framedsl_set_bytes(fixture.frame, data, shorter, sizeof(shorter)) != FRAMEDSL_OK) {
+  } else if (framedsl_set_bytes(fixture.frame, data, longer, sizeof(longer)) != FRAMEDSL_OK
+             || framedsl_set_bytes(fixture.frame, data, shorter, sizeof(shorter)) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK ||
-             length != sizeof(shorter)) {
+  } else if (framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK
+             || length != sizeof(shorter)) {
     failure = __LINE__;
   } else {
     /* Read the whole reservation back the long way to see what is behind the length. */
@@ -278,7 +275,7 @@ static int us4_tc08_over_the_reservation_is_refused(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  uint8_t payload[32] = {0};
+  uint8_t payload[32] = { 0 };
   FramedslFieldId data;
   int failure = 0;
 
@@ -303,8 +300,8 @@ static int us4_tc09_a_small_buffer_reports_the_size_needed(const TestArguments *
     FORCE_FAILURE();
   }
 
-  const uint8_t payload[6] = {1, 2, 3, 4, 5, 6};
-  uint8_t small[3] = {0};
+  const uint8_t payload[6] = { 1, 2, 3, 4, 5, 6 };
+  uint8_t small[3] = { 0 };
   size_t length = 0;
   FramedslFieldId data;
   int failure = 0;
@@ -313,8 +310,7 @@ static int us4_tc09_a_small_buffer_reports_the_size_needed(const TestArguments *
     failure = __LINE__;
   } else if (framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, data, small, sizeof(small), &length) !=
-             FRAMEDSL_ERROR_BUFFER) {
+  } else if (framedsl_get_bytes(fixture.frame, data, small, sizeof(small), &length) != FRAMEDSL_ERROR_BUFFER) {
     failure = __LINE__;
   } else if (length != sizeof(payload)) {
     failure = __LINE__;
@@ -343,8 +339,7 @@ static int us4_tc10_find_resolves_and_misses_cleanly(const TestArguments *args) 
     failure = __LINE__;
   } else if (framedsl_find(fixture.definition, "seq", &id)) {
     failure = __LINE__; /* no dot at all */
-  } else if (framedsl_find(fixture.definition, "TM_B.", &id) ||
-             framedsl_find(fixture.definition, ".seq", &id)) {
+  } else if (framedsl_find(fixture.definition, "TM_B.", &id) || framedsl_find(fixture.definition, ".seq", &id)) {
     failure = __LINE__;
   } else if (framedsl_find(fixture.definition, "TM_B.a.seq", &id)) {
     failure = __LINE__; /* nothing nests yet, so it simply finds nothing */
@@ -375,8 +370,7 @@ static int us4_tc11_frames_and_definitions_do_not_leak_into_each_other(const Tes
 
   if (second == NULL || other == NULL) {
     failure = __LINE__;
-  } else if (!framedsl_find(fixture.definition, "TM_A.len", &len) ||
-             !framedsl_find(other, "TM_A.len", &other_len)) {
+  } else if (!framedsl_find(fixture.definition, "TM_A.len", &len) || !framedsl_find(other, "TM_A.len", &other_len)) {
     failure = __LINE__;
   } else if (framedsl_set_u64(fixture.frame, len, 7) != FRAMEDSL_OK) {
     failure = __LINE__;
@@ -402,17 +396,16 @@ static int us4_tc12_reset_returns_the_frame_to_new(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  const uint8_t payload[4] = {1, 2, 3, 4};
+  const uint8_t payload[4] = { 1, 2, 3, 4 };
   FramedslFieldId len;
   FramedslFieldId data;
   uint64_t value = 0;
   int failure = 0;
 
-  if (!framedsl_find(fixture.definition, "TM_A.len", &len) ||
-      !framedsl_find(fixture.definition, "TM_A.data", &data)) {
+  if (!framedsl_find(fixture.definition, "TM_A.len", &len) || !framedsl_find(fixture.definition, "TM_A.data", &data)) {
     failure = __LINE__;
-  } else if (framedsl_set_u64(fixture.frame, len, 4) != FRAMEDSL_OK ||
-             framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
+  } else if (framedsl_set_u64(fixture.frame, len, 4) != FRAMEDSL_OK
+             || framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
     failure = __LINE__;
   } else {
     framedsl_frame_reset(fixture.frame);
@@ -437,8 +430,8 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
     FORCE_FAILURE();
   }
 
-  const uint8_t payload[6] = {1, 2, 3, 4, 5, 6};
-  uint8_t read[32] = {0};
+  const uint8_t payload[6] = { 1, 2, 3, 4, 5, 6 };
+  uint8_t read[32] = { 0 };
   size_t length = 0;
   FramedslFieldId len;
   FramedslFieldId data;
@@ -446,9 +439,8 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
   uint64_t value = 0;
   int failure = 0;
 
-  if (!framedsl_find(fixture.definition, "TM_A.len", &len) ||
-      !framedsl_find(fixture.definition, "TM_A.data", &data) ||
-      !framedsl_find(fixture.definition, "TM_A.wide", &wide)) {
+  if (!framedsl_find(fixture.definition, "TM_A.len", &len) || !framedsl_find(fixture.definition, "TM_A.data", &data)
+      || !framedsl_find(fixture.definition, "TM_A.wide", &wide)) {
     failure = __LINE__;
   } else {
     /* Prove the counter is live before trusting a zero from it. An interposition that silently did
@@ -488,9 +480,9 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
 static int us4_tc14_null_is_tolerated_everywhere(const TestArguments *args) {
   (void)args;
 
-  FramedslFieldId id = {0, 0, 0};
+  FramedslFieldId id = { 0, 0, 0 };
   uint64_t value = 0;
-  uint8_t buffer[4] = {0};
+  uint8_t buffer[4] = { 0 };
   size_t length = 0;
 
   if (framedsl_frame_new(NULL) != NULL) {
@@ -502,10 +494,10 @@ static int us4_tc14_null_is_tolerated_everywhere(const TestArguments *args) {
   if (framedsl_find(NULL, "A.b", &id) || framedsl_field_id(NULL, 0, 0, &id)) {
     FORCE_FAILURE();
   }
-  if (framedsl_set_u64(NULL, id, 1) != FRAMEDSL_ERROR_MEMORY ||
-      framedsl_get_u64(NULL, id, &value) != FRAMEDSL_ERROR_MEMORY ||
-      framedsl_set_bytes(NULL, id, buffer, sizeof(buffer)) != FRAMEDSL_ERROR_MEMORY ||
-      framedsl_get_bytes(NULL, id, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_MEMORY) {
+  if (framedsl_set_u64(NULL, id, 1) != FRAMEDSL_ERROR_MEMORY
+      || framedsl_get_u64(NULL, id, &value) != FRAMEDSL_ERROR_MEMORY
+      || framedsl_set_bytes(NULL, id, buffer, sizeof(buffer)) != FRAMEDSL_ERROR_MEMORY
+      || framedsl_get_bytes(NULL, id, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_MEMORY) {
     FORCE_FAILURE();
   }
   if (framedsl_byte_length(NULL, id) != 0) {
@@ -518,26 +510,32 @@ void register_user_story4(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us4_tc01_a_new_frame_reads_zero_everywhere, "a new frame is zero everywhere", false);
   ADD_TEST_CASE(us4_tc02_a_scalar_round_trips, "a scalar set comes back", false);
-  ADD_TEST_CASE(us4_tc03_a_value_too_wide_is_refused_without_writing,
-                "a value wider than the field is refused and changes nothing", false);
-  ADD_TEST_CASE(us4_tc04_the_wrong_accessor_for_the_field_is_an_error,
-                "the width alone decides which accessors apply", false);
-  ADD_TEST_CASE(us4_tc05_a_wide_fixed_field_round_trips,
-                "a field over 64 bits round-trips as bytes, at exactly its size", false);
-  ADD_TEST_CASE(us4_tc06_a_variable_field_remembers_its_length,
-                "a variable field remembers how much arrived", false);
-  ADD_TEST_CASE(us4_tc07_a_shorter_value_clears_what_it_replaced,
-                "a shorter value does not leave the old tail behind", false);
-  ADD_TEST_CASE(us4_tc08_over_the_reservation_is_refused,
-                "exactly the reservation fits, one more does not", false);
-  ADD_TEST_CASE(us4_tc09_a_small_buffer_reports_the_size_needed,
-                "a buffer too small reports the size needed", false);
-  ADD_TEST_CASE(us4_tc10_find_resolves_and_misses_cleanly,
-                "a dotted name resolves, and a miss is a miss", false);
-  ADD_TEST_CASE(us4_tc11_frames_and_definitions_do_not_leak_into_each_other,
-                "frames are independent and ids are not portable between definitions", false);
+  ADD_TEST_CASE(
+    us4_tc03_a_value_too_wide_is_refused_without_writing,
+    "a value wider than the field is refused and changes nothing",
+    false
+  );
+  ADD_TEST_CASE(
+    us4_tc04_the_wrong_accessor_for_the_field_is_an_error, "the width alone decides which accessors apply", false
+  );
+  ADD_TEST_CASE(
+    us4_tc05_a_wide_fixed_field_round_trips, "a field over 64 bits round-trips as bytes, at exactly its size", false
+  );
+  ADD_TEST_CASE(us4_tc06_a_variable_field_remembers_its_length, "a variable field remembers how much arrived", false);
+  ADD_TEST_CASE(
+    us4_tc07_a_shorter_value_clears_what_it_replaced, "a shorter value does not leave the old tail behind", false
+  );
+  ADD_TEST_CASE(us4_tc08_over_the_reservation_is_refused, "exactly the reservation fits, one more does not", false);
+  ADD_TEST_CASE(us4_tc09_a_small_buffer_reports_the_size_needed, "a buffer too small reports the size needed", false);
+  ADD_TEST_CASE(us4_tc10_find_resolves_and_misses_cleanly, "a dotted name resolves, and a miss is a miss", false);
+  ADD_TEST_CASE(
+    us4_tc11_frames_and_definitions_do_not_leak_into_each_other,
+    "frames are independent and ids are not portable between definitions",
+    false
+  );
   ADD_TEST_CASE(us4_tc12_reset_returns_the_frame_to_new, "reset returns the frame to new", false);
-  ADD_TEST_CASE(us4_tc13_nothing_allocates_after_the_frame_exists,
-                "no allocation after the frame exists, counted", false);
+  ADD_TEST_CASE(
+    us4_tc13_nothing_allocates_after_the_frame_exists, "no allocation after the frame exists, counted", false
+  );
   ADD_TEST_CASE(us4_tc14_null_is_tolerated_everywhere, "every entry point tolerates NULL", false);
 }

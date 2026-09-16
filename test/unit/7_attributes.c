@@ -46,15 +46,17 @@ static bool rejected_saying(const char *source, const char *needle) {
 static int us7_tc01_a_file_attribute_reaches_every_packet(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("@bit_order: lsb_first;\n"
-                               "pkt A { h: 8 = 1; };\n"
-                               "pkt B { h: 8 = 2; };\n");
+  Parsed parsed = parse_source(
+    "@bit_order: lsb_first;\n"
+    "pkt A { h: 8 = 1; };\n"
+    "pkt B { h: 8 = 2; };\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL || parsed.file->packet_count != 2) {
     failure = __LINE__;
-  } else if (parsed.file->packets[0].fields[0].bit_order != BIT_ORDER_LSB_FIRST ||
-             parsed.file->packets[1].fields[0].bit_order != BIT_ORDER_LSB_FIRST) {
+  } else if (parsed.file->packets[0].fields[0].bit_order != BIT_ORDER_LSB_FIRST
+             || parsed.file->packets[1].fields[0].bit_order != BIT_ORDER_LSB_FIRST) {
     failure = __LINE__;
   } else if (parsed.file->packets[0].fields[0].bit_order_written) {
     failure = __LINE__; /* inherited, not written here: check 10 turns on the difference */
@@ -68,9 +70,11 @@ static int us7_tc01_a_file_attribute_reaches_every_packet(const TestArguments *a
 static int us7_tc02_a_packet_group_stops_at_the_packet(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("[ @bit_order: lsb_first; ]\n"
-                               "pkt A { h: 8 = 1; };\n"
-                               "pkt B { h: 8 = 2; };\n");
+  Parsed parsed = parse_source(
+    "[ @bit_order: lsb_first; ]\n"
+    "pkt A { h: 8 = 1; };\n"
+    "pkt B { h: 8 = 2; };\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL || parsed.file->packet_count != 2) {
@@ -89,11 +93,13 @@ static int us7_tc02_a_packet_group_stops_at_the_packet(const TestArguments *args
 static int us7_tc03_a_field_group_reaches_one_field(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("pkt A {\n"
-                               "  h: 8 = 1;\n"
-                               "  [ @bit_order: lsb_first; ] a: 8;\n"
-                               "  b: 8;\n"
-                               "};\n");
+  Parsed parsed = parse_source(
+    "pkt A {\n"
+    "  h: 8 = 1;\n"
+    "  [ @bit_order: lsb_first; ] a: 8;\n"
+    "  b: 8;\n"
+    "};\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {
@@ -114,20 +120,21 @@ static int us7_tc03_a_field_group_reaches_one_field(const TestArguments *args) {
 static int us7_tc04_a_block_group_reaches_every_field_in_it(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("pkt A {\n"
-                               "  h: 8 = 1;\n"
-                               "  [ @byte_order: little_endian; ]\n"
-                               "  block { a: 16; b: 16; };\n"
-                               "  c: 16;\n"
-                               "};\n");
+  Parsed parsed = parse_source(
+    "pkt A {\n"
+    "  h: 8 = 1;\n"
+    "  [ @byte_order: little_endian; ]\n"
+    "  block { a: 16; b: 16; };\n"
+    "  c: 16;\n"
+    "};\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {
     failure = __LINE__;
   } else {
     const AstField *fields = parsed.file->packets[0].fields;
-    if (fields[1].byte_order != BYTE_ORDER_LITTLE_ENDIAN ||
-        fields[2].byte_order != BYTE_ORDER_LITTLE_ENDIAN) {
+    if (fields[1].byte_order != BYTE_ORDER_LITTLE_ENDIAN || fields[2].byte_order != BYTE_ORDER_LITTLE_ENDIAN) {
       failure = __LINE__;
     } else if (fields[3].byte_order != BYTE_ORDER_BIG_ENDIAN) {
       failure = __LINE__; /* and nothing after the block */
@@ -168,16 +175,18 @@ static int us7_tc05_a_block_is_invisible_to_the_layout(const TestArguments *args
 static int us7_tc06_blocks_nest_and_the_innermost_wins(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("pkt A {\n"
-                               "  h: 8 = 1;\n"
-                               "  [ @byte_order: little_endian; ]\n"
-                               "  block {\n"
-                               "    a: 16;\n"
-                               "    [ @byte_order: big_endian; ]\n"
-                               "    block { b: 16; };\n"
-                               "    c: 16;\n"
-                               "  };\n"
-                               "};\n");
+  Parsed parsed = parse_source(
+    "pkt A {\n"
+    "  h: 8 = 1;\n"
+    "  [ @byte_order: little_endian; ]\n"
+    "  block {\n"
+    "    a: 16;\n"
+    "    [ @byte_order: big_endian; ]\n"
+    "    block { b: 16; };\n"
+    "    c: 16;\n"
+    "  };\n"
+    "};\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {
@@ -201,16 +210,18 @@ static int us7_tc06_blocks_nest_and_the_innermost_wins(const TestArguments *args
 static int us7_tc07_resolution_runs_field_block_packet_file(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("@byte_order: big_endian;\n"
-                               "[ @byte_order: little_endian; ]\n"
-                               "pkt A {\n"
-                               "  h: 8 = 1;\n"
-                               "  [ @byte_order: big_endian; ]\n"
-                               "  block {\n"
-                               "    a: 16;\n"
-                               "    [ @byte_order: little_endian; ] b: 16;\n"
-                               "  };\n"
-                               "};\n");
+  Parsed parsed = parse_source(
+    "@byte_order: big_endian;\n"
+    "[ @byte_order: little_endian; ]\n"
+    "pkt A {\n"
+    "  h: 8 = 1;\n"
+    "  [ @byte_order: big_endian; ]\n"
+    "  block {\n"
+    "    a: 16;\n"
+    "    [ @byte_order: little_endian; ] b: 16;\n"
+    "  };\n"
+    "};\n"
+  );
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {
@@ -240,8 +251,9 @@ static int us7_tc08_a_bare_attribute_inside_a_packet_is_rejected(const TestArgum
 
 static int us7_tc09_a_bare_attribute_after_a_packet_is_rejected(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying("pkt A { h: 8 = 1; };\n@bit_order: lsb_first;\npkt B { h: 8 = 2; };",
-                       "before the first packet")) {
+  if (!rejected_saying(
+        "pkt A { h: 8 = 1; };\n@bit_order: lsb_first;\npkt B { h: 8 = 2; };", "before the first packet"
+      )) {
     FORCE_FAILURE();
   }
   return 0;
@@ -285,8 +297,8 @@ static int us7_tc13_attribute_names_are_usable_as_field_names(const TestArgument
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {
     failure = __LINE__;
-  } else if (strcmp(parsed.file->packets[0].fields[1].name, "bit_order") != 0 ||
-             strcmp(parsed.file->packets[0].fields[2].name, "little_endian") != 0) {
+  } else if (strcmp(parsed.file->packets[0].fields[1].name, "bit_order") != 0
+             || strcmp(parsed.file->packets[0].fields[2].name, "little_endian") != 0) {
     failure = __LINE__;
   }
 
@@ -296,28 +308,27 @@ static int us7_tc13_attribute_names_are_usable_as_field_names(const TestArgument
 
 void register_user_story7(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us7_tc01_a_file_attribute_reaches_every_packet,
-                "a file attribute applies to every packet", false);
-  ADD_TEST_CASE(us7_tc02_a_packet_group_stops_at_the_packet,
-                "a group before 'pkt' covers that packet only", false);
-  ADD_TEST_CASE(us7_tc03_a_field_group_reaches_one_field,
-                "a group before a field covers one field", false);
-  ADD_TEST_CASE(us7_tc04_a_block_group_reaches_every_field_in_it,
-                "a group before a block covers the block and stops there", false);
-  ADD_TEST_CASE(us7_tc05_a_block_is_invisible_to_the_layout,
-                "a block produces the same fields as writing them out", false);
+  ADD_TEST_CASE(us7_tc01_a_file_attribute_reaches_every_packet, "a file attribute applies to every packet", false);
+  ADD_TEST_CASE(us7_tc02_a_packet_group_stops_at_the_packet, "a group before 'pkt' covers that packet only", false);
+  ADD_TEST_CASE(us7_tc03_a_field_group_reaches_one_field, "a group before a field covers one field", false);
+  ADD_TEST_CASE(
+    us7_tc04_a_block_group_reaches_every_field_in_it, "a group before a block covers the block and stops there", false
+  );
+  ADD_TEST_CASE(
+    us7_tc05_a_block_is_invisible_to_the_layout, "a block produces the same fields as writing them out", false
+  );
   ADD_TEST_CASE(us7_tc06_blocks_nest_and_the_innermost_wins, "blocks nest", false);
-  ADD_TEST_CASE(us7_tc07_resolution_runs_field_block_packet_file,
-                "resolution is field > block > packet > file", false);
-  ADD_TEST_CASE(us7_tc08_a_bare_attribute_inside_a_packet_is_rejected,
-                "a bare attribute inside a packet says where it belongs", false);
-  ADD_TEST_CASE(us7_tc09_a_bare_attribute_after_a_packet_is_rejected,
-                "a bare attribute after the first packet is rejected", false);
+  ADD_TEST_CASE(us7_tc07_resolution_runs_field_block_packet_file, "resolution is field > block > packet > file", false);
+  ADD_TEST_CASE(
+    us7_tc08_a_bare_attribute_inside_a_packet_is_rejected,
+    "a bare attribute inside a packet says where it belongs",
+    false
+  );
+  ADD_TEST_CASE(
+    us7_tc09_a_bare_attribute_after_a_packet_is_rejected, "a bare attribute after the first packet is rejected", false
+  );
   ADD_TEST_CASE(us7_tc10_an_unknown_attribute_is_named, "an unknown attribute is named", false);
-  ADD_TEST_CASE(us7_tc11_a_bad_value_is_reported_with_what_was_written,
-                "a bad attribute value is quoted back", false);
-  ADD_TEST_CASE(us7_tc12_empty_groups_and_blocks_are_rejected,
-                "an empty group and an empty block are rejected", false);
-  ADD_TEST_CASE(us7_tc13_attribute_names_are_usable_as_field_names,
-                "'bit_order' is an ordinary field name", false);
+  ADD_TEST_CASE(us7_tc11_a_bad_value_is_reported_with_what_was_written, "a bad attribute value is quoted back", false);
+  ADD_TEST_CASE(us7_tc12_empty_groups_and_blocks_are_rejected, "an empty group and an empty block are rejected", false);
+  ADD_TEST_CASE(us7_tc13_attribute_names_are_usable_as_field_names, "'bit_order' is an ordinary field name", false);
 }

@@ -12,11 +12,11 @@
 #include "testsuite.h"
 
 /* Three packets that pin the same eight bits to different values, plus a variable-length one. */
-#define FAMILY                                                                                     \
-  "@bit_order:  msb_first;\n"                                                                      \
-  "@byte_order: big_endian;\n"                                                                     \
-  "pkt TC_PING     { type: 8 = 0x01; seq: 16; };\n"                                                \
-  "pkt TC_SET_MODE { type: 8 = 0x02; seq: 16; mode: 8; };\n"                                       \
+#define FAMILY                                                                                                         \
+  "@bit_order:  msb_first;\n"                                                                                          \
+  "@byte_order: big_endian;\n"                                                                                         \
+  "pkt TC_PING     { type: 8 = 0x01; seq: 16; };\n"                                                                    \
+  "pkt TC_SET_MODE { type: 8 = 0x02; seq: 16; mode: 8; };\n"                                                           \
   "pkt TC_PAYLOAD  { type: 8 = 0x03; len: 8; body[8]: valof(len) * 8; crc: 8; };\n"
 
 typedef struct {
@@ -40,8 +40,8 @@ static void close_fixture(Fixture *fixture) {
 static bool scalar_is(Fixture *fixture, const char *dotted, uint64_t expected) {
   FramedslFieldId id;
   uint64_t value = 0;
-  return framedsl_find(fixture->definition, dotted, &id) &&
-         framedsl_get_u64(fixture->frame, id, &value) == FRAMEDSL_OK && value == expected;
+  return framedsl_find(fixture->definition, dotted, &id) && framedsl_get_u64(fixture->frame, id, &value) == FRAMEDSL_OK
+         && value == expected;
 }
 
 /* Hand-written bytes in, values out. Nothing here has been through the encoder. */
@@ -54,7 +54,7 @@ static int us6_tc01_hand_written_bytes_decode_to_their_values(const TestArgument
     FORCE_FAILURE();
   }
 
-  const uint8_t bytes[] = {0x02, 0x12, 0x34, 0x7F};
+  const uint8_t bytes[] = { 0x02, 0x12, 0x34, 0x7F };
   size_t consumed = 0;
   FramedslStatus status = FRAMEDSL_OK;
   int failure = 0;
@@ -85,9 +85,9 @@ static int us6_tc02_the_right_packet_is_identified(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  const uint8_t ping[] = {0x01, 0x00, 0x09};
-  const uint8_t set_mode[] = {0x02, 0x00, 0x09, 0x01};
-  const uint8_t payload[] = {0x03, 0x01, 0xEE, 0xC7};
+  const uint8_t ping[] = { 0x01, 0x00, 0x09 };
+  const uint8_t set_mode[] = { 0x02, 0x00, 0x09, 0x01 };
+  const uint8_t payload[] = { 0x03, 0x01, 0xEE, 0xC7 };
   int failure = 0;
 
   const char *first = framedsl_decode(fixture.frame, ping, sizeof(ping), NULL, NULL);
@@ -119,20 +119,20 @@ static int us6_tc03_the_failures_are_told_apart(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  const uint8_t noise[] = {0xFF, 0x00, 0x00, 0x00};
-  const uint8_t cut_short[] = {0x02, 0x12};
-  const uint8_t over_bound[] = {0x03, 0xFF, 0x00, 0x00};
+  const uint8_t noise[] = { 0xFF, 0x00, 0x00, 0x00 };
+  const uint8_t cut_short[] = { 0x02, 0x12 };
+  const uint8_t over_bound[] = { 0x03, 0xFF, 0x00, 0x00 };
   FramedslStatus status = FRAMEDSL_OK;
   int failure = 0;
 
-  if (framedsl_decode(fixture.frame, noise, sizeof(noise), NULL, &status) != NULL ||
-      status != FRAMEDSL_ERROR_UNRECOGNISED) {
+  if (framedsl_decode(fixture.frame, noise, sizeof(noise), NULL, &status) != NULL
+      || status != FRAMEDSL_ERROR_UNRECOGNISED) {
     failure = __LINE__;
-  } else if (framedsl_decode(fixture.frame, cut_short, sizeof(cut_short), NULL, &status) != NULL ||
-             status != FRAMEDSL_ERROR_TRUNCATED) {
+  } else if (framedsl_decode(fixture.frame, cut_short, sizeof(cut_short), NULL, &status) != NULL
+             || status != FRAMEDSL_ERROR_TRUNCATED) {
     failure = __LINE__;
-  } else if (framedsl_decode(fixture.frame, over_bound, sizeof(over_bound), NULL, &status) != NULL ||
-             status != FRAMEDSL_ERROR_RANGE) {
+  } else if (framedsl_decode(fixture.frame, over_bound, sizeof(over_bound), NULL, &status) != NULL
+             || status != FRAMEDSL_ERROR_RANGE) {
     failure = __LINE__; /* len = 255, and body reserved eight bytes */
   }
 
@@ -176,7 +176,7 @@ static int us6_tc04_nothing_is_read_past_the_buffer(const TestArguments *args) {
 static int us6_tc05_a_variable_field_decodes_at_every_length(const TestArguments *args) {
   (void)args;
 
-  const size_t lengths[] = {0, 3, 8};
+  const size_t lengths[] = { 0, 3, 8 };
   int failure = 0;
 
   for (size_t i = 0; i < sizeof(lengths) / sizeof(*lengths) && failure == 0; ++i) {
@@ -186,7 +186,7 @@ static int us6_tc05_a_variable_field_decodes_at_every_length(const TestArguments
       FORCE_FAILURE();
     }
 
-    uint8_t bytes[16] = {0x03, (uint8_t)lengths[i]};
+    uint8_t bytes[16] = { 0x03, (uint8_t)lengths[i] };
     for (size_t b = 0; b < lengths[i]; ++b) {
       bytes[2 + b] = (uint8_t)(0xA0 + b);
     }
@@ -196,7 +196,7 @@ static int us6_tc05_a_variable_field_decodes_at_every_length(const TestArguments
     const char *packet = framedsl_decode(fixture.frame, bytes, 3 + lengths[i], &consumed, NULL);
 
     FramedslFieldId body;
-    uint8_t read[16] = {0};
+    uint8_t read[16] = { 0 };
     size_t read_length = 0;
 
     if (packet == NULL || strcmp(packet, "TC_PAYLOAD") != 0) {
@@ -205,11 +205,9 @@ static int us6_tc05_a_variable_field_decodes_at_every_length(const TestArguments
       failure = __LINE__;
     } else if (!framedsl_find(fixture.definition, "TC_PAYLOAD.body", &body)) {
       failure = __LINE__;
-    } else if (framedsl_get_bytes(fixture.frame, body, read, sizeof(read), &read_length) !=
-               FRAMEDSL_OK) {
+    } else if (framedsl_get_bytes(fixture.frame, body, read, sizeof(read), &read_length) != FRAMEDSL_OK) {
       failure = __LINE__;
-    } else if (read_length != lengths[i] ||
-               memcmp(read, bytes + 2, lengths[i]) != 0) {
+    } else if (read_length != lengths[i] || memcmp(read, bytes + 2, lengths[i]) != 0) {
       failure = __LINE__;
     } else if (!scalar_is(&fixture, "TC_PAYLOAD.crc", 0xC7)) {
       failure = __LINE__; /* the field after a variable one lands where the width put it */
@@ -226,14 +224,16 @@ static int us6_tc06_bit_and_byte_order_are_undone(const TestArguments *args) {
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { h: 8 = 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8;"
-                    " [ @byte_order: little_endian; ] c: 32; };",
-                    &fixture)) {
+  if (!open_fixture(
+        "pkt A { h: 8 = 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8;"
+        " [ @byte_order: little_endian; ] c: 32; };",
+        &fixture
+      )) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
 
-  const uint8_t bytes[] = {0xAA, 0x0F, 0xF0, 0x44, 0x33, 0x22, 0x11};
+  const uint8_t bytes[] = { 0xAA, 0x0F, 0xF0, 0x44, 0x33, 0x22, 0x11 };
   int failure = 0;
 
   if (framedsl_decode(fixture.frame, bytes, sizeof(bytes), NULL, NULL) == NULL) {
@@ -262,20 +262,19 @@ static int us6_tc07_a_stream_can_be_walked_frame_by_frame(const TestArguments *a
   }
 
   const uint8_t stream[] = {
-      0x01, 0x00, 0x01,             /* TC_PING, 3 bytes */
-      0x03, 0x02, 0xAA, 0xBB, 0xC7, /* TC_PAYLOAD with two bytes of body, 5 bytes */
-      0x02, 0x00, 0x02, 0x09,       /* TC_SET_MODE, 4 bytes */
+    0x01, 0x00, 0x01, /* TC_PING, 3 bytes */
+    0x03, 0x02, 0xAA, 0xBB, 0xC7, /* TC_PAYLOAD with two bytes of body, 5 bytes */
+    0x02, 0x00, 0x02, 0x09, /* TC_SET_MODE, 4 bytes */
   };
-  const char *expected[] = {"TC_PING", "TC_PAYLOAD", "TC_SET_MODE"};
-  const size_t sizes[] = {3, 5, 4};
+  const char *expected[] = { "TC_PING", "TC_PAYLOAD", "TC_SET_MODE" };
+  const size_t sizes[] = { 3, 5, 4 };
 
   size_t offset = 0;
   int failure = 0;
 
   for (size_t i = 0; i < 3 && failure == 0; ++i) {
     size_t consumed = 0;
-    const char *packet =
-        framedsl_decode(fixture.frame, stream + offset, sizeof(stream) - offset, &consumed, NULL);
+    const char *packet = framedsl_decode(fixture.frame, stream + offset, sizeof(stream) - offset, &consumed, NULL);
     if (packet == NULL || strcmp(packet, expected[i]) != 0) {
       failure = __LINE__;
     } else if (consumed != sizes[i]) {
@@ -301,7 +300,7 @@ static int us6_tc08_decoding_does_not_allocate(const TestArguments *args) {
     FORCE_FAILURE();
   }
 
-  const uint8_t bytes[] = {0x03, 0x02, 0xAA, 0xBB, 0xC7};
+  const uint8_t bytes[] = { 0x03, 0x02, 0xAA, 0xBB, 0xC7 };
   int failure = 0;
 
   framedsl_allocation_count_start();
@@ -319,11 +318,10 @@ static int us6_tc08_decoding_does_not_allocate(const TestArguments *args) {
 static int us6_tc09_null_is_tolerated(const TestArguments *args) {
   (void)args;
 
-  const uint8_t bytes[] = {0x01, 0x00, 0x00};
+  const uint8_t bytes[] = { 0x01, 0x00, 0x00 };
   FramedslStatus status = FRAMEDSL_OK;
 
-  if (framedsl_decode(NULL, bytes, sizeof(bytes), NULL, &status) != NULL ||
-      status != FRAMEDSL_ERROR_MEMORY) {
+  if (framedsl_decode(NULL, bytes, sizeof(bytes), NULL, &status) != NULL || status != FRAMEDSL_ERROR_MEMORY) {
     FORCE_FAILURE();
   }
   return 0;
@@ -351,27 +349,27 @@ static void send_it(const uint8_t *bytes, size_t length) {
 static int us6_tc10_a_frame_survives_a_round_trip(const TestArguments *args) {
   (void)args;
 
-  Fixture sender;
-  Fixture receiver;
+  Fixture sender = {};
+  Fixture receiver = {};
   if (!open_fixture(FAMILY, &sender) || !open_fixture(FAMILY, &receiver)) {
     close_fixture(&sender);
     close_fixture(&receiver);
     FORCE_FAILURE();
   }
 
-  const uint8_t payload[5] = {0xDE, 0xAD, 0xBE, 0xEF, 0x42};
+  const uint8_t payload[5] = { 0xDE, 0xAD, 0xBE, 0xEF, 0x42 };
   FramedslFieldId len;
   FramedslFieldId body;
   FramedslFieldId crc;
   int failure = 0;
 
-  if (!framedsl_find(sender.definition, "TC_PAYLOAD.len", &len) ||
-      !framedsl_find(sender.definition, "TC_PAYLOAD.body", &body) ||
-      !framedsl_find(sender.definition, "TC_PAYLOAD.crc", &crc)) {
+  if (!framedsl_find(sender.definition, "TC_PAYLOAD.len", &len)
+      || !framedsl_find(sender.definition, "TC_PAYLOAD.body", &body)
+      || !framedsl_find(sender.definition, "TC_PAYLOAD.crc", &crc)) {
     failure = __LINE__;
-  } else if (framedsl_set_u64(sender.frame, len, sizeof(payload)) != FRAMEDSL_OK ||
-             framedsl_set_bytes(sender.frame, body, payload, sizeof(payload)) != FRAMEDSL_OK ||
-             framedsl_set_u64(sender.frame, crc, 0x5A) != FRAMEDSL_OK) {
+  } else if (framedsl_set_u64(sender.frame, len, sizeof(payload)) != FRAMEDSL_OK
+             || framedsl_set_bytes(sender.frame, body, payload, sizeof(payload)) != FRAMEDSL_OK
+             || framedsl_set_u64(sender.frame, crc, 0x5A) != FRAMEDSL_OK) {
     failure = __LINE__;
   } else {
     size_t length = 0;
@@ -387,7 +385,7 @@ static int us6_tc10_a_frame_survives_a_round_trip(const TestArguments *args) {
       FramedslFieldId their_len;
       FramedslFieldId their_body;
       FramedslFieldId their_crc;
-      uint8_t received[16] = {0};
+      uint8_t received[16] = { 0 };
       size_t received_length = 0;
       uint64_t value = 0;
 
@@ -395,21 +393,18 @@ static int us6_tc10_a_frame_survives_a_round_trip(const TestArguments *args) {
 
       if (packet == NULL || strcmp(packet, "TC_PAYLOAD") != 0) {
         failure = __LINE__;
-      } else if (!framedsl_find(receiver.definition, "TC_PAYLOAD.len", &their_len) ||
-                 !framedsl_find(receiver.definition, "TC_PAYLOAD.body", &their_body) ||
-                 !framedsl_find(receiver.definition, "TC_PAYLOAD.crc", &their_crc)) {
+      } else if (!framedsl_find(receiver.definition, "TC_PAYLOAD.len", &their_len)
+                 || !framedsl_find(receiver.definition, "TC_PAYLOAD.body", &their_body)
+                 || !framedsl_find(receiver.definition, "TC_PAYLOAD.crc", &their_crc)) {
         failure = __LINE__;
-      } else if (framedsl_get_u64(receiver.frame, their_len, &value) != FRAMEDSL_OK ||
-                 value != sizeof(payload)) {
+      } else if (framedsl_get_u64(receiver.frame, their_len, &value) != FRAMEDSL_OK || value != sizeof(payload)) {
         failure = __LINE__;
-      } else if (framedsl_get_bytes(receiver.frame, their_body, received, sizeof(received),
-                                    &received_length) != FRAMEDSL_OK) {
+      } else if (framedsl_get_bytes(receiver.frame, their_body, received, sizeof(received), &received_length)
+                 != FRAMEDSL_OK) {
         failure = __LINE__;
-      } else if (received_length != sizeof(payload) ||
-                 memcmp(received, payload, sizeof(payload)) != 0) {
+      } else if (received_length != sizeof(payload) || memcmp(received, payload, sizeof(payload)) != 0) {
         failure = __LINE__;
-      } else if (framedsl_get_u64(receiver.frame, their_crc, &value) != FRAMEDSL_OK ||
-                 value != 0x5A) {
+      } else if (framedsl_get_u64(receiver.frame, their_crc, &value) != FRAMEDSL_OK || value != 0x5A) {
         failure = __LINE__;
       }
     }
@@ -434,7 +429,7 @@ static int us6_tc11_the_round_trip_works_from_a_file(const TestArguments *args) 
   FramedslFrame *sender = framedsl_frame_new(definition);
   FramedslFrame *receiver = framedsl_frame_new(definition);
 
-  const uint8_t payload[12] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+  const uint8_t payload[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
   FramedslFieldId len;
   FramedslFieldId data;
   FramedslFieldId crc;
@@ -442,13 +437,13 @@ static int us6_tc11_the_round_trip_works_from_a_file(const TestArguments *args) 
 
   if (!framedsl_ok(result) || sender == NULL || receiver == NULL) {
     failure = __LINE__;
-  } else if (!framedsl_find(definition, "TM_DATAGRAM_02.len", &len) ||
-             !framedsl_find(definition, "TM_DATAGRAM_02.data", &data) ||
-             !framedsl_find(definition, "TM_DATAGRAM_02.crc", &crc)) {
+  } else if (!framedsl_find(definition, "TM_DATAGRAM_02.len", &len)
+             || !framedsl_find(definition, "TM_DATAGRAM_02.data", &data)
+             || !framedsl_find(definition, "TM_DATAGRAM_02.crc", &crc)) {
     failure = __LINE__;
-  } else if (framedsl_set_u64(sender, len, sizeof(payload)) != FRAMEDSL_OK ||
-             framedsl_set_bytes(sender, data, payload, sizeof(payload)) != FRAMEDSL_OK ||
-             framedsl_set_u64(sender, crc, 0xBEEF) != FRAMEDSL_OK) {
+  } else if (framedsl_set_u64(sender, len, sizeof(payload)) != FRAMEDSL_OK
+             || framedsl_set_bytes(sender, data, payload, sizeof(payload)) != FRAMEDSL_OK
+             || framedsl_set_u64(sender, crc, 0xBEEF) != FRAMEDSL_OK) {
     failure = __LINE__;
   } else {
     size_t length = 0;
@@ -459,7 +454,7 @@ static int us6_tc11_the_round_trip_works_from_a_file(const TestArguments *args) 
     } else {
       send_it(bytes, length);
 
-      uint8_t received[32] = {0};
+      uint8_t received[32] = { 0 };
       size_t received_length = 0;
       uint64_t value = 0;
       const char *packet = framedsl_decode(receiver, sent, sent_length, NULL, NULL);
@@ -471,10 +466,8 @@ static int us6_tc11_the_round_trip_works_from_a_file(const TestArguments *args) 
         failure = __LINE__;
       } else if (sent[0] != 0xAA) {
         failure = __LINE__; /* the discriminator, written from the definition */
-      } else if (framedsl_get_bytes(receiver, data, received, sizeof(received), &received_length) !=
-                     FRAMEDSL_OK ||
-                 received_length != sizeof(payload) ||
-                 memcmp(received, payload, sizeof(payload)) != 0) {
+      } else if (framedsl_get_bytes(receiver, data, received, sizeof(received), &received_length) != FRAMEDSL_OK
+                 || received_length != sizeof(payload) || memcmp(received, payload, sizeof(payload)) != 0) {
         failure = __LINE__;
       } else if (framedsl_get_u64(receiver, crc, &value) != FRAMEDSL_OK || value != 0xBEEF) {
         failure = __LINE__;
@@ -505,18 +498,18 @@ static int us6_tc12_a_decoded_frame_does_not_answer_for_another_packet(const Tes
   }
 
   /* A TC_SET_MODE first, so mode's slot holds 0x7F and a later read of it would look plausible. */
-  const uint8_t set_mode[] = {0x02, 0x12, 0x34, 0x7F};
-  const uint8_t ping[] = {0x01, 0xAB, 0xCD};
+  const uint8_t set_mode[] = { 0x02, 0x12, 0x34, 0x7F };
+  const uint8_t ping[] = { 0x01, 0xAB, 0xCD };
 
   FramedslFieldId mode;
   FramedslFieldId body;
   uint64_t value = 0;
-  uint8_t bytes[16] = {0};
+  uint8_t bytes[16] = { 0 };
   size_t length = 0;
   int failure = 0;
 
-  if (!framedsl_find(fixture.definition, "TC_SET_MODE.mode", &mode) ||
-      !framedsl_find(fixture.definition, "TC_PAYLOAD.body", &body)) {
+  if (!framedsl_find(fixture.definition, "TC_SET_MODE.mode", &mode)
+      || !framedsl_find(fixture.definition, "TC_PAYLOAD.body", &body)) {
     failure = __LINE__;
   } else if (framedsl_decode(fixture.frame, set_mode, sizeof(set_mode), NULL, NULL) == NULL) {
     failure = __LINE__;
@@ -528,8 +521,7 @@ static int us6_tc12_a_decoded_frame_does_not_answer_for_another_packet(const Tes
     failure = __LINE__; /* the packet that did arrive still reads */
   } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_ERROR_ABSENT) {
     failure = __LINE__; /* 0x7F is still sitting in that slot, and it is not this frame's */
-  } else if (framedsl_get_bytes(fixture.frame, body, bytes, sizeof(bytes), &length) !=
-             FRAMEDSL_ERROR_ABSENT) {
+  } else if (framedsl_get_bytes(fixture.frame, body, bytes, sizeof(bytes), &length) != FRAMEDSL_ERROR_ABSENT) {
     failure = __LINE__;
   } else if (framedsl_byte_length(fixture.frame, body) != 0) {
     failure = __LINE__;
@@ -551,9 +543,9 @@ static int us6_tc13_a_failed_decode_leaves_nothing_readable(const TestArguments 
     FORCE_FAILURE();
   }
 
-  const uint8_t good[] = {0x02, 0x12, 0x34, 0x7F};
-  const uint8_t cut_short[] = {0x02, 0x12};
-  const uint8_t noise[] = {0xFF, 0x00, 0x00, 0x00};
+  const uint8_t good[] = { 0x02, 0x12, 0x34, 0x7F };
+  const uint8_t cut_short[] = { 0x02, 0x12 };
+  const uint8_t noise[] = { 0xFF, 0x00, 0x00, 0x00 };
 
   FramedslFieldId seq;
   uint64_t value = 0;
@@ -561,8 +553,8 @@ static int us6_tc13_a_failed_decode_leaves_nothing_readable(const TestArguments 
 
   if (!framedsl_find(fixture.definition, "TC_SET_MODE.seq", &seq)) {
     failure = __LINE__;
-  } else if (framedsl_decode(fixture.frame, good, sizeof(good), NULL, NULL) == NULL ||
-             framedsl_get_u64(fixture.frame, seq, &value) != FRAMEDSL_OK || value != 0x1234) {
+  } else if (framedsl_decode(fixture.frame, good, sizeof(good), NULL, NULL) == NULL
+             || framedsl_get_u64(fixture.frame, seq, &value) != FRAMEDSL_OK || value != 0x1234) {
     failure = __LINE__;
   } else if (framedsl_decode(fixture.frame, cut_short, sizeof(cut_short), NULL, NULL) != NULL) {
     failure = __LINE__;
@@ -590,7 +582,7 @@ static int us6_tc14_a_frame_the_caller_is_filling_in_reads_everything(const Test
     FORCE_FAILURE();
   }
 
-  const uint8_t cut_short[] = {0x02, 0x12};
+  const uint8_t cut_short[] = { 0x02, 0x12 };
   FramedslFieldId mode;
   uint64_t value = 0;
   int failure = 0;
@@ -609,7 +601,7 @@ static int us6_tc14_a_frame_the_caller_is_filling_in_reads_everything(const Test
     failure = __LINE__;
   } else {
     /* And a reset does the same, from a frame holding a decode. */
-    const uint8_t ping[] = {0x01, 0xAB, 0xCD};
+    const uint8_t ping[] = { 0x01, 0xAB, 0xCD };
     if (framedsl_decode(fixture.frame, ping, sizeof(ping), NULL, NULL) == NULL) {
       failure = __LINE__;
     } else if (framedsl_get_u64(fixture.frame, mode, &value) != FRAMEDSL_ERROR_ABSENT) {
@@ -628,30 +620,42 @@ static int us6_tc14_a_frame_the_caller_is_filling_in_reads_everything(const Test
 
 void register_user_story6(void) {
   START_REGISTERING();
-  ADD_TEST_CASE(us6_tc01_hand_written_bytes_decode_to_their_values,
-                "hand-written bytes decode to the values they hold", false);
-  ADD_TEST_CASE(us6_tc02_the_right_packet_is_identified,
-                "each frame is identified as its own packet", false);
-  ADD_TEST_CASE(us6_tc03_the_failures_are_told_apart,
-                "unrecognised, truncated and over-bound are three answers", false);
-  ADD_TEST_CASE(us6_tc04_nothing_is_read_past_the_buffer,
-                "an exactly-sized buffer is not read past", false);
-  ADD_TEST_CASE(us6_tc05_a_variable_field_decodes_at_every_length,
-                "a valof() field decodes at zero, a middling length and its reservation", false);
-  ADD_TEST_CASE(us6_tc06_bit_and_byte_order_are_undone,
-                "lsb_first and little_endian are read back correctly", false);
-  ADD_TEST_CASE(us6_tc07_a_stream_can_be_walked_frame_by_frame,
-                "consumed lets a stream be walked frame by frame", false);
+  ADD_TEST_CASE(
+    us6_tc01_hand_written_bytes_decode_to_their_values, "hand-written bytes decode to the values they hold", false
+  );
+  ADD_TEST_CASE(us6_tc02_the_right_packet_is_identified, "each frame is identified as its own packet", false);
+  ADD_TEST_CASE(
+    us6_tc03_the_failures_are_told_apart, "unrecognised, truncated and over-bound are three answers", false
+  );
+  ADD_TEST_CASE(us6_tc04_nothing_is_read_past_the_buffer, "an exactly-sized buffer is not read past", false);
+  ADD_TEST_CASE(
+    us6_tc05_a_variable_field_decodes_at_every_length,
+    "a valof() field decodes at zero, a middling length and its reservation",
+    false
+  );
+  ADD_TEST_CASE(us6_tc06_bit_and_byte_order_are_undone, "lsb_first and little_endian are read back correctly", false);
+  ADD_TEST_CASE(
+    us6_tc07_a_stream_can_be_walked_frame_by_frame, "consumed lets a stream be walked frame by frame", false
+  );
   ADD_TEST_CASE(us6_tc08_decoding_does_not_allocate, "decoding allocates nothing, counted", false);
   ADD_TEST_CASE(us6_tc09_null_is_tolerated, "decode tolerates a NULL frame", false);
-  ADD_TEST_CASE(us6_tc10_a_frame_survives_a_round_trip,
-                "set, encode, send, decode, read back -- between two frames", false);
-  ADD_TEST_CASE(us6_tc11_the_round_trip_works_from_a_file,
-                "the same, from a definition file on disk", false);
-  ADD_TEST_CASE(us6_tc12_a_decoded_frame_does_not_answer_for_another_packet,
-                "a decoded frame refuses another packet's field instead of a stale value", false);
-  ADD_TEST_CASE(us6_tc13_a_failed_decode_leaves_nothing_readable,
-                "after a failed decode every field is absent, not half-decoded", false);
-  ADD_TEST_CASE(us6_tc14_a_frame_the_caller_is_filling_in_reads_everything,
-                "a frame the caller is building still reads every field", false);
+  ADD_TEST_CASE(
+    us6_tc10_a_frame_survives_a_round_trip, "set, encode, send, decode, read back -- between two frames", false
+  );
+  ADD_TEST_CASE(us6_tc11_the_round_trip_works_from_a_file, "the same, from a definition file on disk", false);
+  ADD_TEST_CASE(
+    us6_tc12_a_decoded_frame_does_not_answer_for_another_packet,
+    "a decoded frame refuses another packet's field instead of a stale value",
+    false
+  );
+  ADD_TEST_CASE(
+    us6_tc13_a_failed_decode_leaves_nothing_readable,
+    "after a failed decode every field is absent, not half-decoded",
+    false
+  );
+  ADD_TEST_CASE(
+    us6_tc14_a_frame_the_caller_is_filling_in_reads_everything,
+    "a frame the caller is building still reads every field",
+    false
+  );
 }

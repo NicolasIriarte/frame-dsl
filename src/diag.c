@@ -52,7 +52,7 @@ void diag_add(DiagList *list, int line, int column, int check, const char *fmt, 
   vsnprintf(message, (size_t)len + 1, fmt, args);
   va_end(args);
 
-  list->items[list->count++] = (Diag){.line = line, .column = column, .check = check, .message = message};
+  list->items[list->count++] = (Diag){ .line = line, .column = column, .check = check, .message = message };
 }
 
 static int by_position(const void *lhs, const void *rhs) {

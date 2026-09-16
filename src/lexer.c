@@ -9,19 +9,23 @@ typedef struct {
 } Keyword;
 
 static const Keyword KEYWORDS[] = {
-    {"pkt", TOK_PKT},
-    {"valof", TOK_VALOF},
-    {"block", TOK_BLOCK},
+  { "pkt",   TOK_PKT   },
+  { "valof", TOK_VALOF },
+  { "block", TOK_BLOCK },
 };
 
-static bool is_digit(char c) { return c >= '0' && c <= '9'; }
+static bool is_digit(char c) {
+  return c >= '0' && c <= '9';
+}
 static bool is_hex_digit(char c) {
   return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 static bool is_ident_start(char c) {
   return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
-static bool is_ident_continue(char c) { return is_ident_start(c) || is_digit(c); }
+static bool is_ident_continue(char c) {
+  return is_ident_start(c) || is_digit(c);
+}
 
 void lexer_init(Lexer *lexer, const char *source, DiagList *diags) {
   lexer->source = source;
@@ -47,7 +51,7 @@ static char advance(Lexer *lexer) {
 }
 
 static Token make(TokenKind kind, int line, int column) {
-  return (Token){.kind = kind, .line = line, .column = column};
+  return (Token){ .kind = kind, .line = line, .column = column };
 }
 
 /* Whitespace and comments separate tokens and are otherwise discarded.
@@ -116,8 +120,14 @@ static Token lex_number(Lexer *lexer, int line, int column) {
   /* A number running straight into an identifier character is a typo rather than two tokens:
    * `8bits` should say so, not lex as 8 followed by `bits`. */
   if (is_ident_start(peek(lexer, 0))) {
-    diag_add(lexer->diags, lexer->line, lexer->column, 0,
-             "unexpected character '%c' immediately after a number", peek(lexer, 0));
+    diag_add(
+      lexer->diags,
+      lexer->line,
+      lexer->column,
+      0,
+      "unexpected character '%c' immediately after a number",
+      peek(lexer, 0)
+    );
     token.kind = TOK_INVALID;
     return token;
   }
@@ -191,21 +201,36 @@ Token lexer_next(Lexer *lexer) {
 
   advance(lexer);
   switch (c) {
-  case '@': return make(TOK_AT, line, column);
-  case ':': return make(TOK_COLON, line, column);
-  case ';': return make(TOK_SEMICOLON, line, column);
-  case '{': return make(TOK_LBRACE, line, column);
-  case '}': return make(TOK_RBRACE, line, column);
-  case '[': return make(TOK_LBRACKET, line, column);
-  case ']': return make(TOK_RBRACKET, line, column);
-  case '(': return make(TOK_LPAREN, line, column);
-  case ')': return make(TOK_RPAREN, line, column);
-  case '=': return make(TOK_EQUALS, line, column);
-  case '+': return make(TOK_PLUS, line, column);
-  case '-': return make(TOK_MINUS, line, column);
-  case '*': return make(TOK_STAR, line, column);
-  case '/': return make(TOK_SLASH, line, column);
-  default: break;
+  case '@':
+    return make(TOK_AT, line, column);
+  case ':':
+    return make(TOK_COLON, line, column);
+  case ';':
+    return make(TOK_SEMICOLON, line, column);
+  case '{':
+    return make(TOK_LBRACE, line, column);
+  case '}':
+    return make(TOK_RBRACE, line, column);
+  case '[':
+    return make(TOK_LBRACKET, line, column);
+  case ']':
+    return make(TOK_RBRACKET, line, column);
+  case '(':
+    return make(TOK_LPAREN, line, column);
+  case ')':
+    return make(TOK_RPAREN, line, column);
+  case '=':
+    return make(TOK_EQUALS, line, column);
+  case '+':
+    return make(TOK_PLUS, line, column);
+  case '-':
+    return make(TOK_MINUS, line, column);
+  case '*':
+    return make(TOK_STAR, line, column);
+  case '/':
+    return make(TOK_SLASH, line, column);
+  default:
+    break;
   }
 
   diag_add(lexer->diags, line, column, 0, "unexpected character '%c'", c);
@@ -214,27 +239,48 @@ Token lexer_next(Lexer *lexer) {
 
 const char *token_kind_name(TokenKind kind) {
   switch (kind) {
-  case TOK_EOF: return "end of file";
-  case TOK_IDENT: return "a name";
-  case TOK_INT: return "a number";
-  case TOK_PKT: return "'pkt'";
-  case TOK_VALOF: return "'valof'";
-  case TOK_BLOCK: return "'block'";
-  case TOK_AT: return "'@'";
-  case TOK_COLON: return "':'";
-  case TOK_SEMICOLON: return "';'";
-  case TOK_LBRACE: return "'{'";
-  case TOK_RBRACE: return "'}'";
-  case TOK_LBRACKET: return "'['";
-  case TOK_RBRACKET: return "']'";
-  case TOK_LPAREN: return "'('";
-  case TOK_RPAREN: return "')'";
-  case TOK_EQUALS: return "'='";
-  case TOK_PLUS: return "'+'";
-  case TOK_MINUS: return "'-'";
-  case TOK_STAR: return "'*'";
-  case TOK_SLASH: return "'/'";
-  case TOK_INVALID: return "invalid input";
+  case TOK_EOF:
+    return "end of file";
+  case TOK_IDENT:
+    return "a name";
+  case TOK_INT:
+    return "a number";
+  case TOK_PKT:
+    return "'pkt'";
+  case TOK_VALOF:
+    return "'valof'";
+  case TOK_BLOCK:
+    return "'block'";
+  case TOK_AT:
+    return "'@'";
+  case TOK_COLON:
+    return "':'";
+  case TOK_SEMICOLON:
+    return "';'";
+  case TOK_LBRACE:
+    return "'{'";
+  case TOK_RBRACE:
+    return "'}'";
+  case TOK_LBRACKET:
+    return "'['";
+  case TOK_RBRACKET:
+    return "']'";
+  case TOK_LPAREN:
+    return "'('";
+  case TOK_RPAREN:
+    return "')'";
+  case TOK_EQUALS:
+    return "'='";
+  case TOK_PLUS:
+    return "'+'";
+  case TOK_MINUS:
+    return "'-'";
+  case TOK_STAR:
+    return "'*'";
+  case TOK_SLASH:
+    return "'/'";
+  case TOK_INVALID:
+    return "invalid input";
   }
   return "something";
 }
