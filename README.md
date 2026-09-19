@@ -34,6 +34,30 @@ When a frame changes, the definition file changes. The program does not get rebu
 > conditionals, repetition, composition, CRC and calibration curves are all still absent, each with
 > its own issue. Nothing here is stable, and nothing is published.
 
+## The two ways this gets used
+
+Both of them are about a device that is not in front of you. The layouts here are the telemetry and
+telecommand packets some piece of hardware speaks, and the usual reason to want them in a file rather
+than in C is that one end of the link is being *simulated*: something has to stand in for the device
+sending CAN frames at the application being written, or stand in for the application, so that the
+software on the other side has something real to talk to.
+
+**While developing, as a library.** The program under development links the runtime, loads a
+definition at startup, builds commands by setting fields by name, and decodes what comes back into
+something it can act on -- "did the device answer the sequence I sent, and is the reading over the
+limit" rather than "what is in byte 7". Both ends of a simulated link load the same definition file,
+so the simulator and the software under development cannot disagree about a layout, and changing the
+layout is editing one file rather than two programs.
+[`examples/uart_device.c`](examples/uart_device.c) is exactly that: a UART driver whose device does
+not exist, in the shape a real one has. `make example && ./build/uart_device`.
+
+**While debugging, as a standalone tool.** When the communication already works and the question is
+why *this* frame was rejected, or what the unexpected reply actually contained, there is nothing to
+write: `build/frame-dsl` takes the definition file and the raw bytes off the link and says what they
+are. The definition you already have and a hex string pasted off a capture are the whole input -- see
+[The tool](#the-tool). Going the other way from the terminal -- naming a packet and the fields to put
+in it, and getting bytes out to send by hand -- is not built yet; it is issue #50.
+
 ## What it looks like
 
 A definition file declares packets. Widths are in bits, everywhere:
@@ -151,6 +175,8 @@ configured.
 | Target                  |                                                        |
 |-------------------------|--------------------------------------------------------|
 | `make`                  | build `build/frame-dsl`                                |
+| `make example`          | build `build/uart_device`, the worked example           |
+| `make lib`              | build `build/libframedsl.a` to compile your own against |
 | `make deps`             | unpack the vendored CLibs libraries into `build/deps/` |
 | `make test`             | run both levels of tests                               |
 | `make test-unit`        | unit tests only                                        |

@@ -184,7 +184,8 @@ static void report_frame(
     return;
   }
 
-  log_info("%s, %zu byte%s", name, consumed, consumed == 1 ? "" : "s");
+  log_base("# Decoded %zu byte%s", consumed, consumed == 1 ? "" : "s");
+  log_base("pkt %s {", name);
 
   for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
     FramedslField field;
@@ -196,24 +197,24 @@ static void report_frame(
     if (field.is_scalar) {
       uint64_t value = 0;
       if (framedsl_get_u64(frame, id, &value) == FRAMEDSL_OK) {
-        log_info("    %-14s %llu (%#llx)", field.name, (unsigned long long)value, (unsigned long long)value);
+        log_base("    %-14s %llu (%#llx)", field.name, (unsigned long long)value, (unsigned long long)value);
       }
       continue;
     }
 
     /* A bit string, including every valof()-sized field. The length is what arrived, not what the
      * field reserved -- which is the whole point of asking the frame rather than the definition.
-     * Static because a field can reserve as much as a capture can hold, and that does not belong on
-     * a stack. */
-    static uint8_t bytes[MAX_CAPTURE];
+     * Nothing is copied: this tool only prints the bytes, and they are already in the frame. */
     size_t length = 0;
     char text[128] = "";
 
-    if (framedsl_get_bytes(frame, id, bytes, sizeof(bytes), &length) == FRAMEDSL_OK) {
+    const uint8_t *bytes = framedsl_get_bytes(frame, id, &length, NULL);
+    if (bytes != NULL) {
       format_bytes(bytes, length, text, sizeof(text));
-      log_info("    %-14s [%zu byte%s] %s", field.name, length, length == 1 ? "" : "s", text);
+      log_base("    %-14s [%zu byte%s] %s", field.name, length, length == 1 ? "" : "s", text);
     }
   }
+  log_base("}");
 }
 
 static const char *decode_problem(FramedslStatus status) {
@@ -261,7 +262,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   }
 
   if (status == 0) {
-    log_info("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
+    log_base("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
   }
 
   framedsl_frame_free(frame);

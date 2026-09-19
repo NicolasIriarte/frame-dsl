@@ -318,7 +318,7 @@ static int run_row(const Row *row, size_t index) {
       uint8_t read[64] = { 0 };
       size_t read_length = 0;
 
-      if (framedsl_get_bytes(receiver, id, read, sizeof(read), &read_length) != FRAMEDSL_OK) {
+      if (framedsl_get_bytes_into(receiver, id, read, sizeof(read), &read_length) != FRAMEDSL_OK) {
         complain(row, index, "%s could not be read back", field->dotted);
         failure = __LINE__;
       } else if (read_length != field->length) {

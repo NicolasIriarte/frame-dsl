@@ -27,10 +27,10 @@ typedef struct Expr {
   int line;
   int column;
 
-  uint64_t literal; /* EXPR_LITERAL */
-  const char *reference; /* EXPR_VALOF */
+  uint64_t literal; /**< EXPR_LITERAL */
+  const char *reference; /**< EXPR_VALOF */
 
-  char op; /* EXPR_BINARY: one of + - * / */
+  char op; /**< EXPR_BINARY: one of + - * / */
   struct Expr *lhs;
   struct Expr *rhs;
 } Expr;
@@ -42,9 +42,12 @@ typedef struct {
 
   Expr *width;
 
-  /* The arena reservation written as `name[bytes]:`, or NULL when there is none. In BYTES, unlike
-   * every other number in the language, because it is storage rather than layout -- see
-   * manual/language.md. check_file() converts it to bits once and nothing downstream sees bytes. */
+  /**
+   * @brief The arena reservation written as `name[bytes]:`, or NULL when there is none.
+   *
+   * In BYTES, unlike every other number in the language, because it is storage rather than layout --
+   * see manual/language.md. check_file() converts it to bits once and nothing downstream sees bytes.
+   */
   Expr *reserve;
   int reserve_line;
   int reserve_column;
@@ -54,13 +57,16 @@ typedef struct {
   int fixed_line;
   int fixed_column;
 
-  /* Resolved: what applies to this field once file, packet and field scope are combined. */
+  /** @brief Resolved: what applies to this field once file, packet and field scope are combined. */
   BitOrder bit_order;
   ByteOrder byte_order;
 
-  /* Whether the setting was *written on this field*, as opposed to inherited. Check 10 turns on the
-   * difference: an inherited byte_order that cannot apply here is irrelevant, while one written here
-   * means somebody believed they had specified something. */
+  /**
+   * @brief Whether the setting was *written on this field*, as opposed to inherited.
+   *
+   * Check 10 turns on the difference: an inherited byte_order that cannot apply here is irrelevant,
+   * while one written here means somebody believed they had specified something.
+   */
   bool bit_order_written;
   bool byte_order_written;
   int bit_order_line;
@@ -84,13 +90,21 @@ typedef struct {
   size_t packet_count;
   size_t packet_capacity;
 
-  /* Owns every Expr and every string the nodes point at. */
+  /** @brief Owns every Expr and every string the nodes point at. */
   Region *region;
 } AstFile;
 
 AstFile *ast_new(void);
 void ast_free(AstFile *file);
 
-/* Return NULL on allocation failure. The caller reports it; there is nothing else to do. */
+/**
+ * @brief Add a packet to `file`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
 AstPacket *ast_add_packet(AstFile *file);
+
+/**
+ * @brief Add a field to `packet`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
 AstField *ast_add_field(AstPacket *packet);

@@ -19,6 +19,25 @@ The bet is that this is worth paying an interpretation cost for, and that the co
 enough not to matter -- which is why the intermediate form is a bytecode rather than a syntax tree,
 and why every field gets a fixed slot rather than an allocation.
 
+## Where it is used
+
+Mostly on a simulated link, and that is a design input rather than a footnote. The common setting is
+that one end of the conversation does not exist yet: a device that will send CAN frames at the
+application being written, or the application that the device's own software needs something to talk
+to. A simulator has to speak the real packet layout, and it has to keep speaking it when the layout
+is revised -- which is a much easier promise to keep when both ends read one definition file than
+when each has its own struct.
+
+That splits the project's use into two, and a feature request is worth checking against both:
+
+- **As a library, while the communication is being written.** Fields set and read by name, packets
+  encoded and decoded, the software asserting on what came back. The receiving side is never told
+  which packet to expect -- it finds out from the bytes, because on a real link it would have to.
+- **As a tool, while the communication is being debugged.** A definition file and a run of raw bytes,
+  with no program in between: what is this frame, and which field is wrong. This is why the CLI is
+  shipped rather than kept as a test harness, and why its diagnostics distinguish "nothing matches"
+  from "ran out of bytes".
+
 ## Deliberately a learning project
 
 This exists to be built, in the same line as Nemu and NQC. That is a real constraint on decisions,

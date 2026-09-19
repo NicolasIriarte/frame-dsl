@@ -2,6 +2,8 @@
 #
 #   make              build build/frame-dsl
 #   make deps         unpack the vendored CLibs libraries
+#   make example      build build/uart_device, the worked example
+#   make lib          build build/libframedsl.a, to compile your own program against
 #   make test         run both levels of tests
 #   make test-unit    unit tests only
 #   make test-system  system tests only
@@ -64,6 +66,16 @@ SYSTEM_SRC := $(wildcard test/system/*.c)
 SYSTEM_RUNNER := $(BUILD)/run_system_tests
 SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 
+# examples/uart_device.c is the worked example: built against include/ alone and linked with the
+# library, exactly as somebody else's program would be. A system test runs it, so it cannot bit-rot
+# without a test failing first -- it is an example, and the test is only there to keep it true.
+EXAMPLE_UART_DEVICE := $(BUILD)/uart_device
+
+# The library as one file, so a program outside this repository -- a copy of the example being
+# played with, most likely -- compiles with `-Lbuild -lframedsl` instead of naming object files.
+LIB_ARCHIVE := $(BUILD)/libframedsl.a
+AR ?= ar
+
 # One per level, not one shared. testsuite.c sizes its user-story array from
 # TESTSUITE_USER_STORY_COUNT, which it picks up from whichever testsuite_registry.h is on its include
 # path when it is compiled -- so the count is baked into the object. A single object built without a
@@ -100,7 +112,7 @@ UNIT_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -
 	-DSOURCE_DIR=\"src\" -DEDITORS_DIR=\"editors\"
 SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
 	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\" \
-	-DCORPUS_DIR=\"test/corpus\"
+	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps test test-unit test-system test-editors compile-commands format format-check \
 	format-tool hooks clean
@@ -118,6 +130,10 @@ EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.
 all: $(TARGET) $(COMPILE_COMMANDS) hooks
 
 deps: $(DEPS)
+
+example: $(EXAMPLE_UART_DEVICE)
+
+lib: $(LIB_ARCHIVE)
 
 # Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
 # and silently skipped outside a git checkout -- e.g. building from a released tarball, which has no
@@ -152,6 +168,17 @@ $(TARGET): $(MAIN_OBJ) $(LIB_OBJ)
 	@mkdir -p $(@D)
 	$(CC) $(SRC_FLAGS) $^ -o $@
 
+$(LIB_ARCHIVE): $(LIB_OBJ)
+	@mkdir -p $(@D)
+	$(AR) rcs $@ $^
+
+# No -Isrc, same as SYSTEM_FLAGS below: the example is a user of the library, not part of it. It
+# links the archive rather than the objects for the same reason -- that is the line someone copying
+# this file out of the repository will write.
+$(EXAMPLE_UART_DEVICE): examples/uart_device.c $(LIB_ARCHIVE)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Iinclude examples/uart_device.c -L$(BUILD) -lframedsl -o $@
+
 $(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
 	@mkdir -p $(@D)
 	$(CC) $(THIRD_PARTY_CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -c $< -o $@
@@ -178,7 +205,7 @@ $(UNIT_RUNNER): $(UNIT_SRC) $(UNIT_REGISTRY) $(LIB_OBJ) $(TESTSUITE_UNIT_OBJ) $(
 # testing something no user can reach. FRAMEDSL_BIN and EXAMPLES_DIR are passed in so a test drives the real binary and
 # the real example files rather than a copy that can drift.
 $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) $(TARGET) \
-                  $(COMPILE_COMMANDS)
+                  $(EXAMPLE_UART_DEVICE) $(COMPILE_COMMANDS)
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 

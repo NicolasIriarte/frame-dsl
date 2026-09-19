@@ -153,7 +153,7 @@ static int us4_tc04_the_wrong_accessor_for_the_field_is_an_error(const TestArgum
     failure = __LINE__; /* 72 bits is a bit string */
   } else if (framedsl_set_bytes(fixture.frame, len, buffer, 4) != FRAMEDSL_ERROR_FIELD) {
     failure = __LINE__; /* 32 bits is a scalar */
-  } else if (framedsl_get_bytes(fixture.frame, len, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_FIELD) {
+  } else if (framedsl_get_bytes_into(fixture.frame, len, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_FIELD) {
     failure = __LINE__;
   }
 
@@ -180,7 +180,7 @@ static int us4_tc05_a_wide_fixed_field_round_trips(const TestArguments *args) {
     failure = __LINE__;
   } else if (framedsl_set_bytes(fixture.frame, wide, written, sizeof(written)) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, wide, read, sizeof(read), &length) != FRAMEDSL_OK) {
+  } else if (framedsl_get_bytes_into(fixture.frame, wide, read, sizeof(read), &length) != FRAMEDSL_OK) {
     failure = __LINE__;
   } else if (length != sizeof(written) || memcmp(read, written, sizeof(written)) != 0) {
     failure = __LINE__;
@@ -215,7 +215,7 @@ static int us4_tc06_a_variable_field_remembers_its_length(const TestArguments *a
     failure = __LINE__;
   } else if (framedsl_byte_length(fixture.frame, data) != sizeof(payload)) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK) {
+  } else if (framedsl_get_bytes_into(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK) {
     failure = __LINE__;
   } else if (length != sizeof(payload) || memcmp(read, payload, sizeof(payload)) != 0) {
     failure = __LINE__;
@@ -249,14 +249,14 @@ static int us4_tc07_a_shorter_value_clears_what_it_replaced(const TestArguments 
   } else if (framedsl_set_bytes(fixture.frame, data, longer, sizeof(longer)) != FRAMEDSL_OK
              || framedsl_set_bytes(fixture.frame, data, shorter, sizeof(shorter)) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK
+  } else if (framedsl_get_bytes_into(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK
              || length != sizeof(shorter)) {
     failure = __LINE__;
   } else {
     /* Read the whole reservation back the long way to see what is behind the length. */
     if (framedsl_set_bytes(fixture.frame, data, read, 16) != FRAMEDSL_OK) {
       failure = __LINE__;
-    } else if (framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK) {
+    } else if (framedsl_get_bytes_into(fixture.frame, data, read, sizeof(read), &length) != FRAMEDSL_OK) {
       failure = __LINE__;
     } else if (read[2] != 0 || read[7] != 0) {
       failure = __LINE__; /* the old value's tail survived */
@@ -310,7 +310,7 @@ static int us4_tc09_a_small_buffer_reports_the_size_needed(const TestArguments *
     failure = __LINE__;
   } else if (framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_get_bytes(fixture.frame, data, small, sizeof(small), &length) != FRAMEDSL_ERROR_BUFFER) {
+  } else if (framedsl_get_bytes_into(fixture.frame, data, small, sizeof(small), &length) != FRAMEDSL_ERROR_BUFFER) {
     failure = __LINE__;
   } else if (length != sizeof(payload)) {
     failure = __LINE__;
@@ -462,7 +462,7 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
       framedsl_set_u64(fixture.frame, len, (uint64_t)i);
       framedsl_get_u64(fixture.frame, len, &value);
       framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload));
-      framedsl_get_bytes(fixture.frame, data, read, sizeof(read), &length);
+      framedsl_get_bytes_into(fixture.frame, data, read, sizeof(read), &length);
       framedsl_byte_length(fixture.frame, data);
       framedsl_frame_reset(fixture.frame);
     }
@@ -497,13 +497,110 @@ static int us4_tc14_null_is_tolerated_everywhere(const TestArguments *args) {
   if (framedsl_set_u64(NULL, id, 1) != FRAMEDSL_ERROR_MEMORY
       || framedsl_get_u64(NULL, id, &value) != FRAMEDSL_ERROR_MEMORY
       || framedsl_set_bytes(NULL, id, buffer, sizeof(buffer)) != FRAMEDSL_ERROR_MEMORY
-      || framedsl_get_bytes(NULL, id, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_MEMORY) {
+      || framedsl_get_bytes_into(NULL, id, buffer, sizeof(buffer), &length) != FRAMEDSL_ERROR_MEMORY) {
     FORCE_FAILURE();
   }
   if (framedsl_byte_length(NULL, id) != 0) {
     FORCE_FAILURE();
   }
   return 0;
+}
+
+/* The no-copy read. The bytes are already in the arena in their final form, so the caller is given
+ * a pointer to them rather than a buffer to fill -- the counterpart of framedsl_encode(). */
+static int us4_tc15_get_bytes_points_into_the_frame(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    FORCE_FAILURE();
+  }
+
+  const uint8_t payload[] = { 0xDE, 0xAD, 0xBE, 0xEF };
+  FramedslFieldId data;
+  FramedslFieldId len;
+  size_t length = 999;
+  FramedslStatus status = FRAMEDSL_OK;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "TM_A.data", &data) || !framedsl_find(fixture.definition, "TM_A.len", &len)) {
+    failure = __LINE__;
+  } else if (framedsl_get_bytes(fixture.frame, data, &length, &status) == NULL || length != 0
+             || status != FRAMEDSL_OK) {
+    /* A field holding nothing is not a failure: a usable pointer and a length of zero, because NULL
+     * is reserved for a call that did not work. */
+    failure = __LINE__;
+  } else if (framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
+    failure = __LINE__;
+  } else {
+    const uint8_t *first = framedsl_get_bytes(fixture.frame, data, &length, &status);
+    const uint8_t *again = framedsl_get_bytes(fixture.frame, data, &length, &status);
+
+    if (first == NULL || length != sizeof(payload) || memcmp(first, payload, sizeof(payload)) != 0) {
+      failure = __LINE__;
+    } else if (first != again) {
+      failure = __LINE__; /* the same field is the same address, every time */
+    } else if (framedsl_get_bytes(fixture.frame, len, &length, &status) != NULL || status != FRAMEDSL_ERROR_FIELD) {
+      failure = __LINE__; /* a scalar is the other pair of accessors */
+    } else if (framedsl_get_bytes(NULL, data, &length, &status) != NULL || status != FRAMEDSL_ERROR_MEMORY) {
+      failure = __LINE__;
+    } else if (framedsl_get_bytes(fixture.frame, data, NULL, &status) != NULL || status != FRAMEDSL_ERROR_MEMORY) {
+      failure = __LINE__; /* the length is not optional: without it the pointer says nothing */
+    } else if (framedsl_get_bytes(fixture.frame, data, &length, NULL) == NULL) {
+      failure = __LINE__; /* the status is optional, as it is on framedsl_encode() */
+    }
+  }
+
+  fixture_close(&fixture);
+  return failure;
+}
+
+/* What the pointer promises: the address is fixed for the life of the frame, and only a write to
+ * that same field changes what is behind it. Anything else would make it unusable to hold. */
+static int us4_tc16_the_address_is_fixed_and_only_its_own_field_moves_it(const TestArguments *args) {
+  (void)args;
+
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    FORCE_FAILURE();
+  }
+
+  const uint8_t payload[] = { 0xDE, 0xAD, 0xBE, 0xEF };
+  /* A whole TM_B, which is a different packet and so a different run of slots. */
+  const uint8_t other_packet[] = { 0xBB, 0x12, 0x34 };
+
+  FramedslFieldId data;
+  FramedslFieldId len;
+  size_t length = 0;
+  const uint8_t *fixed = NULL;
+  int failure = 0;
+
+  if (!framedsl_find(fixture.definition, "TM_A.data", &data) || !framedsl_find(fixture.definition, "TM_A.len", &len)) {
+    failure = __LINE__;
+  } else if (framedsl_set_bytes(fixture.frame, data, payload, sizeof(payload)) != FRAMEDSL_OK) {
+    failure = __LINE__;
+  } else if ((fixed = framedsl_get_bytes(fixture.frame, data, &length, NULL)) == NULL) {
+    failure = __LINE__;
+  } else if (framedsl_set_u64(fixture.frame, len, 4) != FRAMEDSL_OK) {
+    failure = __LINE__;
+  } else if (framedsl_get_bytes(fixture.frame, data, &length, NULL) != fixed || length != sizeof(payload)
+             || memcmp(fixed, payload, sizeof(payload)) != 0) {
+    failure = __LINE__; /* writing another field of the same packet moves nothing */
+  } else if (framedsl_decode(fixture.frame, other_packet, sizeof(other_packet), NULL, NULL) == NULL) {
+    failure = __LINE__;
+  } else if (framedsl_get_bytes(fixture.frame, data, &length, NULL) != fixed || length != sizeof(payload)
+             || memcmp(fixed, payload, sizeof(payload)) != 0) {
+    failure = __LINE__; /* nor does decoding a different packet */
+  } else {
+    /* A reset does change what is behind it -- and still not where it is. */
+    framedsl_frame_reset(fixture.frame);
+    if (framedsl_get_bytes(fixture.frame, data, &length, NULL) != fixed || length != 0) {
+      failure = __LINE__;
+    }
+  }
+
+  fixture_close(&fixture);
+  return failure;
 }
 
 void register_user_story4(void) {
@@ -538,4 +635,14 @@ void register_user_story4(void) {
     us4_tc13_nothing_allocates_after_the_frame_exists, "no allocation after the frame exists, counted", false
   );
   ADD_TEST_CASE(us4_tc14_null_is_tolerated_everywhere, "every entry point tolerates NULL", false);
+  ADD_TEST_CASE(
+    us4_tc15_get_bytes_points_into_the_frame,
+    "reading a bit string hands back a pointer into the frame, not a copy",
+    false
+  );
+  ADD_TEST_CASE(
+    us4_tc16_the_address_is_fixed_and_only_its_own_field_moves_it,
+    "that pointer is the same every time, and only its own field changes what is behind it",
+    false
+  );
 }

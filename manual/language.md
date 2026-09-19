@@ -111,7 +111,8 @@ A field of **64 bits or fewer** is a scalar: an unsigned integer, read and writt
 `framedsl_set_u64()` and `framedsl_get_u64()`.
 
 A field **wider than 64 bits** -- including every `valof()`-sized field -- is a bit string, read and
-written as bytes with `framedsl_set_bytes()` and `framedsl_get_bytes()`.
+written as bytes with `framedsl_set_bytes()`, and read with `framedsl_get_bytes()` -- which hands
+back a pointer into the frame rather than copying.
 
 The rule is the width alone. Nothing else has to be declared.
 

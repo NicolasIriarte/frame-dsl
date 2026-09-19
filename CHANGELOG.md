@@ -22,9 +22,15 @@ nothing written under it fails the release rather than publishing an empty page.
   [`manual/api.md`](manual/api.md).
 - `framedsl_encode_into()`, which writes a frame into a buffer the caller already has and reports the
   size needed when it does not fit, leaving the buffer untouched.
-- A frame now knows which packet it is holding. After a decode, reading a field of another packet --
-  or any field at all after a decode that failed -- is `FRAMEDSL_ERROR_ABSENT` rather than a stale
-  value from an earlier frame. Writing a field, or resetting the frame, takes it back.
+- `framedsl_get_bytes()` hands back a pointer into the frame instead of filling a caller's buffer --
+  the bytes are already there in their final form, so reading a payload needs no buffer and no copy.
+  The address is fixed for the life of the frame and only that field's own writes change what is
+  behind it. `framedsl_get_bytes_into()` is the copying form, for bytes that must outlive the next
+  frame.
+- **A decode that fails changes nothing.** The packet being walked is put aside before the first
+  write and put back if the walk gives up, so a truncated or over-long frame leaves every field --
+  bytes and lengths both -- holding exactly what it held before, rather than half of the frame that
+  did not arrive.
 
 - **`frame-dsl <file> -d "<hex>"`**, which decodes a capture against a definition and prints the
   fields of every frame in it. The hex may carry any separators, an odd number of digits is refused

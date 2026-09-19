@@ -58,22 +58,39 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   /* The output buffer holds the largest frame this definition can produce: every field at its full
    * reserved width. Sized once, here, so encoding never asks how big the answer will be. */
   size_t output_size = 0;
+  /* And the snapshot holds the largest packet's slots, for the same reason: a decode puts the packet
+   * it is about to walk aside, and one packet is the most any walk can reach. */
+  size_t snapshot_size = 0;
+  size_t snapshot_slots = 0;
   for (size_t p = 0; p < layout->packet_count; ++p) {
     const PacketLayout *packet = &layout->packets[p];
     uint64_t packet_bits = 0;
+    size_t packet_arena = 0;
     for (size_t f = 0; f < packet->field_count; ++f) {
       const FieldLayout *field = &packet->fields[f];
       arena_size = round_up(arena_size, alignof(uint64_t));
       arena_size += slot_bytes(field);
+      /* The same rounding the arena layout below applies, so this is the packet's real footprint
+       * there and not an underestimate of it. */
+      packet_arena = round_up(packet_arena, alignof(uint64_t)) + slot_bytes(field);
       packet_bits += field->variable ? field->max_bits : field->width_bits;
     }
     size_t packet_bytes = (size_t)((packet_bits + 7) / 8);
     if (packet_bytes > output_size) {
       output_size = packet_bytes;
     }
+    if (packet_arena > snapshot_size) {
+      snapshot_size = packet_arena;
+    }
+    if (packet->field_count > snapshot_slots) {
+      snapshot_slots = packet->field_count;
+    }
   }
 
-  uint8_t *block = calloc(1, arena_offset + arena_size + output_size);
+  size_t snapshot_offset = round_up(arena_offset + arena_size + output_size, alignof(uint64_t));
+  size_t lengths_offset = round_up(snapshot_offset + snapshot_size, alignof(size_t));
+
+  uint8_t *block = calloc(1, lengths_offset + snapshot_slots * sizeof(size_t));
   if (block == NULL) {
     return NULL;
   }
@@ -81,10 +98,6 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   FramedslFrame *frame = (FramedslFrame *)block;
   frame->definition = definition;
   frame->tag = definition->tag;
-  /* A new frame is the caller's to fill in. calloc already made this true; saying it costs a line and
-   * means the enum's first member can be reordered without changing what a new frame is. */
-  frame->holds = HOLDS_CALLER_VALUES;
-  frame->held_packet = 0;
   frame->packet_base = (size_t *)(block + base_offset);
   frame->packet_count = layout->packet_count;
   frame->slots = (Slot *)(block + slots_offset);
@@ -93,6 +106,10 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   frame->arena_size = arena_size;
   frame->output = block + arena_offset + arena_size;
   frame->output_size = output_size;
+  frame->snapshot = block + snapshot_offset;
+  frame->snapshot_size = snapshot_size;
+  frame->snapshot_lengths = (size_t *)(block + lengths_offset);
+  frame->snapshot_slots = snapshot_slots;
 
   size_t slot = 0;
   size_t offset = 0;
@@ -136,27 +153,66 @@ void framedsl_frame_reset(FramedslFrame *frame) {
   for (size_t i = 0; i < frame->slot_count; ++i) {
     frame->slots[i].length = frame->slots[i].variable ? 0 : frame->slots[i].capacity;
   }
-  frame->holds = HOLDS_CALLER_VALUES;
-  frame->held_packet = 0;
 }
 
-bool frame_holds(const FramedslFrame *frame, FramedslFieldId id) {
-  switch (frame->holds) {
-  /* Every slot is the caller's own value, including the ones they have not written yet -- which is
-   * the "there is no unset" rule, and is only about values a caller owns. */
-  case HOLDS_CALLER_VALUES:
-    return true;
-  case HOLDS_DECODED_PACKET:
-    return id.packet == frame->held_packet;
-  case HOLDS_NOTHING:
-    break;
+/* How many slots a packet has, from the base table rather than from the layout: the last packet runs
+ * to the end of the slot array, every other one to the next packet's base. */
+static size_t packet_field_count(const FramedslFrame *frame, size_t packet) {
+  size_t base = frame->packet_base[packet];
+  size_t end = packet + 1 < frame->packet_count ? frame->packet_base[packet + 1] : frame->slot_count;
+  return end - base;
+}
+
+/* The arena range one packet occupies. Its fields are laid out consecutively above, so a packet is a
+ * contiguous run and putting it aside is one copy rather than a walk. */
+static void packet_extent(const FramedslFrame *frame, size_t packet, size_t *offset, size_t *bytes) {
+  size_t base = frame->packet_base[packet];
+  size_t count = packet_field_count(frame, packet);
+
+  *offset = 0;
+  *bytes = 0;
+  if (count == 0) {
+    return;
   }
-  return false;
+
+  const Slot *first = &frame->slots[base];
+  const Slot *last = &frame->slots[base + count - 1];
+  *offset = first->offset;
+  *bytes = last->offset + last->capacity - first->offset;
 }
 
-void frame_taken_by_caller(FramedslFrame *frame) {
-  frame->holds = HOLDS_CALLER_VALUES;
-  frame->held_packet = 0;
+void frame_snapshot_packet(FramedslFrame *frame, size_t packet) {
+  size_t offset = 0;
+  size_t bytes = 0;
+  packet_extent(frame, packet, &offset, &bytes);
+  if (bytes > frame->snapshot_size) {
+    return;
+  }
+
+  memcpy(frame->snapshot, frame->arena + offset, bytes);
+
+  size_t base = frame->packet_base[packet];
+  size_t count = packet_field_count(frame, packet);
+  for (size_t f = 0; f < count && f < frame->snapshot_slots; ++f) {
+    frame->snapshot_lengths[f] = frame->slots[base + f].length;
+  }
+}
+
+void frame_restore_packet(FramedslFrame *frame, size_t packet) {
+  size_t offset = 0;
+  size_t bytes = 0;
+  packet_extent(frame, packet, &offset, &bytes);
+  if (bytes > frame->snapshot_size) {
+    return;
+  }
+
+  memcpy(frame->arena + offset, frame->snapshot, bytes);
+
+  size_t base = frame->packet_base[packet];
+  size_t count = packet_field_count(frame, packet);
+  for (size_t f = 0; f < count && f < frame->snapshot_slots; ++f) {
+    frame->slots[base + f].length = frame->snapshot_lengths[f];
+  }
 }
 
 Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id) {
@@ -224,14 +280,12 @@ FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64
     return FRAMEDSL_ERROR_FIELD;
   }
 
-  /* Checked before anything is written, so a rejected value leaves the slot holding what it held --
-   * and, since the write is what takes the frame back from a decode, leaves that alone too. */
+  /* Checked before anything is written, so a rejected value leaves the slot holding what it held. */
   if (slot->width_bits < 64 && value >= ((uint64_t)1 << slot->width_bits)) {
     return FRAMEDSL_ERROR_RANGE;
   }
 
   memcpy(frame->arena + slot->offset, &value, sizeof(value));
-  frame_taken_by_caller(frame);
   return FRAMEDSL_OK;
 }
 
@@ -242,11 +296,6 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
-  }
-  if (!frame_holds(frame, id)) {
-    /* The slot exists and has something in it; it is just not this frame's. Handing it over would be
-     * the last frame's value, or a zero nobody set, and both look exactly like an answer. */
-    return FRAMEDSL_ERROR_ABSENT;
   }
   memcpy(out, frame->arena + slot->offset, sizeof(*out));
   return FRAMEDSL_OK;
@@ -276,11 +325,41 @@ FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, cons
     memset(frame->arena + slot->offset + length, 0, slot->capacity - length);
   }
   slot->length = length;
-  frame_taken_by_caller(frame);
   return FRAMEDSL_OK;
 }
 
-FramedslStatus framedsl_get_bytes(
+const uint8_t *framedsl_get_bytes(
+  const FramedslFrame *frame,
+  FramedslFieldId id,
+  size_t *length,
+  FramedslStatus *status
+) {
+  FramedslStatus ignored = FRAMEDSL_OK;
+  if (status == NULL) {
+    status = &ignored;
+  }
+  *status = FRAMEDSL_OK;
+
+  if (frame == NULL || length == NULL) {
+    *status = FRAMEDSL_ERROR_MEMORY;
+    return NULL;
+  }
+
+  const Slot *slot = frame_slot(frame, id);
+  if (slot == NULL || slot->is_scalar) {
+    *status = FRAMEDSL_ERROR_FIELD;
+    return NULL;
+  }
+
+  /* The bytes are already in their final form in the arena, contiguous and with the slack past
+   * `length` zeroed by whoever last wrote the field -- so there is nothing to copy and nothing to
+   * size. A field holding nothing gives a usable pointer and a length of zero, because NULL is
+   * reserved for "this call failed" and an empty field did not fail. */
+  *length = slot->length;
+  return frame->arena + slot->offset;
+}
+
+FramedslStatus framedsl_get_bytes_into(
   const FramedslFrame *frame,
   FramedslFieldId id,
   uint8_t *out,
@@ -294,12 +373,6 @@ FramedslStatus framedsl_get_bytes(
   if (slot == NULL || slot->is_scalar || length == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
-  /* Before the size is reported, so a caller cannot learn the length of a field the frame is not
-   * holding either. */
-  if (!frame_holds(frame, id)) {
-    return FRAMEDSL_ERROR_ABSENT;
-  }
-
   if (capacity < slot->length || (out == NULL && slot->length > 0)) {
     /* The size needed, so a caller can allocate from the answer rather than from a guess. */
     *length = slot->length;
@@ -315,7 +388,7 @@ FramedslStatus framedsl_get_bytes(
 
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
   const Slot *slot = frame_slot(frame, id);
-  if (slot == NULL || slot->is_scalar || !frame_holds(frame, id)) {
+  if (slot == NULL || slot->is_scalar) {
     return 0;
   }
   return slot->length;

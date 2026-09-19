@@ -97,12 +97,6 @@ const char *framedsl_decode(
     return NULL;
   }
 
-  /* Set before the walk rather than on each way out, so that every path that gives up below leaves
-   * the frame holding nothing. A decode that stops part-way leaves the arena holding however far it
-   * got, and the caller finds that out from the next read instead of from a plausible number. */
-  frame->holds = HOLDS_NOTHING;
-  frame->held_packet = 0;
-
   const FramedslDefinition *definition = frame->definition;
   const Layout *layout = definition->layout;
 
@@ -134,6 +128,13 @@ const char *framedsl_decode(
     return NULL;
   }
 
+  /* The walk writes each field into its slot as it goes, so a walk that gives up part-way would
+   * otherwise leave this packet holding half of one frame and half of another. Put it aside first
+   * and put it back on every way out below: a failed decode changes nothing, which is what lets a
+   * read be a plain read. Only this packet can be disturbed -- matches() above reads the buffer
+   * without writing, and check 12 means no second packet is ever tried. */
+  frame_snapshot_packet(frame, index);
+
   /* Filled in as the walk goes, because a valof() width reads a field this walk has already decoded
    * -- which check 7 guarantees is one it has passed. */
   uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET] = { 0 };
@@ -147,6 +148,7 @@ const char *framedsl_decode(
     if (instruction->variable) {
       if (!width_program_eval(&instruction->width, slots, &width)) {
         *status = FRAMEDSL_ERROR_RANGE;
+        frame_restore_packet(frame, index);
         return NULL;
       }
       if (width > instruction->max_bits) {
@@ -154,6 +156,7 @@ const char *framedsl_decode(
          * the slot is never overrun, the walk stops here, and the caller is told -- rather than the
          * library growing a buffer to fit a number a corrupt frame supplied. */
         *status = FRAMEDSL_ERROR_RANGE;
+        frame_restore_packet(frame, index);
         return NULL;
       }
     }
@@ -162,6 +165,7 @@ const char *framedsl_decode(
      * past the end of the buffer it was given. */
     if (offset + width > (uint64_t)length * 8) {
       *status = FRAMEDSL_ERROR_TRUNCATED;
+      frame_restore_packet(frame, index);
       return NULL;
     }
 
@@ -182,9 +186,6 @@ const char *framedsl_decode(
 
     offset += width;
   }
-
-  frame->holds = HOLDS_DECODED_PACKET;
-  frame->held_packet = index;
 
   if (consumed != NULL) {
     *consumed = (size_t)(offset / 8);

@@ -4,6 +4,32 @@ Definition files kept valid against [`manual/language.md`](../manual/language.md
 to double as the parser's fixtures: the files here must load, and every file under
 [`invalid/`](invalid) must be **rejected**, each for one stated reason.
 
+[`uart_device.c`](uart_device.c) is different: it is the worked example of using the library, not a
+parser fixture. A UART driver talking to a device that is not there -- load the definition once,
+resolve every field name at startup, decode whatever arrives in the RX callback, answer it. Written
+against [`include/framedsl.h`](../include/framedsl.h) alone and linked against the library the same
+way your own program would be.
+
+```sh
+make example && ./build/uart_device
+```
+
+To take it apart, copy it out and build against the library:
+
+```sh
+make lib
+cc -std=c11 -Wall -Wextra -Iinclude my_device.c -Lbuild -lframedsl -o my_device
+```
+
+Then change a width in [`uart_device.fdsl`](uart_device.fdsl) and re-run **without recompiling**,
+which is the whole point of the project in one step. It runs as part of `make test-system` (see
+[`test/system/8_examples.c`](../test/system/8_examples.c)) so it cannot go stale silently -- it is an
+example, and the test is only there to keep it true.
+
+That is the first of the two ways this project is used -- the library, linked into the software being
+written. The other is `build/frame-dsl` against a capture, with no program in the middle; both are
+described in [the README](../README.md#the-two-ways-this-gets-used).
+
 The negative fixtures are the more useful half. A parser that accepts good input is half a parser;
 the checks in [`docs/design.md`](../docs/design.md) are most of what makes a definition file
 trustworthy, and each file below exists so one of them has something to fail on.
@@ -16,6 +42,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`ccsds_space_packet.fdsl`](ccsds_space_packet.fdsl) | a real CCSDS primary header: six sub-byte fields totalling exactly 48 bits |
 | [`packet_family.fdsl`](packet_family.fdsl) | several packets in one file, told apart by a shared type field |
 | [`bit_order.fdsl`](bit_order.fdsl) | attributes at every scope: file, packet, field and `block` |
+| [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all |
 
 ## Should be rejected
 

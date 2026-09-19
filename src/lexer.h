@@ -33,8 +33,10 @@ typedef enum {
   TOK_STAR,
   TOK_SLASH,
 
-  /* Produced instead of a token when the input cannot be tokenised. The parser stops at it rather
-   * than trying to make sense of what follows. */
+  /** @brief Produced instead of a token when the input cannot be tokenised.
+   *
+   * The parser stops at it rather than trying to make sense of what follows.
+   */
   TOK_INVALID,
 } TokenKind;
 
@@ -42,10 +44,10 @@ typedef struct {
   TokenKind kind;
   int line;
   int column;
-  /* TOK_IDENT: points into the source, not terminated. */
+  /** @brief TOK_IDENT: points into the source, not terminated. */
   const char *text;
   size_t length;
-  /* TOK_INT. */
+  /** @brief TOK_INT. */
   uint64_t value;
 } Token;
 
@@ -61,8 +63,16 @@ void lexer_init(Lexer *lexer, const char *source, DiagList *diags);
 
 Token lexer_next(Lexer *lexer);
 
-/* For diagnostics: "expected X, found <this>". Static storage, valid until the next call. */
+/**
+ * @brief For diagnostics: "expected X, found <this>".
+ * @param token The token to describe.
+ * @return The description. Static storage, valid until the next call.
+ */
 const char *token_describe(const Token *token);
 
-/* The spelling of a kind, for "expected" halves of a message. */
+/**
+ * @brief The spelling of a kind, for "expected" halves of a message.
+ * @param kind The kind to spell.
+ * @return The spelling.
+ */
 const char *token_kind_name(TokenKind kind);
