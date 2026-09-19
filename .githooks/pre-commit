@@ -1,0 +1,33 @@
+#!/bin/sh
+# Auto-formats staged C sources before they are committed, and re-stages the result.
+#
+# Convenience only: CI's `make format-check` is what actually enforces formatting, since nothing
+# stops --no-verify or a clone that never ran `make` to wire this hook up in the first place.
+set -e
+
+# Same override the Makefile takes, for the same reason: on a distribution whose `clang-format` is
+# older than 21 the binary to run is clang-format-22, and it is worth being able to say so here too.
+CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
+
+if ! command -v "$CLANG_FORMAT" >/dev/null 2>&1; then
+  echo "pre-commit: $CLANG_FORMAT not found on PATH, skipping (CI will still check this)" >&2
+  exit 0
+fi
+
+# An older one cannot read .clang-format at all, so it would reformat every staged file to the
+# built-in style and stage that. Skipping is the safe half of the choice; CI still fails on it.
+major=$("$CLANG_FORMAT" --version | sed -n 's/.*version \([0-9][0-9]*\).*/\1/p')
+if [ -z "$major" ] || [ "$major" -lt 21 ]; then
+  echo "pre-commit: $CLANG_FORMAT is too old to read .clang-format, skipping (CI will still check this)" >&2
+  exit 0
+fi
+
+staged=$(git diff --cached --name-only -z --diff-filter=ACMR -- \
+  'src/*.c' 'src/*.h' 'include/*.h' 'test/unit/*.c' 'test/system/*.c' 'examples/*.c')
+
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+printf '%s' "$staged" | xargs -0 -r "$CLANG_FORMAT" -i
+printf '%s' "$staged" | xargs -0 -r git add

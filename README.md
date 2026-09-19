@@ -114,6 +114,19 @@ make        # build build/frame-dsl
 make test   # build and run the test suite
 ```
 
+Formatting is clang-format's, from `.clang-format`, and `make format` applies it. That file uses
+options introduced in **clang-format 21**, and an older binary does not merely format differently --
+it cannot read the file at all. Where `clang-format` is older than that (Debian bookworm and the CI
+image both ship 14), name a newer one:
+
+```sh
+make format CLANG_FORMAT=clang-format-22
+```
+
+`make` wires `.githooks/pre-commit` in, which formats staged sources on the way into a commit. That
+is a convenience: CI runs `make format-check` before it builds, and that is what actually enforces
+it.
+
 `make` also writes `compile_commands.json` at the repository root, so clangd and anything else
 speaking that format can index the project with no further setup -- including the generated test
 registries, and the deliberate absence of `src/` from the system tests' include path. It is
@@ -143,6 +156,8 @@ configured.
 | `make test-unit`        | unit tests only                                        |
 | `make test-system`      | system tests only                                      |
 | `make test-editors`     | the Emacs mode's tests; skipped when Emacs is absent   |
+| `make format`           | reformat every first-party C source in place           |
+| `make format-check`     | check the formatting without changing anything         |
 | `make compile-commands` | regenerate `compile_commands.json` alone               |
 | `make clean`            | remove `build/` and `compile_commands.json`            |
 

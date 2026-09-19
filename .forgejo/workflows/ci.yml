@@ -23,7 +23,19 @@ jobs:
       - name: Install the toolchain
         run: |
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends build-essential emacs-nox
+          apt-get install -y -qq --no-install-recommends build-essential emacs-nox clang-format-22
+
+      # Before the build, so a formatting problem is reported without waiting on a compile. The
+      # pre-commit hook (.githooks/pre-commit) is a convenience that catches this earlier; this is
+      # what actually enforces it, since a hook nobody installed or a --no-verify commit both reach
+      # here regardless.
+      #
+      # The version is named rather than left to `clang-format`, which on this image is 14 -- old
+      # enough that it cannot read .clang-format at all. clang-format-22 is what the style file needs
+      # and what this image can install; a bare `clang-format` here fails every file with
+      # "unknown key" and says nothing about why.
+      - name: Check formatting
+        run: make format-check CLANG_FORMAT=clang-format-22
 
       - name: Build
         run: make

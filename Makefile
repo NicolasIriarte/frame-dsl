@@ -5,6 +5,9 @@
 #   make test         run both levels of tests
 #   make test-unit    unit tests only
 #   make test-system  system tests only
+#   make format       reformat every first-party C source in place
+#   make format-check check formatting without changing anything (what CI runs)
+#                     both take CLANG_FORMAT=<binary> when the default one is too old
 #   make compile-commands  regenerate compile_commands.json alone
 #   make clean        remove build output
 #
@@ -70,6 +73,17 @@ TESTSUITE_SYSTEM_OBJ := $(BUILD)/testsuite_system.o
 
 COMPILE_COMMANDS := compile_commands.json
 
+# Every first-party C source. Not third_party/ (not ours to reformat) and not build/ (generated).
+FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c)
+
+# .clang-format uses keys that arrived in clang-format 21 (BreakAfterOpenBracketFunction,
+# BreakBeforeCloseBracketFunction). An older binary does not format differently -- it refuses to read
+# the style file at all, once per source, and says "unknown key" rather than anything about versions.
+# Overridable because the version that is simply `clang-format` differs per distribution: Debian
+# bookworm and the CI image both ship 14, and there the binary to name is clang-format-22.
+CLANG_FORMAT ?= clang-format
+CLANG_FORMAT_MIN := 21
+
 # The three ways this project compiles a C file, defined once. The rules below use these, and so does
 # the compile_commands.json generator -- which is the whole reason they are variables. A generator
 # that restated the flags would be wrong the first time one of these rules was edited, and wrong
@@ -88,7 +102,8 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\" \
 	-DCORPUS_DIR=\"test/corpus\"
 
-.PHONY: all deps test test-unit test-system test-editors compile-commands clean
+.PHONY: all deps test test-unit test-system test-editors compile-commands format format-check \
+	format-tool hooks clean
 
 # Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
 # person running this has in their own configuration cannot make the mode look like it works.
@@ -98,10 +113,17 @@ EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.
 	-f ert-run-tests-batch-and-exit
 
 # compile_commands.json is built by default so a fresh clone is browsable after `make`, with no
-# second step for somebody to discover.
-all: $(TARGET) $(COMPILE_COMMANDS)
+# second step for somebody to discover. hooks is here for the same reason: a fresh clone's first
+# build wires up the pre-commit hook, with nothing separate to remember.
+all: $(TARGET) $(COMPILE_COMMANDS) hooks
 
 deps: $(DEPS)
+
+# Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
+# and silently skipped outside a git checkout -- e.g. building from a released tarball, which has no
+# .git to configure.
+hooks:
+	@git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true
 
 # Each archive holds one <lib>-<version>/ directory; that component is stripped so include paths
 # name the library and never the version.
@@ -178,6 +200,38 @@ test-editors:
 	else \
 		echo "test-editors: no $(EMACS) on PATH, skipping editors/frame-dsl-mode.el tests"; \
 	fi
+
+# Checked once, before either recipe below runs, so that "your clang-format is too old" is said once
+# and in those words -- instead of the same unknown-key complaint about .clang-format repeated for
+# every file, which is what the tool itself produces and which names no version at all.
+format-tool:
+	@command -v $(CLANG_FORMAT) >/dev/null 2>&1 || { \
+		echo "$(CLANG_FORMAT): not on PATH. Install clang-format $(CLANG_FORMAT_MIN) or newer," >&2; \
+		echo "or point this at one: make format CLANG_FORMAT=clang-format-22" >&2; \
+		exit 1; \
+	}
+	@major=$$($(CLANG_FORMAT) --version | sed -n 's/.*version \([0-9][0-9]*\).*/\1/p'); \
+	if [ -z "$$major" ] || [ "$$major" -lt $(CLANG_FORMAT_MIN) ]; then \
+		echo "$(CLANG_FORMAT) is $$($(CLANG_FORMAT) --version), and .clang-format needs" >&2; \
+		echo "$(CLANG_FORMAT_MIN) or newer to read it at all. Install a newer one and name it:" >&2; \
+		echo "  make format CLANG_FORMAT=clang-format-22" >&2; \
+		exit 1; \
+	fi
+
+# Formats every first-party source in place. What a contributor runs by hand; the pre-commit hook
+# and CI both drive clang-format themselves rather than calling this, so that a missing tool on
+# either path is diagnosed there instead of as a generic make failure here.
+format: format-tool
+	$(CLANG_FORMAT) -i $(FORMAT_SRC)
+
+# Non-mutating: exits non-zero if formatting `format` would still change something, without
+# changing it. This is what CI runs, at the top of the job, before the build.
+format-check: format-tool
+	@fail=0; \
+	for f in $(FORMAT_SRC); do \
+		$(CLANG_FORMAT) --dry-run --Werror "$$f" || fail=1; \
+	done; \
+	exit $$fail
 
 compile-commands: $(COMPILE_COMMANDS)
 
