@@ -96,6 +96,10 @@ pkt TC_PING  { hdr: Header { id = 0x01; }; };
 pkt TM_REPLY { hdr: Header { id = 0x81; }; status: 8; };   # fields: hdr.id, hdr.sequence, status
 ```
 
+Headers, trailers and calibrations shared by several files live in a library that each of them
+imports -- `import "common/link.fdsl";`, or `import "vendor.fdsl" as vendor;` to keep two libraries'
+names apart. See [`examples/imported_device.fdsl`](examples/imported_device.fdsl).
+
 The full language reference is in [`manual/`](manual) -- including the [C API](manual/api.md) --
 and the design behind it in [`docs/`](docs).
 

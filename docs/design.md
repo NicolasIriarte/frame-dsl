@@ -241,6 +241,14 @@ alternative is finding out on a live link.
     is subject to check 2 like any field's, so `hdr: 8;` beside `hdr: Header;` is a duplicate even
     though `hdr` and `hdr.id` would not collide.
 
+**Imports**
+
+26. An import must name a file that can be read. Its own problems are reported in it, by name.
+27. Imports may not form a cycle, including a file importing itself.
+28. Two different declarations of one name may not reach a file through flat imports. The same
+    declaration reached twice -- two libraries importing a third -- is not a clash. A local
+    declaration of an imported name is check 1 or 17, reported where it is written.
+
 ### Deciding distinguishability
 
 Check 12 needs a definition precise enough to implement, and it is worth writing down because the
@@ -419,6 +427,45 @@ a block is reported once, at the block, and a block no packet uses yet is still 
 25. Expansion is bounded (`COMPOSE_FIELD_MAX`) so that blocks nested two-by-two cannot make loading
 explode.
 
+## Imports
+
+`import "path";` and `import "path" as name;` bring the blocks and calibrations of another file into
+this one. The case they are for is a family of devices, or a vendor, sharing headers, trailers and
+curves that should be written once.
+
+**Resolved between the parser and composition.** `imports_resolve()` reads each imported file,
+resolves *its* imports, composes it and checks it -- packets and all -- entirely on its own. Only if it
+is clean are its blocks and calibrations merged into the importing file, ahead of the file's own
+declarations. Everything after that sees one file of ordinary declarations; composition, the checks
+and the runtime needed nothing new.
+
+**Checked alone, reported alone.** A mistake in a library is reported once, at its own position and
+under its own name -- diagnostics gained a `file` for this -- however many files import it. The
+alternative, checking imported declarations as part of the importing file, would report the same
+problem once per importer, at positions in a file the reader is not looking at. For the same reason
+named blocks are now checked on their own like packets (minus checks 11 and 13, which only make
+sense of a whole frame), so a block nothing uses yet is still held to the rules.
+
+**Blocks and calibrations, not packets.** Importing packets would let a file change what a definition
+decodes by importing something, which is the kind of action at a distance the distinguishability
+check exists to prevent. A file can be a protocol and a library at once; only its reusable half
+travels.
+
+**Flat, or under a name.** A flat import is what most trees want: one bus, one `Header`. Two libraries
+that both declare `Header` are the case for `as`, which prefixes every name the file brings -- and,
+since a library's own references are all to names in the same scope, every reference inside it gets
+the same prefix and keeps meaning what it meant. Each merged declaration carries the real path of the
+file that declared it, which is how a diamond (two libraries importing a third) is told apart from a
+clash: same name, same origin is the same declaration reached twice.
+
+**Layout stays where it was declared.** An imported block's attributes resolved in its own file, as
+any block's do. A little-endian device importing a big-endian header gets a big-endian header.
+
+**Paths relative to the importing file**, and no search path. A tree of definition files is then
+self-contained and moves as a unit; a search path would make a definition's meaning depend on the
+environment it is loaded in. Imports are still read when the definition loads, so a host program
+changes frames without recompiling, which is the property the whole library rests on.
+
 ## Calibrations
 
 A curve is a per-field transformation between the raw value on the wire and the engineering value a
@@ -486,5 +533,3 @@ length field's arithmetic to find where one frame ended and the next began -- wh
 duplication this library exists to remove. Bytes past the frame are left alone.
 
 ## Deliberately unsettled
-
-**Multiple definition files**, includes, and namespacing. One file, one load, for now.
