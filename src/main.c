@@ -434,7 +434,8 @@ static int encode_packet(
   const char *name,
   const char *const *assignments,
   size_t count,
-  bool show
+  bool show,
+  bool quiet
 ) {
   size_t packet = 0;
   if (!framedsl_find_packet(definition, name, &packet)) {
@@ -476,6 +477,18 @@ static int encode_packet(
       printf("\n");
       fflush(stdout);
 
+      /* Zero is the rule for a field nobody named, and it is a legitimate value -- but a field left
+       * out by mistake looks exactly like one left out on purpose, so each is said once. On stderr,
+       * like the report, so that what is piped is still only the frame. */
+      if (!quiet) {
+        for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
+          FramedslField field;
+          if (!given[f] && framedsl_field(definition, packet, f, &field) && !field.has_fixed) {
+            fprintf(stderr, "[INFO] %s.%s not given, encoded as zero\n", name, field.name);
+          }
+        }
+      }
+
       /* The report is of the bytes, decoded back, rather than of what was typed: it shows the fixed
        * values that went out and proves the frame reads as the packet it was meant to be. */
       if (show) {
@@ -497,7 +510,7 @@ static int encode_packet(
 
 static void usage(const char *program) {
   log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
-  log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report]", program);
+  log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
   log_fail("  with neither, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
   log_fail("  %s frames.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234", program);
@@ -508,6 +521,7 @@ int main(int argc, char **argv) {
   const char *hex = NULL;
   const char *packet = NULL;
   bool show = false;
+  bool quiet = false;
 
   /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
   const char **assignments = calloc((size_t)argc, sizeof(*assignments));
@@ -538,6 +552,8 @@ int main(int argc, char **argv) {
       }
     } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--report") == 0) {
       show = true;
+    } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+      quiet = true;
     } else if (strchr(argv[i], '=') != NULL) {
       assignments[assigned++] = argv[i];
     } else if (path == NULL) {
@@ -558,6 +574,8 @@ int main(int argc, char **argv) {
     conflict = "field=value only means something with -e";
   } else if (packet == NULL && show) {
     conflict = "-r reports the frame -e builds; -d already prints its own";
+  } else if (packet == NULL && quiet) {
+    conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
   }
   if (conflict != NULL) {
     log_fail("%s", conflict);
@@ -598,7 +616,7 @@ int main(int argc, char **argv) {
     }
 
     if (packet != NULL) {
-      status = encode_packet(definition, packet, assignments, assigned, show);
+      status = encode_packet(definition, packet, assignments, assigned, show, quiet);
       break;
     }
 

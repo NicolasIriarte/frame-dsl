@@ -377,15 +377,24 @@ static Run encode_example(const char *example, const char *arguments) {
 static int us1_tc14_encodes_a_frame_that_decodes_back(const TestArguments *args) {
   (void)args;
 
-  /* Both spellings, and fields left out encoding as zero: `seq` is never named here. */
+  /* Both spellings, and fields left out encoding as zero: `seq` is never named here. -q, so that the
+   * output is the frame and nothing else. */
   const char *flags[] = { "-e", "--encode" };
   for (size_t f = 0; f < sizeof(flags) / sizeof(*flags); ++f) {
     char arguments[128];
-    snprintf(arguments, sizeof(arguments), "%s TC_SET_MODE mode=0x09", flags[f]);
+    snprintf(arguments, sizeof(arguments), "%s TC_SET_MODE mode=0x09 -q", flags[f]);
     Run run = encode_example("packet_family.fdsl", arguments);
     if (run.status != 0 || strcmp(run.output, "02 00 00 09\n") != 0) {
       return __LINE__;
     }
+  }
+
+  /* Without -q, the field left at zero is named -- and only that one: not `mode`, which was given,
+   * and not `type`, which the definition fixes. */
+  Run said = encode_example("packet_family.fdsl", "-e TC_SET_MODE mode=0x09");
+  if (said.status != 0 || strstr(said.output, "TC_SET_MODE.seq not given") == NULL
+      || strstr(said.output, ".mode not given") != NULL || strstr(said.output, ".type not given") != NULL) {
+    return __LINE__;
   }
 
   /* A valof() packet, with its bit string written as hex. Only the hex reaches stdout, report and
@@ -444,6 +453,7 @@ static int us1_tc16_encode_arguments_that_would_need_a_guess_are_usage_errors(co
     "-e TC_PING -d 010009", /* two questions at once */
     "-e", /* no packet */
     "seq=1", /* a value with nothing to put it in */
+    "-q", /* nothing to be quiet about */
     "-e TC_PING seq=1 seq=2" /* which one? */
   };
 

@@ -135,7 +135,8 @@ $ frame-dsl examples/packet_family.fdsl -e TC_PING seq=1 | xxd -r -p > ping.bin
 ```
 
 A scalar takes decimal or `0x` hex; a bit string takes hex, written any way `-d` takes it. A field
-not named encodes as zero, as it does through the library. `-r`/`--report` also prints the frame
+not named encodes as zero, as it does through the library, and each one is named on stderr so that
+a field forgotten does not pass for a field meant to be zero; `-q`/`--quiet` stops that. `-r`/`--report` also prints the frame
 field by field, as `-d` would, on stderr so that stdout stays just the bytes.
 
 A field the packet does not have, a value too wide for its field, a packet the definition does not
