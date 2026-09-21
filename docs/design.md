@@ -157,7 +157,7 @@ for: a declaration that exists only to be something a `[ ... ]` group can attach
 flattened by the parser -- its fields are appended to the enclosing packet with consecutive offsets
 and their own flat names -- so nothing downstream of the parse knows blocks exist, and neither the
 layout pass, the checks nor the bytecode had to learn anything. The *named* form, which nests a
-dotted name, is packet composition and belongs to that issue.
+dotted name, is composition; see "Composition" below.
 
 ## Checks
 
@@ -166,7 +166,7 @@ alternative is finding out on a live link.
 
 **Naming**
 
-1. Packet names are unique in a file.
+1. Packet names are unique in a file, and so are named block names.
 2. Field names are unique within a packet.
 3. Reserved words are not usable as identifiers.
 
@@ -231,6 +231,15 @@ alternative is finding out on a live link.
 21. `@cal:` may only go on a scalar field. A bit string is bytes, not one number.
 22. A calibration may not divide by a constant zero. A divisor that is zero only for some raw values
     is not a load-time error; that reading is refused at run time instead.
+
+**Composition**
+
+23. A field whose width is a name must name a block.
+24. A block must be declared above everything that uses it, packet or block. The same rule makes a
+    block containing itself, directly or through another, impossible to write.
+25. An override must name a field of the block it is used with, and name it once. An instance's name
+    is subject to check 2 like any field's, so `hdr: 8;` beside `hdr: Header;` is a duplicate even
+    though `hdr` and `hdr.id` would not collide.
 
 ### Deciding distinguishability
 
@@ -375,6 +384,40 @@ Like the arena, a program is **one allocation**, carved into the packet table, t
 and the pool of width instructions. Compilation walks each width expression twice -- once to count
 what it will emit, once to emit it -- which is what lets the count be known before anything is
 allocated. The alternative was an allocation count that depended on the input.
+
+## Composition
+
+A named block is a group of fields declared once at file level and used in packets as an *instance*:
+`hdr: Header { id = 0x02; };`. It exists so that the header every packet in a protocol shares is
+written once, and each packet changes only what differs -- almost always the value that identifies it.
+
+**Expanded before anything else sees it.** `compose_file()` runs between the parser and the checks and
+replaces every instance with the block's fields, renamed under the instance (`hdr.sequence`), with
+the `valof()` references inside renamed to match and the overrides applied as fixed values. What the
+checks receive is packets of ordinary fields, so the layout pass, the distinguishability check, the
+bytecode, the encoder and the decoder are unchanged -- and an instance costs nothing at run time that
+writing its fields out would not. The arena does not know composition exists.
+
+**Dotted names, not a tree.** An expanded field is called `hdr.sequence`, and `framedsl_find()` already
+split `PACKET.rest` at the first dot and looked the rest up whole, so nested names needed no API
+change. The resolver was written that way in #23 for exactly this.
+
+**Named instances rather than splicing.** A block could have been spliced into a packet under its own
+field names. Naming the instance was chosen because it lets one block appear twice in a packet (an
+accelerometer and a gyroscope are both a `Vector3`), and because two blocks spliced side by side can
+collide in ways that only show up far from where they were written.
+
+**Overrides fix values, and nothing else.** A block's widths, order and attributes are the same in
+every use: an attribute resolves where the block is declared, and a group in front of a use is an
+error. A per-use width or byte order would make "a packet built from `Header`" say nothing about the
+packet's layout, which is most of what reusing `Header` is for.
+
+**Declared before use.** A block must appear above anything that uses it. Besides reading top to
+bottom, that makes recursion unrepresentable: a block is declared from its closing brace, so nothing
+inside it can use it. Each block is also expanded on its own before any packet is, so a mistake inside
+a block is reported once, at the block, and a block no packet uses yet is still held to checks 23 to
+25. Expansion is bounded (`COMPOSE_FIELD_MAX`) so that blocks nested two-by-two cannot make loading
+explode.
 
 ## Calibrations
 

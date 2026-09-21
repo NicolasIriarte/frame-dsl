@@ -34,6 +34,8 @@ typedef enum {
   TOK_MINUS,
   TOK_STAR,
   TOK_SLASH,
+  /** @brief Only in an override's path, `inner.id = 3;`. */
+  TOK_DOT,
 
   /** @brief Produced instead of a token when the input cannot be tokenised.
    *

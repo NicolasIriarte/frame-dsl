@@ -116,10 +116,11 @@ static int us10_tc01_lexes_real_literals(const TestArguments *args) {
 
   /* `8.` and `1e` are typos, not reals: a digit has to follow. */
   Lexer lexer;
-  lexer_init(&lexer, "8. 1e", &diags);
+  lexer_init(&lexer, "8.", &diags);
   Token first = lexer_next(&lexer);
+  lexer_init(&lexer, "1e", &diags);
   Token second = lexer_next(&lexer);
-  bool ok = first.kind == TOK_INT && second.kind == TOK_INVALID && diags.count > 0;
+  bool ok = first.kind == TOK_INVALID && second.kind == TOK_INVALID && diags.count == 2;
   diag_free(&diags);
   return ok ? 0 : __LINE__;
 }

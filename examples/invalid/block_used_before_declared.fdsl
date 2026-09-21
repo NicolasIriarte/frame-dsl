@@ -1,0 +1,14 @@
+# REJECTED: check 24 -- a block must be declared above everything that uses it.
+#
+# The same rule is what rules out a block containing itself, directly or through another: inside its
+# own braces a block is not declared yet. A file that reads top to bottom never needs a block it has
+# not seen.
+
+pkt TC_PING {
+  hdr: Header { id = 0x01; };
+};
+
+block Header {
+  id:       8;
+  sequence: 16;
+};

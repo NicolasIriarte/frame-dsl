@@ -80,10 +80,29 @@ typedef struct {
   int inverse_column;
 } AstCal;
 
+/** @brief `name = value;` inside a block use: fixes one field of that instance. */
+typedef struct AstOverride {
+  /** @brief Relative to the instance, and dotted for a field of a nested one: `inner.id`. */
+  const char *name;
+  uint64_t value;
+  int line;
+  int column;
+  struct AstOverride *next;
+} AstOverride;
+
 typedef struct {
   const char *name;
   int line;
   int column;
+
+  /**
+   * @brief The named block this field is an instance of, or NULL for an ordinary field.
+   *
+   * Only ever set between parse() and compose_file(): composition replaces every instance with the
+   * block's fields, so nothing after it -- the checks, the layout, the bytecode -- sees one.
+   */
+  const char *block;
+  AstOverride *overrides;
 
   Expr *width;
 
@@ -133,12 +152,24 @@ typedef struct {
   AstField *fields;
   size_t field_count;
   size_t field_capacity;
+
+  /** @brief Where the closing brace is. A named block counts as declared from here on (check 24). */
+  int end_line;
+  int end_column;
 } AstPacket;
 
 typedef struct {
   AstPacket *packets;
   size_t packet_count;
   size_t packet_capacity;
+
+  /**
+   * @brief Named blocks, `block NAME { ... };` at file level. The same shape as a packet -- a name and
+   * fields -- and never laid out on their own: they exist to be copied into packets.
+   */
+  AstPacket *blocks;
+  size_t block_count;
+  size_t block_capacity;
 
   AstCal *cals;
   size_t cal_count;
@@ -168,3 +199,9 @@ AstField *ast_add_field(AstPacket *packet);
  * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
  */
 AstCal *ast_add_cal(AstFile *file);
+
+/**
+ * @brief Add a named block to `file`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
+AstPacket *ast_add_block(AstFile *file);

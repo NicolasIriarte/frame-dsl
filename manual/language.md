@@ -266,6 +266,9 @@ produces an identical layout.
 
 Blocks nest, and the innermost wins.
 
+An anonymous block inside a packet has no name. A block with a name is a different thing, declared
+at file level to be reused -- see [Reusing a group of fields](#reusing-a-group-of-fields).
+
 ### Where `byte_order` does not apply
 
 `byte_order` only means something for a field that is byte-aligned and a whole number of bytes wide.
@@ -286,6 +289,69 @@ Inheriting it is different, and is not an error. A file, packet or block `byte_o
 field below it, and most real frames mix byte-wide fields with sub-byte ones; it simply does not
 apply to the ones with no bytes to reorder. Only an attribute *written on the field itself* is
 rejected, because only that means someone believed they had specified something.
+
+## Reusing a group of fields
+
+Most protocols give every packet the same header, and change one field of it -- the id that says
+which packet this is. A **named block** is written once at file level and used as a field whose width
+is the block's name:
+
+```
+block Header {
+  id:       8;              # left open: every packet fixes its own
+  sequence: 16;
+  version:  4 = 0x1;
+  flags:    4;
+};
+
+block Vector3 { x: 16; y: 16; z: 16; };
+
+pkt TC_SET_LIMIT {
+  hdr:     Header { id = 0x02; };
+  channel: 8;
+  limit:   32;
+};
+
+pkt TM_IMU {
+  hdr:   Header { id = 0x83; flags = 0x3; };
+  accel: Vector3;
+  gyro:  Vector3;
+};
+```
+
+**Names.** A use is an *instance* with a name of its own, and the block's fields appear under it:
+`TC_SET_LIMIT.hdr.sequence`, `TM_IMU.gyro.z`. That is the name the C API's `framedsl_find()`, `-e`
+and `-d` all use. It is also why the same block can appear twice in one packet.
+
+**Overrides.** `{ id = 0x02; }` fixes a field for this use only -- which is how one shared header
+becomes each packet's discriminator. It may replace a value the block fixed, and reaches into a
+nested instance by its path, `{ inner.id = 3; }`. An override fixes a value and nothing else: a
+block's widths and field order are the same in every packet that uses it.
+
+**Layout is decided where the block is declared.** Its attributes -- bit order, byte order, `@cal` on
+its fields -- come from the file default and from what is written inside it, not from the packet it
+is used in. A `[ ... ]` group in front of a use is an error for that reason; put the attribute in the
+block.
+
+**Blocks nest.** A block may use another, and a `valof()` inside a block sizes a field from the same
+instance:
+
+```
+block Sample {
+  axes:      Vector3;
+  size:      8;
+  extra[32]: valof(size) * 8;       # this instance's size, whatever else is called `size`
+};
+```
+
+**Declared before use.** A block must appear above anything that uses it -- a packet or another
+block. That is also what rules out a block containing itself: inside its own braces it has not been
+declared yet.
+
+A packet built from blocks is exactly the packet you would get by writing their fields out, and costs
+nothing more at run time: blocks are expanded when the file loads, and nothing after that knows they
+existed. Checks 23 to 25 in [`docs/design.md`](../docs/design.md) cover an unknown block, one used
+before it is declared, and an override naming no field of its block.
 
 ## Calibrations
 
@@ -366,7 +432,7 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-enumerations, conditional fields, repetition, packet composition, and CRC polynomial and range.
+enumerations, conditional fields, repetition, and CRC polynomial and range.
 Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined

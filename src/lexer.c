@@ -182,6 +182,13 @@ static Token lex_number(Lexer *lexer, int line, int column) {
     if (fraction || exponent) {
       return lex_real(lexer, line, column, start);
     }
+    /* `8.` is a typo for 8 or for 8.something, and never the start of an override path -- a path
+     * starts with a name. */
+    if (peek(lexer, 0) == '.') {
+      diag_add(lexer->diags, lexer->line, lexer->column, 0, "a number cannot end in '.'; write the digits after it");
+      token.kind = TOK_INVALID;
+      return token;
+    }
   }
 
   /* A number running straight into an identifier character is a typo rather than two tokens:
@@ -297,6 +304,8 @@ Token lexer_next(Lexer *lexer) {
     return make(TOK_STAR, line, column);
   case '/':
     return make(TOK_SLASH, line, column);
+  case '.':
+    return make(TOK_DOT, line, column);
   default:
     break;
   }
@@ -349,6 +358,8 @@ const char *token_kind_name(TokenKind kind) {
     return "'*'";
   case TOK_SLASH:
     return "'/'";
+  case TOK_DOT:
+    return "'.'";
   case TOK_INVALID:
     return "invalid input";
   }
