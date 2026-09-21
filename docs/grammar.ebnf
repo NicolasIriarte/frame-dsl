@@ -5,7 +5,7 @@
  * backtracking needed, and every production decidable from a single lookahead token.
  *
  * What is NOT here is as deliberate as what is. Signed and floating-point fields, enums, conditional
- * fields, repetition, packet composition, CRC declarations and calibration curves are all deferred,
+ * fields, repetition, packet composition and CRC declarations are all deferred,
  * each to its own issue, so that they are designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
@@ -15,7 +15,7 @@
  * checked when a definition file loads.
  *)
 
-definition_file    = { attribute } , { packet } ;
+definition_file    = { attribute } , { packet | calibration } ;
 
 (* --- Attributes -----------------------------------------------------------------------------
  * One form per job, so nothing is expressible two ways:
@@ -28,8 +28,9 @@ definition_file    = { attribute } , { packet } ;
  *
  * The names are identifiers rather than keywords, and this grammar deliberately does not enumerate
  * them: the parser holds the table, so none of them is reserved and a field may be called
- * `bit_order`. v1 knows `bit_order` (msb_first | lsb_first) and `byte_order` (big_endian |
- * little_endian); an unknown one is reported by name.
+ * `bit_order`. v1 knows `bit_order` (msb_first | lsb_first), `byte_order` (big_endian |
+ * little_endian) and `cal` (the name of a calibration, on a field only); an unknown one is reported
+ * by name.
  *)
 
 attribute          = "@" , identifier , ":" , identifier , ";" ;
@@ -90,6 +91,25 @@ factor             = integer
 
 valof              = "valof" , "(" , identifier , ")" ;
 
+(* --- Calibrations ---------------------------------------------------------------------------
+ * A named function from a field's raw value to its engineering value, attached to a field with
+ * `@cal: name;`. Arithmetic on doubles. A bare name must be the parameter and a call must name a
+ * calibration -- checks 19 and 18 -- so the grammar does not distinguish them.
+ *
+ * "cal" and "inverse" are not reserved: each is recognised only where it can start a calibration or
+ * its inverse, which a single token of lookahead decides. A field may still be called `cal`.
+ *)
+
+calibration        = "cal" , identifier , "(" , identifier , ")" , "=" , cal_expression ,
+                     [ "inverse" , "(" , identifier , ")" , "=" , cal_expression ] , ";" ;
+
+cal_expression     = cal_term , { ( "+" | "-" ) , cal_term } ;
+cal_term           = cal_unary , { ( "*" | "/" ) , cal_unary } ;
+cal_unary          = "-" , cal_unary | cal_factor ;
+cal_factor         = integer | real
+                   | identifier , [ "(" , cal_expression , ")" ]
+                   | "(" , cal_expression , ")" ;
+
 (* --- Lexical --------------------------------------------------------------------------------
  * Whitespace and comments separate tokens and are otherwise discarded. A comment runs from "#" to
  * the end of the line, and is the only comment form there is: a definition file is short, and one
@@ -102,6 +122,11 @@ integer            = decimal | hexadecimal | binary ;
 decimal            = digit , { digit } ;
 hexadecimal        = "0x" , hex_digit , { hex_digit } ;
 binary             = "0b" , bit , { bit } ;
+
+(* Calibrations only. A width or a fixed value written as one is refused with a message saying so. *)
+real               = digit , { digit } , ( fraction , [ exponent ] | exponent ) ;
+fraction           = "." , digit , { digit } ;
+exponent           = ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ;
 
 letter             = "A" | "..." | "Z" | "a" | "..." | "z" ;
 digit              = "0" | "..." | "9" ;

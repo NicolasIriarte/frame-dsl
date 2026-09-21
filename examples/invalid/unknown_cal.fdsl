@@ -1,0 +1,12 @@
+# REJECTED: check 18 -- a calibration a field or another calibration names must exist.
+#
+# A typo in `@cal:` would otherwise leave the field quietly uncalibrated, and the first sign would be
+# a reading off by a factor of a thousand.
+
+cal volts(raw) = raw * 3.3 / 4095;
+
+pkt TM_ADC {
+  id: 8 = 0x01;
+  [ @cal: vlots; ]
+  reading: 16;
+};

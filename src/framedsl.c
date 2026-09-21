@@ -91,11 +91,17 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
    * allocation or an expression nested deeper than the evaluator's stack -- not a mistake the checks
    * were supposed to have caught. */
   Program *program = NULL;
+  CalTable *cals = NULL;
   if (layout != NULL) {
     program = program_compile(ast, layout, &result->diags);
   }
+  if (program != NULL) {
+    cals = cal_compile(ast, &result->diags);
+  }
 
-  if (layout == NULL || program == NULL) {
+  if (layout == NULL || program == NULL || cals == NULL) {
+    cal_table_free(cals);
+    program_free(program);
     layout_free(layout);
     ast_free(ast);
     result->status = FRAMEDSL_ERROR_INVALID;
@@ -103,6 +109,7 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
     result->definition.ast = ast;
     result->definition.layout = layout;
     result->definition.program = program;
+    result->definition.cals = cals;
     result->definition.tag = definition_next_tag();
     result->have_definition = true;
     result->status = FRAMEDSL_OK;
@@ -172,6 +179,7 @@ void framedsl_result_free(FramedslResult *result) {
   }
   if (result->have_definition) {
     program_free(result->definition.program);
+    cal_table_free(result->definition.cals);
     layout_free(result->definition.layout);
     ast_free(result->definition.ast);
   }
@@ -279,6 +287,12 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     .byte_order = ast_field->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN
                                                                     : FRAMEDSL_BYTE_ORDER_BIG_ENDIAN,
   };
+
+  const int32_t cal = definition->program->packets[packet].fields[field].cal;
+  if (cal >= 0) {
+    out->cal = definition->cals->cals[cal].name;
+    out->cal_invertible = definition->cals->cals[cal].invertible;
+  }
   return true;
 }
 
@@ -296,4 +310,65 @@ bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, co
     }
   }
   return false;
+}
+
+/* ---- Calibrations ---------------------------------------------------------------------------- */
+
+size_t framedsl_cal_count(const FramedslDefinition *definition) {
+  return definition == NULL ? 0 : definition->cals->count;
+}
+
+const char *framedsl_cal_name(const FramedslDefinition *definition, size_t index) {
+  if (definition == NULL || index >= definition->cals->count) {
+    return NULL;
+  }
+  return definition->cals->cals[index].name;
+}
+
+bool framedsl_find_cal(const FramedslDefinition *definition, const char *name, FramedslCalId *out) {
+  if (definition == NULL || name == NULL) {
+    return false;
+  }
+  for (size_t i = 0; i < definition->cals->count; ++i) {
+    if (strcmp(definition->cals->cals[i].name, name) == 0) {
+      if (out != NULL) {
+        *out = (FramedslCalId){ .owner = definition->tag, .index = (uint32_t)i };
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+static const CalCompiled *resolve_cal(const FramedslDefinition *definition, FramedslCalId cal) {
+  if (definition == NULL || cal.owner != definition->tag || cal.index >= definition->cals->count) {
+    return NULL;
+  }
+  return &definition->cals->cals[cal.index];
+}
+
+FramedslStatus framedsl_calibrate(const FramedslDefinition *definition, FramedslCalId cal, double raw, double *eng) {
+  const CalCompiled *compiled = resolve_cal(definition, cal);
+  if (compiled == NULL || eng == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  return cal_forward(compiled, raw, eng) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
+}
+
+FramedslStatus framedsl_uncalibrate(const FramedslDefinition *definition, FramedslCalId cal, double eng, double *raw) {
+  const CalCompiled *compiled = resolve_cal(definition, cal);
+  if (compiled == NULL || raw == NULL || !compiled->invertible) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  return cal_backward(compiled, eng, raw) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
+}
+
+size_t framedsl_emit_c(const FramedslDefinition *definition, const char *prefix, char *out, size_t capacity) {
+  if (definition == NULL) {
+    if (out != NULL && capacity > 0) {
+      out[0] = '\0';
+    }
+    return 0;
+  }
+  return cal_emit_c(definition->cals, prefix == NULL ? "fdsl_" : prefix, out, capacity);
 }

@@ -301,6 +301,71 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   return FRAMEDSL_OK;
 }
 
+/* ---- Engineering values -----------------------------------------------------------------------
+ *
+ * The arena holds raw values only; a curve runs on the way out of a get and on the way into a set. */
+
+static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id) {
+  const int32_t cal = frame->definition->program->packets[id.packet].fields[id.field].cal;
+  return cal < 0 ? NULL : &frame->definition->cals->cals[cal];
+}
+
+FramedslStatus framedsl_get_eng(const FramedslFrame *frame, FramedslFieldId id, double *out) {
+  uint64_t raw = 0;
+  FramedslStatus status = framedsl_get_u64(frame, id, &raw);
+  if (status != FRAMEDSL_OK) {
+    return status;
+  }
+  const CalCompiled *cal = field_cal(frame, id);
+  if (cal == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  return cal_forward(cal, (double)raw, out) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
+}
+
+/* To the nearest integer, half away from zero, refusing what no unsigned field can hold. Written out
+ * rather than taken from libm: `x + 0.5` truncated is wrong just below a half, and this is short. */
+static bool nearest_raw(double x, uint64_t *out) {
+  if (!(x >= -0.5) || !(x < 18446744073709551615.5)) {
+    return false; /* also catches NaN, which fails every comparison */
+  }
+  if (x < 0) {
+    *out = 0;
+    return true;
+  }
+  uint64_t whole = (uint64_t)x;
+  if (x - (double)whole >= 0.5) {
+    if (whole == UINT64_MAX) {
+      return false;
+    }
+    whole += 1;
+  }
+  *out = whole;
+  return true;
+}
+
+FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double value) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  const Slot *slot = frame_slot(frame, id);
+  if (slot == NULL || !slot->is_scalar) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  const CalCompiled *cal = field_cal(frame, id);
+  if (cal == NULL || !cal->invertible) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+
+  double raw = 0;
+  uint64_t rounded = 0;
+  if (!cal_backward(cal, value, &raw) || !nearest_raw(raw, &rounded)) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  /* The width check, and the write, are set_u64()'s. */
+  return framedsl_set_u64(frame, id, rounded);
+}
+
 FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes, size_t length) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;

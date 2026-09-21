@@ -68,8 +68,9 @@ out, so the arena holds host-native values and a caller never does byte-swapping
 **The C API.** Setting and getting fields by name, encoding a named packet, and decoding a buffer
 into whichever packet its fixed fields identify -- with an error mechanism a caller can actually use.
 
-**Calibration curves**, eventually. Not designed yet, but the grammar and the container format are
-expected to leave room for a field to carry a transformation between its raw and engineering value.
+**Calibration curves.** A field may carry a named curve between its raw and engineering value,
+readable and -- where the curve is a line or declares its inverse -- writable in engineering units,
+callable by name, and exportable as C. See `manual/language.md`.
 
 ## Out of scope
 
@@ -114,4 +115,4 @@ The first end-to-end milestone, and the thing every current issue is pointed at:
 - None of the above allocates after load.
 
 Everything beyond that -- signed and floating-point fields, enums, conditionals, repetition,
-composition, CRC, calibration curves -- is a separate issue against a language that by then exists.
+composition, CRC -- is a separate issue against a language that by then exists.

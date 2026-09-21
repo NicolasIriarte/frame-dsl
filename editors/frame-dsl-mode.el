@@ -40,7 +40,7 @@ Two, because that is what every file under examples/ is written at."
   "Reserved words.  None of these may be used as an identifier.")
 
 (defconst frame-dsl-attribute-names
-  '("bit_order" "byte_order")
+  '("bit_order" "byte_order" "cal")
   "Attribute names this version of the language knows.
 These are not reserved: they are meaningful only after `@', and a field may
 perfectly well be called `bit_order'.  Highlighted only where they mean
@@ -82,6 +82,16 @@ something, which is why the patterns below anchor on the `@'.")
     `(
       ;; `pkt NAME' -- the packet being declared.
       (,(concat "\\_<pkt\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
+
+      ;; `cal NAME(param) = ...' and its `inverse (param) = ...'.  Neither word is reserved -- each
+      ;; means something only where a calibration is declared -- so both are matched in that shape
+      ;; rather than listed with the keywords, and a field called `cal' stays a field.
+      (,(concat "^[ \t]*\\(cal\\)[ \t]+\\(" name "\\)[ \t]*(")
+       (1 font-lock-keyword-face)
+       (2 font-lock-function-name-face))
+      ("\\_<\\(inverse\\)[ \t]*([ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*)[ \t]*=" 1 font-lock-keyword-face)
+      ;; `@cal: NAME' -- the value is a calibration's name, not one of the fixed attribute values.
+      (,(concat "@[ \t]*cal[ \t]*:[ \t]*\\(" name "\\)") 1 font-lock-function-name-face)
 
       ;; `@bit_order: msb_first;' -- the name and the value, each only where it means something.
       (,(concat "@[ \t]*\\(" (regexp-opt frame-dsl-attribute-names) "\\)\\_>")

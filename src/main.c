@@ -1,5 +1,5 @@
-/* frame-dsl: validate a definition file, describe what is in it, and decode or encode bytes against
- * it.
+/* frame-dsl: validate a definition file, describe what is in it, decode or encode bytes against it,
+ * and write its calibrations out as C.
  *
  * Written against the public header alone, with nothing internal included. That is deliberate: if
  * the tool shipped with the project needs to reach inside, the interface is not finished. Decoding a
@@ -76,7 +76,14 @@ static void describe(const FramedslDefinition *definition) {
           (unsigned long long)field.fixed
         );
       } else {
-        log_info("    %-14s %s, %llu bits", field.name, offset, (unsigned long long)field.width_bits);
+        log_info(
+          "    %-14s %s, %llu bits%s%s",
+          field.name,
+          offset,
+          (unsigned long long)field.width_bits,
+          field.cal != NULL ? ", cal " : "",
+          field.cal != NULL ? field.cal : ""
+        );
       }
     }
   }
@@ -203,7 +210,23 @@ static void report_frame(
 
     if (field.is_scalar) {
       uint64_t value = 0;
-      if (framedsl_get_u64(frame, id, &value) == FRAMEDSL_OK) {
+      double eng = 0;
+      if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
+        continue;
+      }
+      /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
+       * value is what anybody reading this actually wants to know. */
+      if (field.cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
+        fprintf(
+          out,
+          "    %-14s %llu (%#llx) = %.10g [%s]\n",
+          field.name,
+          (unsigned long long)value,
+          (unsigned long long)value,
+          eng,
+          field.cal
+        );
+      } else {
         fprintf(out, "    %-14s %llu (%#llx)\n", field.name, (unsigned long long)value, (unsigned long long)value);
       }
       continue;
@@ -508,10 +531,26 @@ static int encode_packet(
   return status;
 }
 
+/* The calibrations as a C header, on stdout, for a program that wants them compiled in. */
+static int emit_c(const FramedslDefinition *definition) {
+  size_t length = framedsl_emit_c(definition, NULL, NULL, 0);
+  char *header = malloc(length + 1);
+  if (length == 0 || header == NULL) {
+    free(header);
+    log_fail("the calibrations could not be written as C");
+    return 2;
+  }
+  framedsl_emit_c(definition, NULL, header, length + 1);
+  fputs(header, stdout);
+  free(header);
+  return 0;
+}
+
 static void usage(const char *program) {
   log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
   log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
-  log_fail("  with neither, describes the definition");
+  log_fail("       %s <definition.fdsl> --emit-c", program);
+  log_fail("  with none of them, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
   log_fail("  %s frames.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234", program);
 }
@@ -522,6 +561,7 @@ int main(int argc, char **argv) {
   const char *packet = NULL;
   bool show = false;
   bool quiet = false;
+  bool emit = false;
 
   /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
   const char **assignments = calloc((size_t)argc, sizeof(*assignments));
@@ -556,6 +596,8 @@ int main(int argc, char **argv) {
       quiet = true;
     } else if (strchr(argv[i], '=') != NULL) {
       assignments[assigned++] = argv[i];
+    } else if (strcmp(argv[i], "--emit-c") == 0) {
+      emit = true;
     } else if (path == NULL) {
       path = argv[i];
     } else {
@@ -574,6 +616,8 @@ int main(int argc, char **argv) {
     conflict = "field=value only means something with -e";
   } else if (packet == NULL && show) {
     conflict = "-r reports the frame -e builds; -d already prints its own";
+  } else if (emit && (hex != NULL || packet != NULL)) {
+    conflict = "--emit-c writes the calibrations out; it does not decode or encode as well";
   } else if (packet == NULL && quiet) {
     conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
   }
@@ -600,6 +644,11 @@ int main(int argc, char **argv) {
   switch (framedsl_status(result)) {
   case FRAMEDSL_OK: {
     const FramedslDefinition *definition = framedsl_definition(result);
+
+    if (emit) {
+      status = emit_c(definition);
+      break;
+    }
 
     if (hex != NULL) {
       /* Static rather than automatic: 64KB is more than a stack frame should carry, and the whole

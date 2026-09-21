@@ -35,6 +35,51 @@ typedef struct Expr {
   struct Expr *rhs;
 } Expr;
 
+/* ---- Calibrations ---------------------------------------------------------------------------
+ *
+ * A calibration's arithmetic is in doubles and has a parameter and calls, none of which a width has.
+ * It is a separate node type rather than more kinds on Expr so that nothing in the width path -- the
+ * checker's folds, the byte-multiple analysis, the width compiler -- has a case it must ignore. */
+
+typedef enum {
+  CAL_EXPR_NUMBER,
+  /** @brief A bare name: the parameter, if it is spelled like it. Check 19 says if it is not. */
+  CAL_EXPR_NAME,
+  /** @brief `name(argument)`: another calibration, applied to `lhs`. */
+  CAL_EXPR_CALL,
+  CAL_EXPR_NEGATE,
+  CAL_EXPR_BINARY,
+} CalExprKind;
+
+typedef struct CalExpr {
+  CalExprKind kind;
+  int line;
+  int column;
+
+  double number; /**< CAL_EXPR_NUMBER */
+  const char *name; /**< CAL_EXPR_NAME, CAL_EXPR_CALL */
+
+  char op; /**< CAL_EXPR_BINARY: one of + - * / */
+  struct CalExpr *lhs; /**< the operand, the argument, or the left-hand side */
+  struct CalExpr *rhs;
+} CalExpr;
+
+/** @brief `cal name(param) = body [inverse (inverse_param) = inverse];` */
+typedef struct {
+  const char *name;
+  int line;
+  int column;
+
+  const char *param;
+  CalExpr *body;
+
+  /** @brief NULL when none was written, which is the usual case: a linear curve inverts itself. */
+  const char *inverse_param;
+  CalExpr *inverse;
+  int inverse_line;
+  int inverse_column;
+} AstCal;
+
 typedef struct {
   const char *name;
   int line;
@@ -73,6 +118,11 @@ typedef struct {
   int bit_order_column;
   int byte_order_line;
   int byte_order_column;
+
+  /** @brief The calibration `@cal:` names, or NULL. Resolved by name at check time (check 18). */
+  const char *cal;
+  int cal_line;
+  int cal_column;
 } AstField;
 
 typedef struct {
@@ -89,6 +139,10 @@ typedef struct {
   AstPacket *packets;
   size_t packet_count;
   size_t packet_capacity;
+
+  AstCal *cals;
+  size_t cal_count;
+  size_t cal_capacity;
 
   /** @brief Owns every Expr and every string the nodes point at. */
   Region *region;
@@ -108,3 +162,9 @@ AstPacket *ast_add_packet(AstFile *file);
  * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
  */
 AstField *ast_add_field(AstPacket *packet);
+
+/**
+ * @brief Add a calibration to `file`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
+AstCal *ast_add_cal(AstFile *file);
