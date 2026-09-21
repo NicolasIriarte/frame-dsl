@@ -22,12 +22,12 @@ if [ -z "$major" ] || [ "$major" -lt 21 ]; then
   exit 0
 fi
 
-staged=$(git diff --cached --name-only -z --diff-filter=ACMR -- \
-  'src/*.c' 'src/*.h' 'include/*.h' 'test/unit/*.c' 'test/system/*.c' 'examples/*.c')
+# Piped rather than kept in a variable: the list is NUL-separated, a shell variable cannot hold a NUL,
+# and with them stripped out every staged name runs into one path. `xargs -r` does nothing on no files.
+staged() {
+  git diff --cached --name-only -z --diff-filter=ACMR -- \
+    'src/*.c' 'src/*.h' 'include/*.h' 'test/unit/*.c' 'test/system/*.c' 'examples/*.c'
+}
 
-if [ -z "$staged" ]; then
-  exit 0
-fi
-
-printf '%s' "$staged" | xargs -0 -r "$CLANG_FORMAT" -i
-printf '%s' "$staged" | xargs -0 -r git add
+staged | xargs -0 -r "$CLANG_FORMAT" -i
+staged | xargs -0 -r git add
