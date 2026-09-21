@@ -55,8 +55,8 @@ not exist, in the shape a real one has. `make example && ./build/uart_device`.
 why *this* frame was rejected, or what the unexpected reply actually contained, there is nothing to
 write: `build/frame-dsl` takes the definition file and the raw bytes off the link and says what they
 are. The definition you already have and a hex string pasted off a capture are the whole input -- see
-[The tool](#the-tool). Going the other way from the terminal -- naming a packet and the fields to put
-in it, and getting bytes out to send by hand -- is not built yet; it is issue #50.
+[The tool](#the-tool). It goes the other way too: name a packet and the fields to put in it, and it
+prints the bytes to send by hand.
 
 ## What it looks like
 
@@ -101,15 +101,19 @@ Give it bytes and it decodes them instead, working out which packet they are fro
 
 ```sh
 $ frame-dsl examples/packet_family.fdsl -d "01 00 01  03 00 02 00 02 AA BB"
-[INFO] TC_PING, 3 bytes
-[INFO]     type           1 (0x1)
-[INFO]     seq            1 (0x1)
-[INFO] TC_PAYLOAD, 7 bytes
-[INFO]     type           3 (0x3)
-[INFO]     seq            2 (0x2)
-[INFO]     len            2 (0x2)
-[INFO]     body           [2 bytes] AA BB
-[INFO] 2 frames, 10 bytes
+# Decoded 3 bytes
+pkt TC_PING {
+    type           1 (0x1)
+    seq            1 (0x1)
+}
+# Decoded 7 bytes
+pkt TC_PAYLOAD {
+    type           3 (0x3)
+    seq            2 (0x2)
+    len            2 (0x2)
+    body           [2 bytes] AA BB
+}
+2 frames, 10 bytes
 ```
 
 The hex may be written however the thing you copied it from writes it -- spaces, colons, commas,
@@ -121,8 +125,27 @@ packet whose length is a field inside it. A frame nothing matches, one that runs
 one whose length field claims more than its field reserved are three different messages, because
 they mean three different things to whoever is holding the capture.
 
-Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
-invocation is.
+Name a packet and some field values and it encodes them instead, printing the frame as hex on
+stdout -- the same spacing `-d` accepts, and what `xxd -r -p` reads, so it can be pasted or piped:
+
+```sh
+$ frame-dsl examples/packet_family.fdsl -e TC_PAYLOAD seq=2 len=2 body=AABB
+03 00 02 00 02 AA BB
+$ frame-dsl examples/packet_family.fdsl -e TC_PING seq=1 | xxd -r -p > ping.bin
+```
+
+A scalar takes decimal or `0x` hex; a bit string takes hex, written any way `-d` takes it. A field
+not named encodes as zero, as it does through the library, and each one is named on stderr so that
+a field forgotten does not pass for a field meant to be zero; `-q`/`--quiet` stops that. `-r`/`--report` also prints the frame
+field by field, as `-d` would, on stderr so that stdout stays just the bytes.
+
+A field the packet does not have, a value too wide for its field, a packet the definition does not
+contain, and a fixed-value field -- the definition sets that one, not you -- are each refused with
+their own message. A `valof()` field and the field that sizes it must agree: give a payload and its
+length both, or neither, and it will not work the length out for you.
+
+Exit status is `0` for success, `1` when the definition, the bytes or the field values are wrong, and
+`2` when the invocation is -- including `-d` and `-e` together, which are two questions at once.
 
 Emacs users get syntax highlighting, comments and indentation for `.fdsl` files from
 [`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el); [`editors/README.md`](editors/README.md)
