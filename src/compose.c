@@ -229,9 +229,22 @@ bool compose_file(AstFile *file, DiagList *diags) {
    * block, a bad override -- is then reported once, at the block, and not once per packet that uses
    * it; and a block no packet uses yet is held to the same rules. */
   for (size_t b = 0; b < file->block_count; ++b) {
-    FieldList scratch = { 0 };
-    expand(&composer, &file->blocks[b], "", &scratch);
-    free(scratch.items);
+    FieldList expanded = { 0 };
+    size_t reported = diags->count;
+    expand(&composer, &file->blocks[b], "", &expanded);
+    if (diags->count != reported) {
+      free(expanded.items);
+      continue;
+    }
+
+    /* The block keeps its expanded form. Expanding it again for each use gives the same result -- it
+     * has no uses left in it -- and the checks can then judge it on its own, like a packet. Blocks
+     * are expanded in the order they are declared, so a block using an earlier one gets it already
+     * flat. */
+    free(file->blocks[b].fields);
+    file->blocks[b].fields = expanded.items;
+    file->blocks[b].field_count = expanded.count;
+    file->blocks[b].field_capacity = expanded.capacity;
   }
   if (composer.failed) {
     diag_sort(diags);

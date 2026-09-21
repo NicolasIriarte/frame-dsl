@@ -1,0 +1,11 @@
+# REJECTED: check 28 -- two imports may not bring different declarations of one name.
+#
+# common/link.fdsl and common/sensors.fdsl both declare a block `Header`. Imported flat, `Header`
+# would mean whichever was read first. `import "../common/sensors.fdsl" as sensors;` keeps both.
+
+import "../common/link.fdsl";
+import "../common/sensors.fdsl";
+
+pkt TC_PING {
+  hdr: Header { id = 0x01; };
+};

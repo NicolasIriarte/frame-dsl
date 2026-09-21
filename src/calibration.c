@@ -603,15 +603,23 @@ size_t cal_emit_c(const CalTable *table, const char *prefix, char *out, size_t c
 
   for (size_t i = 0; i < table->count; ++i) {
     const CalCompiled *cal = &table->cals[i];
-    emit_c_function(&text, prefix, cal->name, &cal->forward, "raw");
+
+    /* An imported calibration is called `vendor.celsius`; in C it is `vendor_celsius`. */
+    char c_name[256];
+    snprintf(c_name, sizeof(c_name), "%s", cal->name);
+    for (char *dot = strchr(c_name, '.'); dot != NULL; dot = strchr(dot, '.')) {
+      *dot = '_';
+    }
+
+    emit_c_function(&text, prefix, c_name, &cal->forward, "raw");
 
     if (!cal->invertible) {
-      append(&text, "/* %s%s has no inverse: it is not linear and declares none. */\n\n", prefix, cal->name);
+      append(&text, "/* %s%s has no inverse: it is not linear and declares none. */\n\n", prefix, c_name);
       continue;
     }
 
-    char inverse_name[256];
-    snprintf(inverse_name, sizeof(inverse_name), "%s_inverse", cal->name);
+    char inverse_name[sizeof(c_name) + sizeof("_inverse")];
+    snprintf(inverse_name, sizeof(inverse_name), "%s_inverse", c_name);
     if (cal->inverse_solves_line) {
       char scale[64];
       char offset[64];

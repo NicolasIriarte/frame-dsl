@@ -1,0 +1,10 @@
+# REJECTED: check 26 -- an import must name a file that can be read.
+#
+# Paths are relative to the importing file, so this looks for examples/invalid/common/link.fdsl, which
+# does not exist; the library is one directory up.
+
+import "common/link.fdsl";
+
+pkt TC_PING {
+  hdr: Header { id = 0x01; };
+};

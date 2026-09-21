@@ -353,6 +353,57 @@ nothing more at run time: blocks are expanded when the file loads, and nothing a
 existed. Checks 23 to 25 in [`docs/design.md`](../docs/design.md) cover an unknown block, one used
 before it is declared, and an override naming no field of its block.
 
+## Importing from other files
+
+Blocks and calibrations can be declared in one file and used from others. A library of the pieces a
+bus or a vendor shares is written once:
+
+```
+# common/link.fdsl
+@byte_order: big_endian;
+
+block Header  { id: 8; sequence: 16; };
+block Trailer { crc: 16; };
+cal volts(raw) = raw * 3.3 / 4095;
+```
+
+and imported by every file that needs it:
+
+```
+import "common/link.fdsl";                   # Header, Trailer, volts
+import "common/sensors.fdsl" as sensors;     # sensors.Header, sensors.celsius
+
+@byte_order: little_endian;
+
+pkt TM_TEMPERATURE {
+  hdr:     Header { id = 0x82; };
+  reading: sensors.Header { kind = 0x1; };
+  [ @cal: sensors.celsius; ] board: 16;
+  end:     Trailer;
+};
+```
+
+- **Flat or named.** `import "path";` brings the file's names in as they are. `import "path" as name;`
+  brings them in as `name.X` instead, and only that way -- the form for two libraries that both
+  declare a `Header`. Two *different* declarations of one name reaching a file flat is an error.
+- **Blocks and calibrations only.** An imported file's packets are checked but not imported, so
+  importing a file never changes which packets a definition decodes. A file can be a library and a
+  protocol at once.
+- **Paths are relative to the importing file**, so a tree of definition files can be moved as a
+  whole. A definition loaded from a string with `framedsl_load_string()` resolves them from the
+  working directory.
+- **At the top.** Imports come before anything else, even the file's own `@` defaults, and what they
+  bring counts as declared there.
+- **An imported block keeps its layout.** Its byte and bit order come from the file it was declared
+  in, not the one importing it -- above, `hdr` is big-endian inside a little-endian packet.
+- **Checked on its own.** An imported file is loaded and checked by itself first, and a problem in it
+  is reported with *its* name and position. A file imported twice through different paths -- two
+  libraries sharing a third -- is the same declarations reached twice, not a clash. An import cycle is
+  an error.
+
+`import` and `as` mean something only where an import is written, so neither is reserved. Checks 26
+to 28 in [`docs/design.md`](../docs/design.md) cover a file that cannot be read, a cycle, and a clash.
+
 ## Calibrations
 
 A field's raw value is often not the number anybody wants. A 12-bit ADC reading is counts; what the

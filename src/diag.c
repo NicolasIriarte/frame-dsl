@@ -15,6 +15,7 @@ void diag_init(DiagList *list) {
 void diag_free(DiagList *list) {
   for (size_t i = 0; i < list->count; ++i) {
     free(list->items[i].message);
+    free(list->items[i].file);
   }
   free(list->items);
   diag_init(list);
@@ -52,12 +53,24 @@ void diag_add(DiagList *list, int line, int column, int check, const char *fmt, 
   vsnprintf(message, (size_t)len + 1, fmt, args);
   va_end(args);
 
-  list->items[list->count++] = (Diag){ .line = line, .column = column, .check = check, .message = message };
+  list->items[list->count++] =
+    (Diag){ .line = line, .column = column, .check = check, .message = message, .file = NULL };
 }
 
+/* Imported files first, since their problems are reported at the top of the file that imports them,
+ * then the file itself; by position within each. */
 static int by_position(const void *lhs, const void *rhs) {
   const Diag *a = lhs;
   const Diag *b = rhs;
+  if ((a->file == NULL) != (b->file == NULL)) {
+    return a->file == NULL ? 1 : -1;
+  }
+  if (a->file != NULL) {
+    int order = strcmp(a->file, b->file);
+    if (order != 0) {
+      return order;
+    }
+  }
   if (a->line != b->line) {
     return a->line < b->line ? -1 : 1;
   }
@@ -70,5 +83,27 @@ static int by_position(const void *lhs, const void *rhs) {
 void diag_sort(DiagList *list) {
   if (list->count > 1) {
     qsort(list->items, list->count, sizeof(*list->items), by_position);
+  }
+}
+
+void diag_append(DiagList *to, const DiagList *from, const char *file) {
+  for (size_t i = 0; i < from->count; ++i) {
+    const Diag *item = &from->items[i];
+    size_t before = to->count;
+    diag_add(to, item->line, item->column, item->check, "%s", item->message);
+    if (to->count == before) {
+      continue; /* the list is full, or an allocation failed */
+    }
+
+    const char *origin = item->file != NULL ? item->file : file;
+    if (origin != NULL) {
+      to->items[to->count - 1].file = malloc(strlen(origin) + 1);
+      if (to->items[to->count - 1].file != NULL) {
+        strcpy(to->items[to->count - 1].file, origin);
+      }
+    }
+  }
+  if (from->overflowed) {
+    to->overflowed = true;
   }
 }

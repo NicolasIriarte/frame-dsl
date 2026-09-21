@@ -191,7 +191,7 @@ static bool residue_mod8(const Expr *expr, uint64_t *out) {
  * means knowing where it starts, which means every field before it is already resolved. */
 static void check_references(
   Checker *checker,
-  size_t packet_index,
+  const PacketLayout *layout,
   const AstPacket *packet,
   size_t field_index,
   const Expr *expr
@@ -200,8 +200,8 @@ static void check_references(
     return;
   }
   if (expr->kind == EXPR_BINARY) {
-    check_references(checker, packet_index, packet, field_index, expr->lhs);
-    check_references(checker, packet_index, packet, field_index, expr->rhs);
+    check_references(checker, layout, packet, field_index, expr->lhs);
+    check_references(checker, layout, packet, field_index, expr->rhs);
     return;
   }
   if (expr->kind != EXPR_VALOF) {
@@ -214,7 +214,7 @@ static void check_references(
        * run of bytes with no single value to multiply. Caught here rather than at encode time, where
        * it would be a width computed from whatever the first eight bytes of a payload happened to
        * be. */
-      const FieldLayout *referenced = &checker->layout->packets[packet_index].fields[i];
+      const FieldLayout *referenced = &layout->fields[i];
       if (!referenced->is_scalar) {
         fail(
           checker,
@@ -289,10 +289,12 @@ static void project(const AstField *field, uint64_t offset, uint64_t width, uint
 
 /* ---- Per-packet checks ---------------------------------------------------------------------- */
 
-static void check_packet(Checker *checker, size_t packet_index) {
-  const AstPacket *packet = &checker->file->packets[packet_index];
-  PacketLayout *layout = &checker->layout->packets[packet_index];
-
+/* Every check a run of fields can be judged by. A named block goes through here as well, so that a
+ * mistake inside one is reported at the block, once, and in a block nothing uses yet -- which is what
+ * an imported file mostly is. What only makes sense of a whole frame, checks 11 and 13's total, is
+ * skipped for a block: a header need not be a whole number of bytes, nor identify anything, on its
+ * own. */
+static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout *layout, bool is_block) {
   layout->fields = calloc(packet->field_count == 0 ? 1 : packet->field_count, sizeof(FieldLayout));
   if (layout->fields == NULL) {
     fail(checker, packet->line, packet->column, 0, "out of memory");
@@ -323,8 +325,8 @@ static void check_packet(Checker *checker, size_t packet_index) {
       }
     }
 
-    check_references(checker, packet_index, packet, i, field->width);
-    check_references(checker, packet_index, packet, i, field->reserve);
+    check_references(checker, layout, packet, i, field->width);
+    check_references(checker, layout, packet, i, field->reserve);
 
     bool variable = expr_uses_valof(field->width);
     slot->variable = variable;
@@ -553,7 +555,7 @@ static void check_packet(Checker *checker, size_t packet_index) {
 
   /* Check 13, over the packet. Only asked when every width was sound: a packet that already failed
    * check 4 does not need to be told it does not add up as well. */
-  if (byte_residue_known && packet->field_count > 0 && byte_residue != 0) {
+  if (!is_block && byte_residue_known && packet->field_count > 0 && byte_residue != 0) {
     if (offset_known) {
       /* Every width was constant, so the exact total is worth reporting -- the author should not
        * have to add up their own fields to find out how far off they are. */
@@ -582,7 +584,7 @@ static void check_packet(Checker *checker, size_t packet_index) {
   }
 
   /* Check 11. */
-  if (!has_fixed && packet->field_count > 0) {
+  if (!is_block && !has_fixed && packet->field_count > 0) {
     fail(
       checker,
       packet->line,
@@ -787,6 +789,50 @@ static bool reaches(const AstFile *file, const CalExpr *expr, size_t target, uin
   return reaches(file, expr->lhs, target, seen) || reaches(file, expr->rhs, target, seen);
 }
 
+/* Checks 18 and 21 from the fields' side: the calibration a field names exists, and the field is a
+ * number. `layout` is the one check_packet() filled in for `packet`, packet or block. */
+static void check_field_cals(Checker *checker, const AstPacket *packet, const PacketLayout *layout) {
+  const AstFile *file = checker->file;
+  if (layout->fields == NULL) {
+    return; /* its allocation failed, and check_packet() said so */
+  }
+  for (size_t f = 0; f < packet->field_count; ++f) {
+    const AstField *field = &packet->fields[f];
+    if (field->cal == NULL) {
+      continue;
+    }
+
+    /* Check 18, from the field's side. */
+    if (find_cal(file, field->cal, NULL) == NULL) {
+      fail(
+        checker,
+        field->cal_line,
+        field->cal_column,
+        18,
+        "'%s.%s' names the calibration '%s', and there is none",
+        packet->name,
+        field->name,
+        field->cal
+      );
+    }
+
+    /* Check 21. Asked of the width directly rather than of is_scalar, which a width that failed
+     * check 4 leaves unset -- and that failure has been reported already. */
+    const FieldLayout *slot = &layout->fields[f];
+    if (slot->variable || slot->width_bits > FRAMEDSL_SCALAR_MAX_BITS) {
+      fail(
+        checker,
+        field->cal_line,
+        field->cal_column,
+        21,
+        "'%s.%s' is a bit string, not a number, so a calibration cannot apply to it",
+        packet->name,
+        field->name
+      );
+    }
+  }
+}
+
 static void check_cals(Checker *checker) {
   const AstFile *file = checker->file;
 
@@ -830,45 +876,7 @@ static void check_cals(Checker *checker) {
   }
 
   for (size_t p = 0; p < file->packet_count; ++p) {
-    const AstPacket *packet = &file->packets[p];
-    if (checker->layout->packets[p].fields == NULL) {
-      continue; /* its allocation failed, and check_packet() said so */
-    }
-    for (size_t f = 0; f < packet->field_count; ++f) {
-      const AstField *field = &packet->fields[f];
-      if (field->cal == NULL) {
-        continue;
-      }
-
-      /* Check 18, from the field's side. */
-      if (find_cal(file, field->cal, NULL) == NULL) {
-        fail(
-          checker,
-          field->cal_line,
-          field->cal_column,
-          18,
-          "'%s.%s' names the calibration '%s', and there is none",
-          packet->name,
-          field->name,
-          field->cal
-        );
-      }
-
-      /* Check 21. Asked of the width directly rather than of is_scalar, which a width that failed
-       * check 4 leaves unset -- and that failure has been reported already. */
-      const FieldLayout *slot = &checker->layout->packets[p].fields[f];
-      if (slot->variable || slot->width_bits > FRAMEDSL_SCALAR_MAX_BITS) {
-        fail(
-          checker,
-          field->cal_line,
-          field->cal_column,
-          21,
-          "'%s.%s' is a bit string, not a number, so a calibration cannot apply to it",
-          packet->name,
-          field->name
-        );
-      }
-    }
+    check_field_cals(checker, &file->packets[p], &checker->layout->packets[p]);
   }
 }
 
@@ -906,10 +914,30 @@ Layout *check_file(const AstFile *file, DiagList *diags) {
     }
   }
 
-  for (size_t i = 0; i < file->packet_count; ++i) {
-    check_packet(&checker, i);
+  /* Named blocks first, on their own. A mistake inside one is then reported once, at the block,
+   * rather than once per packet that uses it -- and the packets are only checked once every block
+   * they are built from is sound. */
+  PacketLayout *block_layouts = calloc(file->block_count == 0 ? 1 : file->block_count, sizeof(PacketLayout));
+  if (block_layouts == NULL) {
+    fail(&checker, 1, 1, 0, "out of memory");
+  }
+  for (size_t i = 0; i < file->block_count && block_layouts != NULL; ++i) {
+    check_packet(&checker, &file->blocks[i], &block_layouts[i], true);
+    check_field_cals(&checker, &file->blocks[i], &block_layouts[i]);
+  }
+  bool blocks_sound = !checker.failed;
+
+  for (size_t i = 0; i < file->packet_count && blocks_sound; ++i) {
+    check_packet(&checker, &file->packets[i], &layout->packets[i], false);
   }
   check_cals(&checker);
+
+  for (size_t i = 0; i < file->block_count && block_layouts != NULL; ++i) {
+    free(block_layouts[i].fields);
+    free(block_layouts[i].mask);
+    free(block_layouts[i].value);
+  }
+  free(block_layouts);
 
   /* Only worth asking once every packet's own fixed fields are known to be sound: a packet that
    * failed check 8 or 11 has a projection nobody should draw conclusions from. */

@@ -25,6 +25,13 @@ typedef struct {
    */
   int check;
   char *message;
+  /**
+   * @brief The imported file this is in, or NULL for the file being loaded. Owned.
+   *
+   * An imported file is loaded and checked on its own, and its diagnostics are carried into the
+   * importing file's list with this set -- so a position is always a position in the file named.
+   */
+  char *file;
 } Diag;
 
 typedef struct {
@@ -51,3 +58,11 @@ void diag_add(DiagList *list, int line, int column, int check, const char *fmt, 
 
 /** @brief Sorted by position, so output reads in file order however the passes found things. */
 void diag_sort(DiagList *list);
+
+/**
+ * @brief Copies every diagnostic of `from` onto `to`, attributing those without a file to `file`.
+ *
+ * One already attributed keeps its own: it came from a file imported by `file`, and that is where its
+ * position is.
+ */
+void diag_append(DiagList *to, const DiagList *from, const char *file);

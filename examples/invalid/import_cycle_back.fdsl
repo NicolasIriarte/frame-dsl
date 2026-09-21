@@ -1,0 +1,11 @@
+# REJECTED: check 27 -- the other half of import_cycle.fdsl.
+
+import "import_cycle.fdsl";
+
+block Trailer {
+  crc: 16;
+};
+
+pkt TC_PONG {
+  id: 8 = 0x02;
+};

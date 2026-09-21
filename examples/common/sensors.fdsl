@@ -1,0 +1,11 @@
+# A second library, from somewhere else, that happens to call its own block `Header` too. Imported
+# flat beside common/link.fdsl the two would clash (check 28); imported `as` something, they do not.
+
+@byte_order: big_endian;
+
+block Header {
+  kind:  4;
+  count: 4;
+};
+
+cal celsius(raw) = raw * 0.0625 - 40;

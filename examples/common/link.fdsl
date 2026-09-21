@@ -1,0 +1,19 @@
+# A library: the link layer every device on this bus shares. Nothing here is a packet of its own --
+# files like examples/imported_device.fdsl import it and build packets from its blocks.
+#
+# An imported block keeps the layout it was declared with, so these stay big-endian in a file whose
+# own default is little-endian.
+
+@byte_order: big_endian;
+
+block Header {
+  id:       8;              # each packet fixes its own
+  sequence: 16;
+};
+
+block Trailer {
+  crc: 16;
+};
+
+# A 12-bit ADC over a 3.3 V reference, as every device on this bus has.
+cal volts(raw) = raw * 3.3 / 4095;

@@ -18,7 +18,8 @@ int main(void) {
   if (!framedsl_ok(result)) {
     for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
       const FramedslDiagnostic *d = framedsl_diagnostic(result, i);
-      fprintf(stderr, "%s:%d:%d: %s\n", framedsl_source_name(result), d->line, d->column, d->message);
+      const char *where = d->file != NULL ? d->file : framedsl_source_name(result);
+      fprintf(stderr, "%s:%d:%d: %s\n", where, d->line, d->column, d->message);
     }
     framedsl_result_free(result);
     return 1;
@@ -103,10 +104,13 @@ typedef struct {
   int line, column;
   int check;             // the numbered check from docs/design.md, or 0 for a syntax error
   const char *message;
+  const char *file;      // the imported file it is in, or NULL for the one that was loaded
 } FramedslDiagnostic;
 ```
 
-Diagnostics come back in file order. **`check` is the field worth using in a test**: "the file was
+Diagnostics come back in file order -- imported files first, since their problems stop the importing
+file at its top. A problem inside an imported file carries that file's name in `file` and a position
+in *that* file, so print `d->file ? d->file : framedsl_source_name(result)` in front of the line. **`check` is the field worth using in a test**: "the file was
 rejected" is a weaker claim than "the file was rejected for the reason it should have been", and only
 the second catches a checker that is right by accident.
 
@@ -586,7 +590,8 @@ int main(void) {
   if (!framedsl_ok(result)) {
     for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
       const FramedslDiagnostic *d = framedsl_diagnostic(result, i);
-      fprintf(stderr, "%s:%d:%d: %s\n", framedsl_source_name(result), d->line, d->column, d->message);
+      const char *where = d->file != NULL ? d->file : framedsl_source_name(result);
+      fprintf(stderr, "%s:%d:%d: %s\n", where, d->line, d->column, d->message);
     }
     framedsl_result_free(result);
     return 1;

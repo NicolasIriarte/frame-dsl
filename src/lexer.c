@@ -274,6 +274,25 @@ Token lexer_next(Lexer *lexer) {
     return lex_word(lexer, line, column);
   }
 
+  /* A path, and only a path: no escapes, and no line breaks, since nothing else in the language is
+   * text and a file name has no need of either. */
+  if (c == '"') {
+    advance(lexer);
+    size_t start = lexer->position;
+    while (peek(lexer, 0) != '"' && peek(lexer, 0) != '\n' && peek(lexer, 0) != '\0') {
+      advance(lexer);
+    }
+    if (peek(lexer, 0) != '"') {
+      diag_add(lexer->diags, line, column, 0, "a string must close on the line it opens");
+      return make(TOK_INVALID, line, column);
+    }
+    Token token = make(TOK_STRING, line, column);
+    token.text = lexer->source + start;
+    token.length = lexer->position - start;
+    advance(lexer);
+    return token;
+  }
+
   advance(lexer);
   switch (c) {
   case '@':
@@ -360,6 +379,8 @@ const char *token_kind_name(TokenKind kind) {
     return "'/'";
   case TOK_DOT:
     return "'.'";
+  case TOK_STRING:
+    return "a quoted path";
   case TOK_INVALID:
     return "invalid input";
   }

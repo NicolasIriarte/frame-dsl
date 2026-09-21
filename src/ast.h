@@ -78,7 +78,20 @@ typedef struct {
   CalExpr *inverse;
   int inverse_line;
   int inverse_column;
+
+  /** @brief As AstPacket.origin: where an imported calibration was declared, or NULL. */
+  const char *origin;
 } AstCal;
+
+/** @brief `import "path" [as alias];` at the top of a file. */
+typedef struct AstImport {
+  const char *path;
+  /** @brief NULL for a flat import. */
+  const char *alias;
+  int line;
+  int column;
+  struct AstImport *next;
+} AstImport;
 
 /** @brief `name = value;` inside a block use: fixes one field of that instance. */
 typedef struct AstOverride {
@@ -156,9 +169,14 @@ typedef struct {
   /** @brief Where the closing brace is. A named block counts as declared from here on (check 24). */
   int end_line;
   int end_column;
+
+  /** @brief For a block merged from an import, the real path of the file that declared it, or NULL.
+   * Two blocks of one name from one origin are the same block reached twice, and not a clash.
+   */
+  const char *origin;
 } AstPacket;
 
-typedef struct {
+typedef struct AstFile {
   AstPacket *packets;
   size_t packet_count;
   size_t packet_capacity;
@@ -174,6 +192,17 @@ typedef struct {
   AstCal *cals;
   size_t cal_count;
   size_t cal_capacity;
+
+  /** @brief In the order written. Resolved by imports_resolve(), which merges what they bring. */
+  AstImport *imports;
+
+  /**
+   * @brief The files imports were read from, kept for as long as this one: what they brought is
+   * merged by pointer, not copied. Owned, and freed with this file.
+   */
+  struct AstFile **imported;
+  size_t imported_count;
+  size_t imported_capacity;
 
   /** @brief Owns every Expr and every string the nodes point at. */
   Region *region;
