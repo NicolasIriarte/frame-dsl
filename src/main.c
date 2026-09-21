@@ -1,10 +1,11 @@
-/* frame-dsl: validate a definition file, describe what is in it, decode bytes against it, and write
- * its calibrations out as C.
+/* frame-dsl: validate a definition file, describe what is in it, decode or encode bytes against it,
+ * and write its calibrations out as C.
  *
  * Written against the public header alone, with nothing internal included. That is deliberate: if
  * the tool shipped with the project needs to reach inside, the interface is not finished. Decoding a
  * capture turned out to need nothing that was not already public, which is the useful half of that
  * discipline -- it is an answer, not a rule. */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,8 +113,9 @@ static bool is_separator(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == ',' || c == ':' || c == '-' || c == '_' || c == '.';
 }
 
-/* Bytes into `out`, count into `*length`. False on a problem, having said what it was. */
-static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *length) {
+/* Bytes into `out`, count into `*length`. False on a problem, having said what it was. `allow_empty`
+ * is for a field value, where no bytes is a legitimate answer; a capture of nothing is not. */
+static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *length, bool allow_empty) {
   size_t count = 0;
   int high = -1;
 
@@ -156,7 +158,7 @@ static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *l
     log_fail("hex: an odd number of digits; the last byte is incomplete");
     return false;
   }
-  if (count == 0) {
+  if (count == 0 && !allow_empty) {
     log_fail("hex: no bytes to decode");
     return false;
   }
@@ -181,8 +183,11 @@ static void format_bytes(const uint8_t *bytes, size_t length, char *out, size_t 
   }
 }
 
-/* Prints every field of the packet that was decoded. */
+/* Prints every field of the packet that was decoded, to `out`: stdout when decoding, where the report
+ * is the answer, and stderr when encoding, where the answer is the hex and the report must not end up
+ * in whatever it is piped into. */
 static void report_frame(
+  FILE *out,
   const FramedslDefinition *definition,
   const FramedslFrame *frame,
   const char *name,
@@ -193,8 +198,8 @@ static void report_frame(
     return;
   }
 
-  log_base("# Decoded %zu byte%s", consumed, consumed == 1 ? "" : "s");
-  log_base("pkt %s {", name);
+  fprintf(out, "# Decoded %zu byte%s\n", consumed, consumed == 1 ? "" : "s");
+  fprintf(out, "pkt %s {\n", name);
 
   for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
     FramedslField field;
@@ -212,8 +217,9 @@ static void report_frame(
       /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
        * value is what anybody reading this actually wants to know. */
       if (field.cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
-        log_base(
-          "    %-14s %llu (%#llx) = %.10g [%s]",
+        fprintf(
+          out,
+          "    %-14s %llu (%#llx) = %.10g [%s]\n",
           field.name,
           (unsigned long long)value,
           (unsigned long long)value,
@@ -221,7 +227,7 @@ static void report_frame(
           field.cal
         );
       } else {
-        log_base("    %-14s %llu (%#llx)", field.name, (unsigned long long)value, (unsigned long long)value);
+        fprintf(out, "    %-14s %llu (%#llx)\n", field.name, (unsigned long long)value, (unsigned long long)value);
       }
       continue;
     }
@@ -235,10 +241,10 @@ static void report_frame(
     const uint8_t *bytes = framedsl_get_bytes(frame, id, &length, NULL);
     if (bytes != NULL) {
       format_bytes(bytes, length, text, sizeof(text));
-      log_base("    %-14s [%zu byte%s] %s", field.name, length, length == 1 ? "" : "s", text);
+      fprintf(out, "    %-14s [%zu byte%s] %s\n", field.name, length, length == 1 ? "" : "s", text);
     }
   }
-  log_base("}");
+  fprintf(out, "}\n");
 }
 
 static const char *decode_problem(FramedslStatus status) {
@@ -280,7 +286,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
       break;
     }
 
-    report_frame(definition, frame, name, consumed);
+    report_frame(stdout, definition, frame, name, consumed);
     offset += consumed;
     count += 1;
   }
@@ -289,6 +295,238 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
     log_base("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
   }
 
+  framedsl_frame_free(frame);
+  return status;
+}
+
+/* ---- Encoding a frame ---------------------------------------------------------------------------
+ *
+ * The other direction: somebody knows the packet they want and needs its bytes -- to paste into a
+ * simulator, to push onto a bus by hand, or to send a deliberately odd value and see what the other
+ * end does with it. Fields not named encode as zero, which is the runtime's rule and not one this
+ * tool adds. */
+
+/* A scalar's value: decimal, or hex with a `0x` prefix. A leading zero is not octal -- nobody typing
+ * a sequence number means 010 to be eight. */
+static bool parse_number(const char *text, uint64_t *out) {
+  const bool hex = text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
+  const char *digits = hex ? text + 2 : text;
+
+  /* strtoull() takes a sign and whitespace and would turn "-1" into the largest value there is. */
+  if (*digits == '\0' || *digits == '-' || *digits == '+' || *digits == ' ') {
+    return false;
+  }
+
+  char *end = NULL;
+  errno = 0;
+  unsigned long long value = strtoull(digits, &end, hex ? 16 : 10);
+  if (errno != 0 || *end != '\0') {
+    return false;
+  }
+  *out = (uint64_t)value;
+  return true;
+}
+
+/* One `field=value` onto the frame. Returns an exit status: 0, 1 when the value does not fit the
+ * definition, 2 when the argument itself is malformed -- the same line decoding draws between bytes
+ * that are wrong and hex that is not hex. */
+static int assign(
+  const FramedslDefinition *definition,
+  FramedslFrame *frame,
+  size_t packet,
+  const char *assignment,
+  bool *given
+) {
+  const char *equals = strchr(assignment, '=');
+  const size_t name_length = (size_t)(equals - assignment);
+  const char *text = equals + 1;
+  const char *packet_name = framedsl_packet_name(definition, packet);
+
+  char name[128];
+  if (name_length == 0 || name_length >= sizeof(name)) {
+    log_fail("'%s': expected field=value", assignment);
+    return 2;
+  }
+  memcpy(name, assignment, name_length);
+  name[name_length] = '\0';
+
+  size_t index = 0;
+  FramedslField field;
+  FramedslFieldId id;
+  if (!framedsl_find_field(definition, packet, name, &index)) {
+    log_fail("%s has no field '%s'", packet_name, name);
+    return 1;
+  }
+  if (!framedsl_field(definition, packet, index, &field) || !framedsl_field_id(definition, packet, index, &id)) {
+    log_fail("%s.%s could not be resolved", packet_name, name);
+    return 1;
+  }
+
+  /* The encoder writes a fixed value from the definition whatever the slot holds, so accepting one
+   * here would print bytes that silently disagree with what was asked for. */
+  if (field.has_fixed) {
+    log_fail("%s.%s is fixed at %#llx by the definition", packet_name, name, (unsigned long long)field.fixed);
+    return 1;
+  }
+  if (given[index]) {
+    log_fail("%s.%s is given twice", packet_name, name);
+    return 2;
+  }
+  given[index] = true;
+
+  if (field.is_scalar) {
+    uint64_t value = 0;
+    if (!parse_number(text, &value)) {
+      log_fail("%s.%s: '%s' is not a number (decimal, or hex with 0x)", packet_name, name, text);
+      return 2;
+    }
+    if (framedsl_set_u64(frame, id, value) != FRAMEDSL_OK) {
+      log_fail(
+        "%s.%s: %s is too wide for its %llu bits", packet_name, name, text, (unsigned long long)field.width_bits
+      );
+      return 1;
+    }
+    return 0;
+  }
+
+  /* A bit string takes hex, written any way -d takes it. Static for the same reason as the capture:
+   * the size is fixed, and it is more than a stack frame should carry. */
+  static uint8_t bytes[MAX_CAPTURE];
+  size_t length = 0;
+  if (!parse_hex(text, bytes, sizeof(bytes), &length, true)) {
+    log_fail("%s.%s is a bit string and takes hex", packet_name, name);
+    return 2;
+  }
+  if (framedsl_set_bytes(frame, id, bytes, length) != FRAMEDSL_OK) {
+    if (field.variable) {
+      log_fail(
+        "%s.%s reserves %llu bytes and was given %zu",
+        packet_name,
+        name,
+        (unsigned long long)(field.max_bits / 8),
+        length
+      );
+    } else {
+      log_fail(
+        "%s.%s is exactly %llu bytes and was given %zu",
+        packet_name,
+        name,
+        (unsigned long long)(field.width_bits / 8),
+        length
+      );
+    }
+    return 1;
+  }
+  return 0;
+}
+
+/* The one way an encode fails once every value has been accepted: a valof() field whose bytes and
+ * length field disagree. The public header does not say which field sizes which, so the message names
+ * the variable fields and what was given for each, rather than guessing at the length field. */
+static void explain_length_mismatch(
+  const FramedslDefinition *definition,
+  const FramedslFrame *frame,
+  size_t packet,
+  const bool *given
+) {
+  const char *packet_name = framedsl_packet_name(definition, packet);
+
+  for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
+    FramedslField field;
+    FramedslFieldId id;
+    if (!framedsl_field(definition, packet, f, &field) || !field.variable
+        || !framedsl_field_id(definition, packet, f, &id)) {
+      continue;
+    }
+
+    if (given[f]) {
+      log_fail(
+        "%s.%s was given %zu bytes and the field that sizes it does not say so; set that field as well",
+        packet_name,
+        field.name,
+        framedsl_byte_length(frame, id)
+      );
+    } else {
+      log_fail("%s.%s was not given, so the field that sizes it must be zero", packet_name, field.name);
+    }
+  }
+}
+
+static int encode_packet(
+  const FramedslDefinition *definition,
+  const char *name,
+  const char *const *assignments,
+  size_t count,
+  bool show,
+  bool quiet
+) {
+  size_t packet = 0;
+  if (!framedsl_find_packet(definition, name, &packet)) {
+    log_fail("no packet named '%s' in this definition", name);
+    return 1;
+  }
+
+  FramedslFrame *frame = framedsl_frame_new(definition);
+  bool *given = calloc(framedsl_field_count(definition, packet) + 1, sizeof(*given));
+  if (frame == NULL || given == NULL) {
+    framedsl_frame_free(frame);
+    free(given);
+    log_fail("out of memory");
+    return 2;
+  }
+
+  int status = 0;
+  for (size_t i = 0; i < count && status == 0; ++i) {
+    status = assign(definition, frame, packet, assignments[i], given);
+  }
+
+  if (status == 0) {
+    size_t length = 0;
+    FramedslStatus why = FRAMEDSL_OK;
+    const uint8_t *bytes = framedsl_encode(frame, name, &length, &why);
+
+    if (bytes == NULL) {
+      if (why == FRAMEDSL_ERROR_RANGE) {
+        explain_length_mismatch(definition, frame, packet, given);
+      } else {
+        log_fail("%s could not be encoded", name);
+      }
+      status = 1;
+    } else {
+      /* Spaced hex: it pastes straight back into -d, and `xxd -r -p` reads it as it is. */
+      for (size_t i = 0; i < length; ++i) {
+        printf(i == 0 ? "%02X" : " %02X", bytes[i]);
+      }
+      printf("\n");
+      fflush(stdout);
+
+      /* Zero is the rule for a field nobody named, and it is a legitimate value -- but a field left
+       * out by mistake looks exactly like one left out on purpose, so each is said once. On stderr,
+       * like the report, so that what is piped is still only the frame. */
+      if (!quiet) {
+        for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
+          FramedslField field;
+          if (!given[f] && framedsl_field(definition, packet, f, &field) && !field.has_fixed) {
+            fprintf(stderr, "[INFO] %s.%s not given, encoded as zero\n", name, field.name);
+          }
+        }
+      }
+
+      /* The report is of the bytes, decoded back, rather than of what was typed: it shows the fixed
+       * values that went out and proves the frame reads as the packet it was meant to be. */
+      if (show) {
+        FramedslFrame *check = framedsl_frame_new(definition);
+        size_t consumed = 0;
+        const char *decoded = check == NULL ? NULL : framedsl_decode(check, bytes, length, &consumed, NULL);
+        if (decoded != NULL) {
+          report_frame(stderr, definition, check, decoded, consumed);
+        }
+        framedsl_frame_free(check);
+      }
+    }
+  }
+
+  free(given);
   framedsl_frame_free(frame);
   return status;
 }
@@ -310,26 +548,54 @@ static int emit_c(const FramedslDefinition *definition) {
 
 static void usage(const char *program) {
   log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
+  log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
   log_fail("       %s <definition.fdsl> --emit-c", program);
-  log_fail("  with no -d, describes the definition");
+  log_fail("  with none of them, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
+  log_fail("  %s frames.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234", program);
 }
 
 int main(int argc, char **argv) {
   const char *path = NULL;
   const char *hex = NULL;
+  const char *packet = NULL;
+  bool show = false;
+  bool quiet = false;
   bool emit = false;
 
-  /* The flag may come before or after the file. Nothing here needs an argument parser: two shapes,
-   * and anything else is a usage error rather than something to guess at. */
+  /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
+  const char **assignments = calloc((size_t)argc, sizeof(*assignments));
+  size_t assigned = 0;
+  if (assignments == NULL) {
+    log_fail("out of memory");
+    return 2;
+  }
+
+  /* Flags may come before or after the file. Nothing here needs an argument parser: an argument with
+   * an `=` in it is a field's value, and anything else unexpected is a usage error rather than
+   * something to guess at. */
   for (int i = 1; i < argc; ++i) {
-    if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--decode") == 0) {
+    const bool decode_flag = strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--decode") == 0;
+    const bool encode_flag = strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--encode") == 0;
+
+    if (decode_flag || encode_flag) {
       if (i + 1 >= argc) {
-        log_fail("%s: expected hex bytes after it", argv[i]);
+        log_fail("%s: expected %s after it", argv[i], decode_flag ? "hex bytes" : "a packet name");
         usage(argv[0]);
+        free(assignments);
         return 2;
       }
-      hex = argv[++i];
+      if (decode_flag) {
+        hex = argv[++i];
+      } else {
+        packet = argv[++i];
+      }
+    } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--report") == 0) {
+      show = true;
+    } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+      quiet = true;
+    } else if (strchr(argv[i], '=') != NULL) {
+      assignments[assigned++] = argv[i];
     } else if (strcmp(argv[i], "--emit-c") == 0) {
       emit = true;
     } else if (path == NULL) {
@@ -337,12 +603,34 @@ int main(int argc, char **argv) {
     } else {
       log_fail("unexpected argument '%s'", argv[i]);
       usage(argv[0]);
+      free(assignments);
       return 2;
     }
   }
 
-  if (path == NULL || (emit && hex != NULL)) {
+  /* Each of these is a guess the tool would otherwise have to make about which one was meant. */
+  const char *conflict = NULL;
+  if (hex != NULL && packet != NULL) {
+    conflict = "-d and -e are two different questions; ask one at a time";
+  } else if (packet == NULL && assigned > 0) {
+    conflict = "field=value only means something with -e";
+  } else if (packet == NULL && show) {
+    conflict = "-r reports the frame -e builds; -d already prints its own";
+  } else if (emit && (hex != NULL || packet != NULL)) {
+    conflict = "--emit-c writes the calibrations out; it does not decode or encode as well";
+  } else if (packet == NULL && quiet) {
+    conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
+  }
+  if (conflict != NULL) {
+    log_fail("%s", conflict);
     usage(argv[0]);
+    free(assignments);
+    return 2;
+  }
+
+  if (path == NULL) {
+    usage(argv[0]);
+    free(assignments);
     return 2;
   }
 
@@ -368,11 +656,16 @@ int main(int argc, char **argv) {
       static uint8_t capture[MAX_CAPTURE];
       size_t length = 0;
 
-      if (!parse_hex(hex, capture, sizeof(capture), &length)) {
+      if (!parse_hex(hex, capture, sizeof(capture), &length, false)) {
         status = 2;
         break;
       }
       status = decode_capture(definition, capture, length);
+      break;
+    }
+
+    if (packet != NULL) {
+      status = encode_packet(definition, packet, assignments, assigned, show, quiet);
       break;
     }
 
@@ -401,5 +694,6 @@ int main(int argc, char **argv) {
   }
 
   framedsl_result_free(result);
+  free(assignments);
   return status;
 }
