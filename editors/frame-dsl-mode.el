@@ -83,7 +83,11 @@ something, which is why the patterns below anchor on the `@'.")
       ;; `pkt NAME' -- the packet being declared.
       (,(concat "\\_<pkt\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
 
-;; `block NAME {' at file level -- a block being declared to be reused -- and `name: NAME'
+;; `import "path" as name;' -- neither word is reserved, so both are matched in that shape only.
+      ("^[ \t]*\\(import\\)[ \t]+\"" 1 font-lock-keyword-face)
+      ("\"[ \t]+\\(as\\)[ \t]+[A-Za-z_]" 1 font-lock-keyword-face)
+
+      ;; `block NAME {' at file level -- a block being declared to be reused -- and `name: NAME'
       ;; where a field uses one: a name where a width would be can only be a block.
       (,(concat "\\_<block\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
       (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\)[ \t]*[{;]") 1 font-lock-type-face)

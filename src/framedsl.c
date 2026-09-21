@@ -1,5 +1,9 @@
+/* realpath() is POSIX, not C11. */
+#define _XOPEN_SOURCE 700
+
 #include "framedsl.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +12,7 @@
 #include "compose.h"
 #include "definition.h"
 #include "diag.h"
+#include "import.h"
 #include "parser.h"
 
 struct FramedslResult {
@@ -59,12 +64,15 @@ static bool publish_diagnostics(FramedslResult *result) {
       .column = result->diags.items[i].column,
       .check = result->diags.items[i].check,
       .message = result->diags.items[i].message,
+      .file = result->diags.items[i].file,
     };
   }
   return true;
 }
 
-FramedslResult *framedsl_load_string(const char *source, const char *name) {
+/* The whole load. `base_dir` is where imports are resolved from, and `self` the real path of the file
+ * being loaded, or NULL for a string. */
+static FramedslResult *load(const char *source, const char *name, const char *base_dir, const char *self) {
   FramedslResult *result = result_new(name);
   if (result == NULL) {
     return NULL;
@@ -84,7 +92,8 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
   /* The checks only run on a tree that parsed. Over a partial one they report consequences of the
    * syntax error as though they were separate mistakes. */
   Layout *layout = NULL;
-  if (result->diags.count == 0 && compose_file(ast, &result->diags)) {
+  if (result->diags.count == 0 && imports_resolve(ast, base_dir, self, &result->diags)
+      && compose_file(ast, &result->diags)) {
     layout = check_file(ast, &result->diags);
   }
 
@@ -120,6 +129,11 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
     result->status = FRAMEDSL_ERROR_MEMORY;
   }
   return result;
+}
+
+FramedslResult *framedsl_load_string(const char *source, const char *name) {
+  /* Nothing to be relative to but where the program is running. */
+  return load(source, name, ".", NULL);
 }
 
 /* Definition files describe a handful of layouts, so there is no reason to stream one. */
@@ -169,7 +183,19 @@ FramedslResult *framedsl_load_file(const char *path) {
     return result;
   }
 
-  FramedslResult *result = framedsl_load_string(source, path);
+  /* Imports are relative to the file doing the importing, so a tree of definition files moves as a
+   * unit. */
+  char directory[PATH_MAX];
+  const char *slash = strrchr(path, '/');
+  if (slash == NULL) {
+    snprintf(directory, sizeof(directory), ".");
+  } else {
+    snprintf(directory, sizeof(directory), "%.*s", slash == path ? 1 : (int)(slash - path), path);
+  }
+  char self[PATH_MAX];
+  bool resolved = realpath(path, self) != NULL;
+
+  FramedslResult *result = load(source, path, directory, resolved ? self : NULL);
   free(source);
   return result;
 }

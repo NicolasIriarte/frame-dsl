@@ -1,0 +1,14 @@
+# REJECTED: check 27 -- imports cannot form a cycle.
+#
+# This file imports import_cycle_back.fdsl, which imports this one. Reported where the cycle closes,
+# in import_cycle_back.fdsl.
+
+import "import_cycle_back.fdsl";
+
+block Header {
+  id: 8;
+};
+
+pkt TC_PING {
+  hdr: Header { id = 0x01; };
+};

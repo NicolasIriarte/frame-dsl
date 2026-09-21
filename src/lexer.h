@@ -34,8 +34,10 @@ typedef enum {
   TOK_MINUS,
   TOK_STAR,
   TOK_SLASH,
-  /** @brief Only in an override's path, `inner.id = 3;`. */
+  /** @brief In a dotted name: an override's path, `inner.id = 3;`, or an imported one, `ns.Header`. */
   TOK_DOT,
+  /** @brief `"..."`, an import's path. `text`/`length` are the contents, without the quotes. */
+  TOK_STRING,
 
   /** @brief Produced instead of a token when the input cannot be tokenised.
    *

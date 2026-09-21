@@ -100,6 +100,10 @@ typedef struct {
    */
   int check;
   const char *message;
+  /** @brief The imported file the problem is in, or NULL when it is in the file that was loaded --
+   * framedsl_source_name() names that one.
+   */
+  const char *file;
 } FramedslDiagnostic;
 
 typedef struct {

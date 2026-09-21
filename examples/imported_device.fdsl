@@ -1,0 +1,23 @@
+# Imports: blocks and calibrations declared in other files and reused here.
+#
+# `import "path";` merges what the file declares -- its blocks and calibrations, never its packets --
+# as if it were written here. `import "path" as name;` brings the same, named `name.X`, which is how
+# two libraries that both declare a `Header` are used side by side. Paths are relative to this file.
+# Imports go at the top, before anything else.
+
+import "common/link.fdsl";
+import "common/sensors.fdsl" as sensors;
+
+@byte_order: little_endian;         # this file's default; the imported blocks keep their own
+
+pkt TM_TEMPERATURE {
+  hdr:     Header { id = 0x82; };               # from common/link.fdsl
+  reading: sensors.Header { kind = 0x1; };      # from common/sensors.fdsl
+
+  [ @cal: sensors.celsius; ]
+  board:   16;
+  [ @cal: volts; ]
+  supply:  16;
+
+  end:     Trailer;
+};

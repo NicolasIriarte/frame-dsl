@@ -252,6 +252,34 @@ static bool word_is(const Token *token, const char *spelling) {
   return token->length == length && memcmp(token->text, spelling, length) == 0;
 }
 
+/* The rest of a dotted name whose first part, `first`, has just been read: `vendor.Header`. What an
+ * `as` import brings in is named this way. */
+static const char *dotted_name(Parser *parser, const char *first, size_t first_length) {
+  char name[256];
+  size_t used = first_length < sizeof(name) - 1 ? first_length : sizeof(name) - 1;
+  memcpy(name, first, used);
+
+  while (check(parser, TOK_DOT)) {
+    advance(parser);
+    if (!check(parser, TOK_IDENT)) {
+      error_at_current(parser, "a name after '.'");
+      break;
+    }
+    if (used + 1 + parser->current.length < sizeof(name)) {
+      name[used++] = '.';
+      memcpy(name + used, parser->current.text, parser->current.length);
+      used += parser->current.length;
+    }
+    advance(parser);
+  }
+
+  const char *copy = region_strndup(parser->file->region, name, used);
+  if (copy == NULL) {
+    parser->out_of_memory = true;
+  }
+  return copy;
+}
+
 /* attribute = "@" identifier ":" identifier ";" */
 static bool parse_attribute(Parser *parser, Attributes *attrs) {
   int line = parser->current.line;
@@ -320,10 +348,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     attrs->byte_line = line;
     attrs->byte_column = column;
   } else if (word_is(&name, "cal")) {
-    attrs->cal = region_strndup(parser->file->region, value.text, value.length);
-    if (attrs->cal == NULL) {
-      parser->out_of_memory = true;
-    }
+    attrs->cal = dotted_name(parser, value.text, value.length);
     attrs->cal_line = line;
     attrs->cal_column = column;
   } else {
@@ -467,12 +492,12 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
     );
   }
 
-  field->block = region_strndup(parser->file->region, parser->current.text, parser->current.length);
+  Token first = parser->current;
+  advance(parser);
+  field->block = dotted_name(parser, first.text, first.length);
   if (field->block == NULL) {
-    parser->out_of_memory = true;
     return;
   }
-  advance(parser);
 
   if (match(parser, TOK_LBRACE)) {
     while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID)) {
@@ -732,7 +757,9 @@ static CalExpr *parse_cal_factor(Parser *parser) {
   }
 
   if (check(parser, TOK_IDENT)) {
-    const char *name = take_name(parser);
+    Token first = parser->current;
+    advance(parser);
+    const char *name = dotted_name(parser, first.text, first.length);
 
     if (!match(parser, TOK_LPAREN)) {
       CalExpr *expr = cal_new(parser, CAL_EXPR_NAME, line, column);
@@ -880,6 +907,48 @@ static void parse_cal(Parser *parser) {
   }
 }
 
+/* import = "import" string [ "as" identifier ] ";" */
+static AstImport *parse_import(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* 'import' */
+
+  if (!check(parser, TOK_STRING)) {
+    error_at_current(parser, "a quoted path to import");
+    recover_to_field_end(parser);
+    return NULL;
+  }
+  AstImport *import = region_alloc(parser->file->region, sizeof(AstImport));
+  if (import == NULL) {
+    parser->out_of_memory = true;
+    return NULL;
+  }
+  memset(import, 0, sizeof(*import));
+  import->path = region_strndup(parser->file->region, parser->current.text, parser->current.length);
+  import->line = line;
+  import->column = column;
+  advance(parser);
+
+  if (import->path == NULL || import->path[0] == '\0') {
+    diag_add(parser->diags, line, column, 0, "an import needs a path");
+  }
+
+  if (check(parser, TOK_IDENT) && word_is(&parser->current, "as")) {
+    advance(parser);
+    if (!check(parser, TOK_IDENT)) {
+      error_at_current(parser, "a name to import under");
+      recover_to_field_end(parser);
+      return NULL;
+    }
+    import->alias = take_name(parser);
+  }
+
+  if (!expect(parser, TOK_SEMICOLON)) {
+    recover_to_field_end(parser);
+  }
+  return import;
+}
+
 AstFile *parse(const char *source, DiagList *diags) {
   Parser parser = { 0 };
   parser.diags = diags;
@@ -891,6 +960,18 @@ AstFile *parse(const char *source, DiagList *diags) {
 
   lexer_init(&parser.lexer, source, diags);
   advance(&parser);
+
+  /* Imports come first, before even the file's own defaults: they bring declarations that everything
+   * below may use, and a file reads top to bottom. `import` and `as` are words only here. */
+  AstImport **tail = &parser.file->imports;
+  while (check(&parser, TOK_IDENT) && word_is(&parser.current, "import")) {
+    parser.panicking = false;
+    AstImport *import = parse_import(&parser);
+    if (import != NULL) {
+      *tail = import;
+      tail = &import->next;
+    }
+  }
 
   /* A bare attribute is the file default and may only appear here, before the first packet. Anywhere
    * else it would have to mean either "from this point on" or "the next declaration only", and having
@@ -909,6 +990,19 @@ AstFile *parse(const char *source, DiagList *diags) {
 
   while (!check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) && !parser.out_of_memory) {
     parser.panicking = false;
+
+    if (check(&parser, TOK_IDENT) && word_is(&parser.current, "import")) {
+      diag_add(
+        parser.diags,
+        parser.current.line,
+        parser.current.column,
+        0,
+        "an import goes at the top of the file, before anything else, so that everything below can "
+        "use what it brings"
+      );
+      recover_to_field_end(&parser);
+      continue;
+    }
 
     /* `cal` is only a word here, where a declaration starts, so it is not reserved and a field may
      * still be called `cal`. */

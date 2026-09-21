@@ -29,6 +29,10 @@ void ast_free(AstFile *file) {
   }
   free(file->blocks);
   free(file->cals);
+  for (size_t i = 0; i < file->imported_count; ++i) {
+    ast_free(file->imported[i]);
+  }
+  free(file->imported);
   region_free(file->region);
   free(file);
 }

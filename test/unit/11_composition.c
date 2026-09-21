@@ -265,6 +265,64 @@ static int us11_tc12_a_use_cannot_reshape_its_block(const TestArguments *args) {
   return 0;
 }
 
+/* ---- The import syntax ----------------------------------------------------------------------------
+ *
+ * What an import does is file-system work and is system story 11; what it looks like is here. */
+
+static int us11_tc13_imports_parse_at_the_top_with_or_without_a_name(const TestArguments *args) {
+  (void)args;
+  DiagList diags;
+  diag_init(&diags);
+  AstFile *file = parse(
+    "import \"common/link.fdsl\";\n"
+    "import \"vendor/s.fdsl\" as vendor;\n"
+    "@byte_order: big_endian;\n"
+    "pkt A { id: 8 = 1; h: vendor.Header { id = 2; }; [ @cal: vendor.celsius; ] t: 16; };",
+    &diags
+  );
+
+  int failure = 0;
+  const AstImport *first = file != NULL ? file->imports : NULL;
+  const AstImport *second = first != NULL ? first->next : NULL;
+  if (diags.count != 0 || first == NULL || second == NULL || second->next != NULL) {
+    failure = __LINE__;
+  } else if (strcmp(first->path, "common/link.fdsl") != 0 || first->alias != NULL
+             || strcmp(second->path, "vendor/s.fdsl") != 0 || strcmp(second->alias, "vendor") != 0) {
+    failure = __LINE__;
+  } else if (strcmp(file->packets[0].fields[1].block, "vendor.Header") != 0
+             || strcmp(file->packets[0].fields[2].cal, "vendor.celsius") != 0) {
+    /* Dotted names are how what an `as` import brings is addressed. */
+    failure = __LINE__;
+  }
+  ast_free(file);
+  diag_free(&diags);
+  return failure;
+}
+
+/* An import below anything else is refused where it is, rather than meaning "from here on". */
+static int us11_tc14_an_import_goes_at_the_top(const TestArguments *args) {
+  (void)args;
+  if (!reports("pkt A { id: 8 = 1; };\nimport \"x.fdsl\";", 0, "at the top of the file")) {
+    return __LINE__;
+  }
+  if (!reports("@bit_order: msb_first;\nimport \"x.fdsl\";\npkt A { id: 8 = 1; };", 0, "at the top of the file")) {
+    return __LINE__;
+  }
+  return 0;
+}
+
+/* A path is the only text in the language: no escapes, and it closes on the line it opens. */
+static int us11_tc15_a_path_is_a_string_on_one_line(const TestArguments *args) {
+  (void)args;
+  if (!reports("import \"x.fdsl\n\";\npkt A { id: 8 = 1; };", 0, "close on the line")) {
+    return __LINE__;
+  }
+  if (!reports("import x;\npkt A { id: 8 = 1; };", 0, "quoted path")) {
+    return __LINE__;
+  }
+  return 0;
+}
+
 void register_user_story11(void) {
   START_REGISTERING();
   ADD_TEST_CASE(
@@ -293,4 +351,9 @@ void register_user_story11(void) {
   );
   ADD_TEST_CASE(us11_tc11_check_2_an_instance_shares_a_name, "an instance or block name may not be reused", false);
   ADD_TEST_CASE(us11_tc12_a_use_cannot_reshape_its_block, "a use cannot change its block's layout", false);
+  ADD_TEST_CASE(
+    us11_tc13_imports_parse_at_the_top_with_or_without_a_name, "imports parse, flat or 'as', with dotted uses", false
+  );
+  ADD_TEST_CASE(us11_tc14_an_import_goes_at_the_top, "an import below anything else is refused", false);
+  ADD_TEST_CASE(us11_tc15_a_path_is_a_string_on_one_line, "an import's path is a quoted string on one line", false);
 }

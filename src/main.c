@@ -19,10 +19,10 @@
 #define MAX_CAPTURE 65536
 
 static void report(const FramedslResult *result) {
-  const char *name = framedsl_source_name(result);
-
   for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
     const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
+    /* A problem inside an imported file is reported at its own position, in its own file. */
+    const char *name = diag->file != NULL ? diag->file : framedsl_source_name(result);
 
     /* The check number is printed because it is what makes a rejection checkable: "rejected" is a
      * weaker claim than "rejected for the reason the file says it should be". */

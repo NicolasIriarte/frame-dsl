@@ -64,8 +64,9 @@ static int expect_parses(const char *name) {
 static int us1_tc01_parses_every_valid_example(const TestArguments *args) {
   (void)args;
 
-  const char *names[] = { "tm_datagram.fdsl", "ccsds_space_packet.fdsl", "packet_family.fdsl",
-                          "bit_order.fdsl",   "calibrated_sensor.fdsl",  "composed_packets.fdsl" };
+  const char *names[] = { "tm_datagram.fdsl",     "ccsds_space_packet.fdsl", "packet_family.fdsl",
+                          "bit_order.fdsl",       "calibrated_sensor.fdsl",  "composed_packets.fdsl",
+                          "imported_device.fdsl", "common/link.fdsl",        "common/sensors.fdsl" };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     int failure = expect_parses(names[i]);
     if (failure != 0) {
@@ -108,6 +109,10 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
     { "invalid/unknown_block.fdsl",              23 },
     { "invalid/block_used_before_declared.fdsl", 24 },
     { "invalid/override_unknown_field.fdsl",     25 },
+    { "invalid/import_missing.fdsl",             26 },
+    { "invalid/import_cycle.fdsl",               27 },
+    { "invalid/import_cycle_back.fdsl",          27 },
+    { "invalid/import_clash.fdsl",               28 },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
