@@ -5,7 +5,7 @@
  * backtracking needed, and every production decidable from a single lookahead token.
  *
  * What is NOT here is as deliberate as what is. Signed and floating-point fields, enums, conditional
- * fields, repetition, packet composition and CRC declarations are all deferred,
+ * fields, repetition and CRC declarations are all deferred,
  * each to its own issue, so that they are designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
@@ -15,7 +15,7 @@
  * checked when a definition file loads.
  *)
 
-definition_file    = { attribute } , { packet | calibration } ;
+definition_file    = { attribute } , { packet | named_block | calibration } ;
 
 (* --- Attributes -----------------------------------------------------------------------------
  * One form per job, so nothing is expressible two ways:
@@ -48,13 +48,28 @@ packet             = [ attribute_group ] , "pkt" , identifier , "{" ,
 (* --- Declarations ---------------------------------------------------------------------------
  * A block is an attribute scope and nothing else. Its fields are laid out in the packet that
  * contains it, with consecutive offsets and the same flat names they would have had without it, so
- * nothing past the parser knows blocks exist. The *named* form -- `block Payload { ... }` -- nests
- * a dotted name and is packet composition; it is deferred to its own issue.
+ * nothing past the parser knows blocks exist. The *named* form is declared at file level and is
+ * composition -- see below.
  *)
 
-declaration        = [ attribute_group ] , ( field | block ) ;
+declaration        = [ attribute_group ] , ( field | block | use ) ;
 
 block              = "block" , "{" , declaration , { declaration } , "}" , ";" ;
+
+(* --- Named blocks and their uses -----------------------------------------------------------
+ * A named block is declared at file level and used as a field whose width is its name. Its fields are
+ * copied into the packet under the instance's name (`hdr.id`), with the overrides fixing values. A
+ * use's width is a name and a field's never is, so one token after ":" tells them apart. A named
+ * block must be declared above every use (check 24); an attribute group in front of a use is an
+ * error, because a block's layout is decided where it is declared.
+ *)
+
+named_block        = [ attribute_group ] , "block" , identifier , "{" ,
+                       declaration , { declaration } ,
+                     "}" , ";" ;
+
+use                = identifier , ":" , identifier , [ "{" , { override } , "}" ] , ";" ;
+override           = identifier , { "." , identifier } , "=" , integer , ";" ;
 
 (* --- Fields ---------------------------------------------------------------------------------
  * Width is an expression in BITS, always. The bracketed reservation is the one number in the

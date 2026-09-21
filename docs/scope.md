@@ -114,5 +114,5 @@ The first end-to-end milestone, and the thing every current issue is pointed at:
   the values it set.
 - None of the above allocates after load.
 
-Everything beyond that -- signed and floating-point fields, enums, conditionals, repetition,
-composition, CRC -- is a separate issue against a language that by then exists.
+Everything beyond that -- signed and floating-point fields, enums, conditionals, repetition, CRC
+-- is a separate issue against a language that by then exists.

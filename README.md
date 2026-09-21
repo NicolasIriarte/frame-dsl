@@ -86,6 +86,16 @@ Three things that are load-bearing rather than incidental:
 - **A decodable packet must carry at least one fixed-value field.** Definitions whose packets cannot
   be told apart are rejected when the file loads, not when a frame arrives on a live link.
 
+A header shared by many packets is written once, as a named block, and each packet fixes only what
+differs -- usually the id that tells them apart:
+
+```
+block Header { id: 8; sequence: 16; };
+
+pkt TC_PING  { hdr: Header { id = 0x01; }; };
+pkt TM_REPLY { hdr: Header { id = 0x81; }; status: 8; };   # fields: hdr.id, hdr.sequence, status
+```
+
 The full language reference is in [`manual/`](manual) -- including the [C API](manual/api.md) --
 and the design behind it in [`docs/`](docs).
 
