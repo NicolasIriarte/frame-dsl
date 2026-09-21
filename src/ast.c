@@ -24,6 +24,10 @@ void ast_free(AstFile *file) {
     free(file->packets[i].fields);
   }
   free(file->packets);
+  for (size_t i = 0; i < file->block_count; ++i) {
+    free(file->blocks[i].fields);
+  }
+  free(file->blocks);
   free(file->cals);
   region_free(file->region);
   free(file);
@@ -76,4 +80,16 @@ AstCal *ast_add_cal(AstFile *file) {
   AstCal *cal = &file->cals[file->cal_count++];
   memset(cal, 0, sizeof(*cal));
   return cal;
+}
+
+AstPacket *ast_add_block(AstFile *file) {
+  AstPacket *blocks = grow(file->blocks, &file->block_capacity, file->block_count, sizeof(AstPacket));
+  if (blocks == NULL) {
+    return NULL;
+  }
+  file->blocks = blocks;
+
+  AstPacket *block = &file->blocks[file->block_count++];
+  memset(block, 0, sizeof(*block));
+  return block;
 }

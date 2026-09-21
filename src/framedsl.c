@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "compose.h"
 #include "definition.h"
 #include "diag.h"
 #include "parser.h"
@@ -83,7 +84,7 @@ FramedslResult *framedsl_load_string(const char *source, const char *name) {
   /* The checks only run on a tree that parsed. Over a partial one they report consequences of the
    * syntax error as though they were separate mistakes. */
   Layout *layout = NULL;
-  if (result->diags.count == 0) {
+  if (result->diags.count == 0 && compose_file(ast, &result->diags)) {
     layout = check_file(ast, &result->diags);
   }
 
