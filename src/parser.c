@@ -141,6 +141,20 @@ static Expr *parse_factor(Parser *parser) {
     return expr;
   }
 
+  if (check(parser, TOK_REAL) && !parser->panicking) {
+    parser->panicking = true;
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "%s is not a whole number; widths and fixed values are integers, and only a calibration takes "
+      "a fraction",
+      token_describe(&parser->current)
+    );
+    return NULL;
+  }
+
   error_at_current(parser, "a number, 'valof' or '('");
   return NULL;
 }
@@ -199,6 +213,13 @@ typedef struct {
   int bit_column;
   int byte_line;
   int byte_column;
+
+  /* `@cal:` names a calibration for one field. It is not inherited -- a curve is a property of one
+   * sensor reading, and handing one to every field in a block would be a guess about the others -- so
+   * wherever it is written, other than in front of a field, is an error rather than a default. */
+  const char *cal;
+  int cal_line;
+  int cal_column;
 } Attributes;
 
 /* Everything a declaration inherits arrives with the flags cleared: what the enclosing scope said is
@@ -206,7 +227,24 @@ typedef struct {
 static Attributes inherited(Attributes scope) {
   scope.bit_written = false;
   scope.byte_written = false;
+  scope.cal = NULL;
   return scope;
+}
+
+/* Called wherever a group or a bare attribute applies to something that is not a single field. */
+static void refuse_cal_here(Parser *parser, const Attributes *attrs, const char *where) {
+  if (attrs->cal == NULL) {
+    return;
+  }
+  diag_add(
+    parser->diags,
+    attrs->cal_line,
+    attrs->cal_column,
+    0,
+    "'cal' attaches a calibration to one field, and cannot apply to %s; put it in a '[ ... ]' group in "
+    "front of the field",
+    where
+  );
 }
 
 static bool word_is(const Token *token, const char *spelling) {
@@ -281,13 +319,20 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     /* Positioned at the '@', which is what check 10 points the author at. */
     attrs->byte_line = line;
     attrs->byte_column = column;
+  } else if (word_is(&name, "cal")) {
+    attrs->cal = region_strndup(parser->file->region, value.text, value.length);
+    if (attrs->cal == NULL) {
+      parser->out_of_memory = true;
+    }
+    attrs->cal_line = line;
+    attrs->cal_column = column;
   } else {
     diag_add(
       parser->diags,
       name.line,
       name.column,
       0,
-      "unknown attribute '%.*s'; this version knows 'bit_order' and 'byte_order'",
+      "unknown attribute '%.*s'; this version knows 'bit_order', 'byte_order' and 'cal'",
       (int)name.length,
       name.text
     );
@@ -344,6 +389,9 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   field->bit_order_column = attrs.bit_column;
   field->byte_order_line = attrs.byte_line;
   field->byte_order_column = attrs.byte_column;
+  field->cal = attrs.cal;
+  field->cal_line = attrs.cal_line;
+  field->cal_column = attrs.cal_column;
 
   if (!check(parser, TOK_IDENT)) {
     error_at_current(parser, "a field name");
@@ -472,10 +520,209 @@ static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scop
   }
 
   if (check(parser, TOK_BLOCK)) {
+    refuse_cal_here(parser, &attrs, "a block");
     parse_block(parser, packet, attrs);
     return;
   }
   parse_field(parser, packet, attrs);
+}
+
+/* ---- Calibrations -------------------------------------------------------------------------
+ *
+ * calibration = "cal" identifier "(" identifier ")" "=" cal_expr
+ *               [ "inverse" "(" identifier ")" "=" cal_expr ] ";"
+ * cal_expr    = cal_term { ("+" | "-") cal_term }
+ * cal_term    = cal_unary { ("*" | "/") cal_unary }
+ * cal_unary   = "-" cal_unary | cal_factor
+ * cal_factor  = number | identifier [ "(" cal_expr ")" ] | "(" cal_expr ")"
+ *
+ * Arithmetic on doubles, with a parameter and calls. Whether a bare name is the parameter, and whether
+ * a call names a calibration, is the checker's business (checks 18 and 19): here a name is a name. */
+
+static CalExpr *cal_new(Parser *parser, CalExprKind kind, int line, int column) {
+  CalExpr *expr = region_alloc(parser->file->region, sizeof(CalExpr));
+  if (expr == NULL) {
+    parser->out_of_memory = true;
+    return NULL;
+  }
+  memset(expr, 0, sizeof(*expr));
+  expr->kind = kind;
+  expr->line = line;
+  expr->column = column;
+  return expr;
+}
+
+static const char *take_name(Parser *parser) {
+  const char *name = region_strndup(parser->file->region, parser->current.text, parser->current.length);
+  if (name == NULL) {
+    parser->out_of_memory = true;
+  }
+  advance(parser);
+  return name;
+}
+
+static CalExpr *parse_cal_expr(Parser *parser);
+
+static CalExpr *parse_cal_factor(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+
+  if (check(parser, TOK_INT) || check(parser, TOK_REAL)) {
+    CalExpr *expr = cal_new(parser, CAL_EXPR_NUMBER, line, column);
+    if (expr != NULL) {
+      expr->number = parser->current.real;
+    }
+    advance(parser);
+    return expr;
+  }
+
+  if (check(parser, TOK_IDENT)) {
+    const char *name = take_name(parser);
+
+    if (!match(parser, TOK_LPAREN)) {
+      CalExpr *expr = cal_new(parser, CAL_EXPR_NAME, line, column);
+      if (expr != NULL) {
+        expr->name = name;
+      }
+      return expr;
+    }
+
+    CalExpr *argument = parse_cal_expr(parser);
+    if (!expect(parser, TOK_RPAREN) || argument == NULL) {
+      return NULL;
+    }
+    CalExpr *expr = cal_new(parser, CAL_EXPR_CALL, line, column);
+    if (expr != NULL) {
+      expr->name = name;
+      expr->lhs = argument;
+    }
+    return expr;
+  }
+
+  if (match(parser, TOK_LPAREN)) {
+    CalExpr *expr = parse_cal_expr(parser);
+    if (!expect(parser, TOK_RPAREN)) {
+      return NULL;
+    }
+    return expr;
+  }
+
+  error_at_current(parser, "a number, a name or '('");
+  return NULL;
+}
+
+static CalExpr *parse_cal_unary(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+
+  if (match(parser, TOK_MINUS)) {
+    CalExpr *operand = parse_cal_unary(parser);
+    if (operand == NULL) {
+      return NULL;
+    }
+    CalExpr *expr = cal_new(parser, CAL_EXPR_NEGATE, line, column);
+    if (expr != NULL) {
+      expr->lhs = operand;
+    }
+    return expr;
+  }
+  return parse_cal_factor(parser);
+}
+
+static CalExpr *cal_binary(Parser *parser, char op, CalExpr *lhs, CalExpr *rhs) {
+  if (lhs == NULL || rhs == NULL) {
+    return NULL;
+  }
+  CalExpr *expr = cal_new(parser, CAL_EXPR_BINARY, lhs->line, lhs->column);
+  if (expr == NULL) {
+    return NULL;
+  }
+  expr->op = op;
+  expr->lhs = lhs;
+  expr->rhs = rhs;
+  return expr;
+}
+
+static CalExpr *parse_cal_term(Parser *parser) {
+  CalExpr *node = parse_cal_unary(parser);
+  while (check(parser, TOK_STAR) || check(parser, TOK_SLASH)) {
+    char op = check(parser, TOK_STAR) ? '*' : '/';
+    advance(parser);
+    node = cal_binary(parser, op, node, parse_cal_unary(parser));
+  }
+  return node;
+}
+
+static CalExpr *parse_cal_expr(Parser *parser) {
+  CalExpr *node = parse_cal_term(parser);
+  while (check(parser, TOK_PLUS) || check(parser, TOK_MINUS)) {
+    char op = check(parser, TOK_PLUS) ? '+' : '-';
+    advance(parser);
+    node = cal_binary(parser, op, node, parse_cal_term(parser));
+  }
+  return node;
+}
+
+/* `(name) = expression`, the part a calibration and its inverse share. */
+static bool parse_cal_function(Parser *parser, const char **param, CalExpr **body) {
+  if (!expect(parser, TOK_LPAREN)) {
+    return false;
+  }
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "a parameter name");
+    return false;
+  }
+  *param = take_name(parser);
+  if (!expect(parser, TOK_RPAREN) || !expect(parser, TOK_EQUALS)) {
+    return false;
+  }
+  *body = parse_cal_expr(parser);
+  return *body != NULL;
+}
+
+static void parse_cal(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* 'cal' */
+
+  AstCal *cal = ast_add_cal(parser->file);
+  if (cal == NULL) {
+    parser->out_of_memory = true;
+    return;
+  }
+  cal->line = line;
+  cal->column = column;
+
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "a calibration name");
+    parser->file->cal_count -= 1;
+    recover_to_field_end(parser);
+    return;
+  }
+  cal->name = take_name(parser);
+
+  if (!parse_cal_function(parser, &cal->param, &cal->body)) {
+    parser->file->cal_count -= 1;
+    recover_to_field_end(parser);
+    return;
+  }
+
+  /* `inverse` is a word only here, after a calibration's body, for the same reason `cal` is only one
+   * where a declaration starts. */
+  if (check(parser, TOK_IDENT) && word_is(&parser->current, "inverse")) {
+    cal->inverse_line = parser->current.line;
+    cal->inverse_column = parser->current.column;
+    advance(parser);
+    if (!parse_cal_function(parser, &cal->inverse_param, &cal->inverse)) {
+      parser->file->cal_count -= 1;
+      recover_to_field_end(parser);
+      return;
+    }
+  }
+
+  if (!expect(parser, TOK_SEMICOLON)) {
+    recover_to_field_end(parser);
+  }
 }
 
 AstFile *parse(const char *source, DiagList *diags) {
@@ -501,10 +748,19 @@ AstFile *parse(const char *source, DiagList *diags) {
     if (!parse_attribute(&parser, &file_attrs)) {
       recover_to_field_end(&parser);
     }
+    refuse_cal_here(&parser, &file_attrs, "a whole file");
+    file_attrs.cal = NULL;
   }
 
   while (!check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) && !parser.out_of_memory) {
     parser.panicking = false;
+
+    /* `cal` is only a word here, where a declaration starts, so it is not reserved and a field may
+     * still be called `cal`. */
+    if (check(&parser, TOK_IDENT) && word_is(&parser.current, "cal")) {
+      parse_cal(&parser);
+      continue;
+    }
 
     Attributes packet_attrs = inherited(file_attrs);
     if (check(&parser, TOK_LBRACKET)) {
@@ -512,6 +768,7 @@ AstFile *parse(const char *source, DiagList *diags) {
         recover_to_packet_end(&parser);
         continue;
       }
+      refuse_cal_here(&parser, &packet_attrs, "a packet");
     }
 
     if (!check(&parser, TOK_PKT)) {
@@ -525,7 +782,7 @@ AstFile *parse(const char *source, DiagList *diags) {
           "put it in a '[ ... ]' group in front of 'pkt'"
         );
       } else {
-        error_at_current(&parser, "'pkt' or end of file");
+        error_at_current(&parser, "'pkt', 'cal' or end of file");
       }
       recover_to_packet_end(&parser);
       continue;

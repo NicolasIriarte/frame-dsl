@@ -144,6 +144,19 @@ contain, and a fixed-value field -- the definition sets that one, not you -- are
 their own message. A `valof()` field and the field that sizes it must agree: give a payload and its
 length both, or neither, and it will not work the length out for you.
 
+A field with a calibration shows its engineering value beside the raw one, and `--emit-c` writes
+every calibration in the file out as C, for a program that wants the curves compiled in:
+
+```sh
+$ frame-dsl examples/calibrated_sensor.fdsl -d "10 80 07 FF 03 20 07 FF"
+...
+    board          800 (0x320) = 10 [celsius]
+...
+$ frame-dsl examples/calibrated_sensor.fdsl --emit-c > curves.h
+```
+
+See [Calibrations](manual/language.md#calibrations) for how a curve is written.
+
 Exit status is `0` for success, `1` when the definition, the bytes or the field values are wrong, and
 `2` when the invocation is -- including `-d` and `-e` together, which are two questions at once.
 

@@ -136,6 +136,13 @@ typedef struct {
    */
   FramedslBitOrder bit_order;
   FramedslByteOrder byte_order;
+
+  /** @brief The calibration `@cal:` attached to this field, or NULL. It points into the definition. */
+  const char *cal;
+  /** @brief Whether framedsl_set_eng() can work on this field: its curve is linear or declares an
+   * `inverse`. False when there is no curve.
+   */
+  bool cal_invertible;
 } FramedslField;
 
 /** @brief A loaded definition. Valid until its result is freed. */
@@ -161,6 +168,17 @@ typedef struct {
   uint16_t packet;
   uint16_t field;
 } FramedslFieldId;
+
+/**
+ * @brief A calibration, resolved once from its name by framedsl_find_cal().
+ *
+ * Treat it as opaque. Like FramedslFieldId it carries which definition it came from, so an id used
+ * against another definition is an error rather than a different curve.
+ */
+typedef struct {
+  uint32_t owner;
+  uint32_t index;
+} FramedslCalId;
 
 /** @brief The outcome of a load: a definition, or the reasons there is not one.
  *
@@ -573,6 +591,114 @@ const char *framedsl_decode(
   size_t *consumed,
   FramedslStatus *status
 );
+
+/* ---- Calibrations -------------------------------------------------------------------------------
+ *
+ * A calibration is a function the definition declares with `cal`, turning a field's raw value into
+ * the engineering value somebody wants -- volts, degrees, metres -- and, where it can, back again.
+ *
+ * The arena holds the raw value only. A curve runs when an engineering value is asked for, so a field
+ * with no curve, or one nobody reads through its curve, costs nothing, and framedsl_get_u64() still
+ * reads the raw value of a calibrated field.
+ *
+ * Arithmetic is double throughout. A raw value above 2^53 does not survive the conversion exactly,
+ * which no sensor reading approaches. */
+
+/**
+ * @brief A calibrated field's engineering value: its raw value through its curve.
+ * @param frame The frame to read from.
+ * @param id A scalar field with a `@cal:`.
+ * @param out Set to the engineering value on success.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if the field has no curve or is not a scalar;
+ * FRAMEDSL_ERROR_RANGE if the curve gave something that is not a finite number for this raw value --
+ * a division by a value that happened to be zero, say.
+ */
+FramedslStatus framedsl_get_eng(const FramedslFrame *frame, FramedslFieldId id, double *out);
+
+/**
+ * @brief Set a calibrated field from an engineering value, through the inverse of its curve.
+ *
+ * A linear curve is inverted automatically; any other needs an `inverse` written in the definition.
+ * The raw value the inverse gives is rounded to the nearest integer, which is the one place precision
+ * is lost: reading the field back gives the engineering value of that integer, which is within half a
+ * raw step of what was set. For a linear curve that is `|scale| / 2`.
+ *
+ * @param frame The frame to write into.
+ * @param id A scalar field with a `@cal:`.
+ * @param value The engineering value.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if the field has no curve, or one that cannot be inverted;
+ * FRAMEDSL_ERROR_RANGE if the raw value it maps to is negative, not a number, or too wide for the
+ * field. Nothing is written on failure.
+ */
+FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double value);
+
+/** @brief How many calibrations the definition declares. */
+size_t framedsl_cal_count(const FramedslDefinition *definition);
+
+/** @brief A calibration's name, by index below framedsl_cal_count(), or NULL. */
+const char *framedsl_cal_name(const FramedslDefinition *definition, size_t index);
+
+/**
+ * @brief Resolve a calibration by name, to call it without a field.
+ * @param definition A loaded definition.
+ * @param name The name after `cal` in the definition.
+ * @param out Set to its id on success.
+ * @return false if the definition has no calibration of that name.
+ */
+bool framedsl_find_cal(const FramedslDefinition *definition, const char *name, FramedslCalId *out);
+
+/**
+ * @brief Run a calibration forward: raw value in, engineering value out.
+ *
+ * @code
+ *     FramedslCalId volts;
+ *     double v;
+ *     if (framedsl_find_cal(def, "volts", &volts) && framedsl_calibrate(def, volts, 2048, &v) == FRAMEDSL_OK) {
+ *       printf("%.3f V\n", v);
+ *     }
+ * @endcode
+ *
+ * @param definition The definition the id came from.
+ * @param cal An id from framedsl_find_cal().
+ * @param raw The raw value.
+ * @param eng Set to the result on success.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD for an id from another definition;
+ * FRAMEDSL_ERROR_RANGE if the result is not a finite number.
+ */
+FramedslStatus framedsl_calibrate(const FramedslDefinition *definition, FramedslCalId cal, double raw, double *eng);
+
+/**
+ * @brief Run a calibration backward: engineering value in, raw value out, unrounded.
+ * @param definition The definition the id came from.
+ * @param cal An id from framedsl_find_cal().
+ * @param eng The engineering value.
+ * @param raw Set to the result on success. Not rounded -- that is framedsl_set_eng()'s business, since
+ * only a field knows it holds an integer.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD for an id from another definition or a curve with no
+ * inverse; FRAMEDSL_ERROR_RANGE if the result is not a finite number.
+ */
+FramedslStatus framedsl_uncalibrate(const FramedslDefinition *definition, FramedslCalId cal, double eng, double *raw);
+
+/**
+ * @brief Every calibration in the definition as C: a header of `static inline double` functions,
+ * `<prefix><name>(double raw)` and, where there is one, `<prefix><name>_inverse(double eng)`.
+ *
+ * For a program that wants a curve compiled in rather than interpreted. The functions are generated
+ * from the compiled curves, not the source, and compute exactly what framedsl_calibrate() and
+ * framedsl_uncalibrate() compute -- as long as the compiler keeps the arithmetic as written: no
+ * `-ffast-math`, and no fused multiply-add contraction (`-ffp-contract=off`, the default under
+ * `-std=c11`).
+ *
+ * snprintf-style: the whole header's length is returned whatever `capacity` was, and passing NULL and
+ * 0 is how to ask it.
+ *
+ * @param definition A loaded definition.
+ * @param prefix Put in front of every function name. NULL means "fdsl_".
+ * @param out Written up to `capacity` and always terminated, when `capacity` is not zero.
+ * @param capacity Size of `out`.
+ * @return The header's length, not counting the terminator. 0 only if it could not be generated.
+ */
+size_t framedsl_emit_c(const FramedslDefinition *definition, const char *prefix, char *out, size_t capacity);
 
 #ifdef __cplusplus
 }

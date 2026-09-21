@@ -507,6 +507,73 @@ mixture of two. See [what a frame holds](#what-a-frame-holds).
 
 The same rule is what stops a decoded frame answering for a packet that did not arrive.
 
+## Calibrations
+
+A field with a `@cal:` reads and writes in engineering units through its curve, as well as in raw
+counts exactly as before. The arena only ever holds the raw value, so a curve costs nothing until
+somebody asks for the engineering one.
+
+```c
+double celsius;
+framedsl_get_eng(frame, board_id, &celsius);   /* raw -> engineering */
+framedsl_set_eng(frame, limit_id, 35.0);       /* engineering -> raw, rounded to the nearest count */
+```
+
+`framedsl_set_eng()` needs the curve run backwards. A linear one is inverted automatically; any other
+needs an `inverse` in the definition, and without one is `FRAMEDSL_ERROR_FIELD`. `FramedslField`
+says which in advance: `cal` is the curve's name or `NULL`, and `cal_invertible` whether it can be
+set. A value whose raw counterpart is negative or too wide for the field is `FRAMEDSL_ERROR_RANGE`,
+and leaves the field alone. A reading the curve cannot turn into a finite number -- a division by a
+value that happened to be zero -- is `FRAMEDSL_ERROR_RANGE` too, rather than an infinity.
+
+**What round-tripping costs.** Only the rounding: a value set and read back is within half a raw
+step of the one set, which for a line `a * raw + b` is `|a| / 2`.
+
+### Calling a curve directly
+
+A curve can be used without a field, for a threshold or a limit a program keeps in engineering
+units:
+
+```c
+FramedslCalId volts;
+framedsl_find_cal(definition, "volts", &volts);
+
+double v, raw;
+framedsl_calibrate(definition, volts, 2048, &v);     /* forward */
+framedsl_uncalibrate(definition, volts, 1.2, &raw);  /* backward, not rounded */
+```
+
+Like a field id, a calibration id is bound to the definition it came from.
+
+### Compiled in: `framedsl_emit_c()`
+
+For code that wants a curve compiled in rather than looked up, `framedsl_emit_c()` -- or
+`frame-dsl defs.fdsl --emit-c` -- writes every calibration as a C header of `static inline double`
+functions:
+
+```c
+static inline double fdsl_celsius(double raw) {
+  return 0.0625 * raw + (-40.0);
+}
+
+static inline double fdsl_celsius_inverse(double eng) {
+  return (eng - (-40.0)) / 0.0625;
+}
+```
+
+The header is generated from the compiled curves, not the source, so it computes exactly what the
+library does, bit for bit -- as long as the compiler keeps the arithmetic as written: no
+`-ffast-math`, and no fused multiply-add contraction (`-ffp-contract=off`, already the default under
+`-std=c11`). It is snprintf-style: pass `NULL` and `0` to ask its length. The prefix is yours to
+choose, so two definitions' curves can live in one program.
+
+### How fast
+
+A curve that reduces to a line -- most do, including one that calls another line -- is compiled to
+one multiply and one add, with the constants folded when the file loads. Anything else is a short
+postfix program over a fixed stack, calls inlined, constants folded, and no allocation. The emitted
+C is the same arithmetic without the interpreter.
+
 ## A whole program
 
 ```c

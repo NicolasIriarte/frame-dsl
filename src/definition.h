@@ -12,6 +12,7 @@
 
 #include "ast.h"
 #include "bytecode.h"
+#include "calibration.h"
 #include "check.h"
 
 struct FramedslDefinition {
@@ -19,6 +20,8 @@ struct FramedslDefinition {
   Layout *layout;
   /** @brief What the runtime actually walks. Built once, when the file loads. */
   Program *program;
+  /** @brief Every `cal` in the file, compiled. Empty rather than NULL when there are none. */
+  CalTable *cals;
 
   /**
    * @brief Stamped into every FramedslFieldId this definition hands out, and checked by every

@@ -1,0 +1,35 @@
+# Calibrations: a sensor's raw counts, and the engineering values they stand for.
+#
+# A `cal` is a named function of one raw value, declared at file level like a packet, and attached to
+# a field with `@cal:`. The arena keeps the raw value; the curve runs when somebody asks for the
+# engineering one (framedsl_get_eng) or sets it (framedsl_set_eng). `frame-dsl <file> --emit-c`
+# writes every curve here out as C, for a program that wants them compiled in.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+# A 12-bit ADC over a 3.3 V reference.
+cal volts(raw) = raw * 3.3 / 4095;
+
+# A 50 mOhm shunt, read through the same ADC. One calibration may call another; this one is still a
+# straight line, and is compiled to one multiply and one add like the others.
+cal current(raw) = volts(raw) / 0.05;
+
+# A temperature sensor in sixteenths of a degree, offset by 40.
+cal celsius(raw) = raw * 0.0625 - 40;
+
+# A thermistor in a divider with a 10 kOhm resistor, read as its resistance. Not a line, so encoding
+# through it needs the inverse written out -- which for a divider is still just arithmetic.
+cal ohms(raw) = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);
+
+pkt TM_POWER {
+  id:       8 = 0x10;
+  [ @cal: volts; ]
+  bus:      12;
+  [ @cal: current; ]
+  load:     12;
+  [ @cal: celsius; ]
+  board:    16;
+  [ @cal: ohms; ]
+  sensor:   16;
+};

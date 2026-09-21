@@ -24,6 +24,7 @@ void ast_free(AstFile *file) {
     free(file->packets[i].fields);
   }
   free(file->packets);
+  free(file->cals);
   region_free(file->region);
   free(file);
 }
@@ -63,4 +64,16 @@ AstField *ast_add_field(AstPacket *packet) {
   AstField *field = &packet->fields[packet->field_count++];
   memset(field, 0, sizeof(*field));
   return field;
+}
+
+AstCal *ast_add_cal(AstFile *file) {
+  AstCal *cals = grow(file->cals, &file->cal_capacity, file->cal_count, sizeof(AstCal));
+  if (cals == NULL) {
+    return NULL;
+  }
+  file->cals = cals;
+
+  AstCal *cal = &file->cals[file->cal_count++];
+  memset(cal, 0, sizeof(*cal));
+  return cal;
 }

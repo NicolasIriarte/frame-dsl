@@ -10,6 +10,8 @@ typedef enum {
   TOK_EOF,
   TOK_IDENT,
   TOK_INT,
+  /** @brief A decimal with a fraction or an exponent, `0.0625` or `4e-3`. Calibrations only. */
+  TOK_REAL,
 
   /* Keywords. Reserved: none of these can be an identifier. The setting names are deliberately not
    * here -- they live behind '@' and are ordinary identifiers the parser looks up in a table, so
@@ -49,6 +51,8 @@ typedef struct {
   size_t length;
   /** @brief TOK_INT. */
   uint64_t value;
+  /** @brief TOK_REAL, and TOK_INT as well, so a calibration can take either without asking. */
+  double real;
 } Token;
 
 typedef struct {

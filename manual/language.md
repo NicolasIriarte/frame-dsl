@@ -1,7 +1,7 @@
 # The Frame-DSL language
 
-What you need to write a definition file. This describes **v1**: the language as it is being
-implemented first. The formal grammar is in [`docs/grammar.ebnf`](../docs/grammar.ebnf); the
+What you need to write a definition file. This describes **v1**, the language as it is being
+implemented first, plus calibrations. The formal grammar is in [`docs/grammar.ebnf`](../docs/grammar.ebnf); the
 reasoning behind the design is in [`docs/design.md`](../docs/design.md).
 
 A definition file describes the layout of packets. It does not describe what they mean, when they
@@ -196,12 +196,13 @@ Three rules:
 ## Attributes
 
 Anything that modifies a declaration rather than describing it is an attribute, written
-`@name: value;`. There are two in v1:
+`@name: value;`. There are three:
 
 | Attribute | Values | Default | Controls |
 | --- | --- | --- | --- |
 | `@bit_order` | `msb_first`, `lsb_first` | `msb_first` | the order a field's bits enter the stream |
 | `@byte_order` | `big_endian`, `little_endian` | `big_endian` | the order the bytes of a multi-byte value appear |
+| `@cal` | the name of a `cal` | none | the curve between a field's raw and engineering value -- see [Calibrations](#calibrations) |
 
 Attribute names are **not** reserved words -- they mean something only after `@`. A field may be
 called `bit_order` if that is what the specification calls it.
@@ -286,6 +287,54 @@ field below it, and most real frames mix byte-wide fields with sub-byte ones; it
 apply to the ones with no bytes to reorder. Only an attribute *written on the field itself* is
 rejected, because only that means someone believed they had specified something.
 
+## Calibrations
+
+A field's raw value is often not the number anybody wants. A 12-bit ADC reading is counts; what the
+operator wants is volts. A calibration is a named function from one to the other, declared at file
+level with `cal` and attached to a field with `@cal:`:
+
+```
+cal volts(raw)   = raw * 3.3 / 4095;
+cal current(raw) = volts(raw) / 0.05;              # a calibration may call another
+cal ohms(raw)    = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);
+
+pkt TM_POWER {
+  id:     8 = 0x10;
+  [ @cal: volts; ]
+  bus:    12;
+  [ @cal: ohms; ]
+  sensor: 16;
+};
+```
+
+The body is arithmetic on doubles: `+ - * /`, parentheses, unary minus, numbers -- whole, fractional
+(`0.0625`) or with an exponent (`4e-3`) -- the parameter, and calls to other calibrations. Nothing
+else. A calibration sees only the value it is given: fields are not in scope, since a curve belongs to
+no packet and the same one may serve several.
+
+**Where it goes.** `@cal:` belongs to a single field, in the `[ ... ]` group in front of it. It is
+not inherited: written at file, packet or block scope it is an error rather than a default, because
+a curve describes one sensor reading and handing it to every field below would be a guess about the
+others.
+
+**Encoding needs an inverse.** Reading a field through its curve always works. Setting one from an
+engineering value needs the curve run backwards:
+
+- A curve that is a straight line -- `a * raw + b`, however it is written, through however many calls
+  -- is inverted automatically.
+- Anything else needs an `inverse (param) = ...` clause after the body, as `ohms` has above. Without
+  one the field can still be read in engineering units, and written in raw ones.
+
+The raw value an inverse produces is rounded to the nearest integer, so a value read back is within
+half a raw step of the one written.
+
+`cal` and `inverse` are words only where a calibration is declared, so neither is reserved: a field
+called `cal` is fine.
+
+Six checks apply, 17 to 22 in [`docs/design.md`](../docs/design.md): calibration names are unique,
+every calibration named must exist, a bare name must be the parameter, no calibration may call
+itself, `@cal:` may only go on a scalar field, and no calibration may divide by a constant zero.
+
 ## Comments
 
 ```
@@ -317,8 +366,8 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-enumerations, conditional fields, repetition, packet composition, CRC polynomial and range, and
-calibration curves.
+enumerations, conditional fields, repetition, packet composition, and CRC polynomial and range.
+Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined
 meaning; it can return as a defined construct if a real frame needs one.
