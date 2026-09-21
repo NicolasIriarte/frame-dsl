@@ -83,7 +83,12 @@ something, which is why the patterns below anchor on the `@'.")
       ;; `pkt NAME' -- the packet being declared.
       (,(concat "\\_<pkt\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
 
-      ;; `cal NAME(param) = ...' and its `inverse (param) = ...'.  Neither word is reserved -- each
+;; `block NAME {' at file level -- a block being declared to be reused -- and `name: NAME'
+      ;; where a field uses one: a name where a width would be can only be a block.
+      (,(concat "\\_<block\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
+      (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\)[ \t]*[{;]") 1 font-lock-type-face)
+
+            ;; `cal NAME(param) = ...' and its `inverse (param) = ...'.  Neither word is reserved -- each
       ;; means something only where a calibration is declared -- so both are matched in that shape
       ;; rather than listed with the keywords, and a field called `cal' stays a field.
       (,(concat "^[ \t]*\\(cal\\)[ \t]+\\(" name "\\)[ \t]*(")

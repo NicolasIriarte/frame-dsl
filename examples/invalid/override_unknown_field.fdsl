@@ -1,0 +1,13 @@
+# REJECTED: check 25 -- an override must name a field of the block it is used with, once.
+#
+# `Header` has no `type`; the discriminator is `id`. Accepting the override would leave the packet
+# with no fixed field and a line that looks as if it had one.
+
+block Header {
+  id:       8;
+  sequence: 16;
+};
+
+pkt TC_PING {
+  hdr: Header { type = 0x01; };
+};

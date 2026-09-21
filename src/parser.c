@@ -372,6 +372,139 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
 }
 
 /* field = identifier [ "[" expression "]" ] ":" width [ "=" integer ] ";" */
+/* ---- Using a named block ---------------------------------------------------------------------
+ *
+ * use      = identifier ":" identifier [ "{" { override } "}" ] ";"
+ * override = identifier { "." identifier } "=" integer ";"
+ *
+ * Only recorded here. compose_file() does the work once every block has been read, since a use and the
+ * declaration it names are checked against each other there (checks 23 to 25). */
+
+static bool parse_override(Parser *parser, AstField *field) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "the name of a field in the block");
+    return false;
+  }
+
+  /* The path, rejoined with dots: `inner.id` is the name the expanded field will carry. */
+  char path[256];
+  size_t used = 0;
+  for (;;) {
+    if (!check(parser, TOK_IDENT)) {
+      error_at_current(parser, "a field name after '.'");
+      return false;
+    }
+    if (used + parser->current.length + 2 > sizeof(path)) {
+      diag_add(parser->diags, line, column, 0, "an override path longer than %zu characters", sizeof(path) - 1);
+      return false;
+    }
+    memcpy(path + used, parser->current.text, parser->current.length);
+    used += parser->current.length;
+    advance(parser);
+    if (!match(parser, TOK_DOT)) {
+      break;
+    }
+    path[used++] = '.';
+  }
+  path[used] = '\0';
+
+  if (!expect(parser, TOK_EQUALS)) {
+    return false;
+  }
+  if (!check(parser, TOK_INT)) {
+    error_at_current(parser, "a number; an override fixes a field's value");
+    return false;
+  }
+
+  AstOverride *override = region_alloc(parser->file->region, sizeof(AstOverride));
+  if (override == NULL) {
+    parser->out_of_memory = true;
+    return false;
+  }
+  memset(override, 0, sizeof(*override));
+  override->name = region_strndup(parser->file->region, path, used);
+  override->value = parser->current.value;
+  override->line = line;
+  override->column = column;
+  advance(parser);
+
+  /* Kept in the order written, so diagnostics come out in it too. */
+  AstOverride **tail = &field->overrides;
+  while (*tail != NULL) {
+    tail = &(*tail)->next;
+  }
+  *tail = override;
+
+  return expect(parser, TOK_SEMICOLON);
+}
+
+static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
+  /* A block's layout is settled where it is declared, so the same block reads the same everywhere.
+   * A group here would have to reach inside and change that. */
+  if (attrs.bit_written || attrs.byte_written || attrs.cal != NULL) {
+    int line = attrs.bit_written ? attrs.bit_line : attrs.byte_written ? attrs.byte_line : attrs.cal_line;
+    int column = attrs.bit_written ? attrs.bit_column : attrs.byte_written ? attrs.byte_column : attrs.cal_column;
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "'%s' uses a block, whose layout is fixed where the block is declared; put the attribute there",
+      field->name
+    );
+  }
+  if (field->reserve != NULL) {
+    diag_add(
+      parser->diags,
+      field->reserve_line,
+      field->reserve_column,
+      0,
+      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
+      field->name
+    );
+  }
+
+  field->block = region_strndup(parser->file->region, parser->current.text, parser->current.length);
+  if (field->block == NULL) {
+    parser->out_of_memory = true;
+    return;
+  }
+  advance(parser);
+
+  if (match(parser, TOK_LBRACE)) {
+    while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID)) {
+      if (!parse_override(parser, field)) {
+        recover_to_field_end(parser);
+        return;
+      }
+    }
+    if (!expect(parser, TOK_RBRACE)) {
+      recover_to_field_end(parser);
+      return;
+    }
+  }
+
+  if (check(parser, TOK_EQUALS)) {
+    diag_add(
+      parser->diags,
+      parser->current.line,
+      parser->current.column,
+      0,
+      "'%s' uses a block, and a block has no single value to fix; fix its fields in '{ ... }' instead",
+      field->name
+    );
+    recover_to_field_end(parser);
+    return;
+  }
+
+  if (!expect(parser, TOK_SEMICOLON)) {
+    recover_to_field_end(parser);
+  }
+}
+
 static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   AstField *field = ast_add_field(packet);
   if (field == NULL) {
@@ -426,6 +559,13 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
     return;
   }
 
+  /* A name where a width would be is an instance of a named block. A width never starts with a name
+   * -- it is a number, a valof() or a parenthesis -- so one token decides. */
+  if (check(parser, TOK_IDENT)) {
+    parse_block_use(parser, field, attrs);
+    return;
+  }
+
   field->width = parse_expression(parser);
 
   if (match(parser, TOK_EQUALS)) {
@@ -459,6 +599,21 @@ static void parse_block(Parser *parser, AstPacket *packet, Attributes attrs) {
   int line = parser->current.line;
   int column = parser->current.column;
   advance(parser); /* 'block' */
+
+  if (check(parser, TOK_IDENT)) {
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "a named block is declared at file level and used as a field, 'name: %.*s;'; inside a packet, "
+      "'block { ... };' is an attribute scope and has no name",
+      (int)parser->current.length,
+      parser->current.text
+    );
+    recover_to_packet_end(parser);
+    return;
+  }
 
   if (!expect(parser, TOK_LBRACE)) {
     recover_to_field_end(parser);
@@ -768,10 +923,11 @@ AstFile *parse(const char *source, DiagList *diags) {
         recover_to_packet_end(&parser);
         continue;
       }
-      refuse_cal_here(&parser, &packet_attrs, "a packet");
+      refuse_cal_here(&parser, &packet_attrs, check(&parser, TOK_BLOCK) ? "a block" : "a packet");
     }
 
-    if (!check(&parser, TOK_PKT)) {
+    const bool is_block = check(&parser, TOK_BLOCK);
+    if (!check(&parser, TOK_PKT) && !is_block) {
       if (check(&parser, TOK_AT)) {
         diag_add(
           parser.diags,
@@ -782,7 +938,7 @@ AstFile *parse(const char *source, DiagList *diags) {
           "put it in a '[ ... ]' group in front of 'pkt'"
         );
       } else {
-        error_at_current(&parser, "'pkt', 'cal' or end of file");
+        error_at_current(&parser, "'pkt', 'block', 'cal' or end of file");
       }
       recover_to_packet_end(&parser);
       continue;
@@ -792,7 +948,9 @@ AstFile *parse(const char *source, DiagList *diags) {
     int column = parser.current.column;
     advance(&parser);
 
-    AstPacket *packet = ast_add_packet(parser.file);
+    /* A named block is shaped like a packet -- a name and fields, attribute scopes and all -- and is
+     * parsed as one. It is only never laid out on its own. */
+    AstPacket *packet = is_block ? ast_add_block(parser.file) : ast_add_packet(parser.file);
     if (packet == NULL) {
       parser.out_of_memory = true;
       break;
@@ -801,7 +959,9 @@ AstFile *parse(const char *source, DiagList *diags) {
     packet->column = column;
 
     if (!check(&parser, TOK_IDENT)) {
-      error_at_current(&parser, "a packet name");
+      error_at_current(
+        &parser, is_block ? "a block name; at file level a block is declared to be reused" : "a packet name"
+      );
       recover_to_packet_end(&parser);
       continue;
     }
@@ -825,6 +985,8 @@ AstFile *parse(const char *source, DiagList *diags) {
       parse_declaration(&parser, packet, body_attrs);
     }
 
+    packet->end_line = parser.current.line;
+    packet->end_column = parser.current.column;
     if (!expect(&parser, TOK_RBRACE)) {
       recover_to_packet_end(&parser);
       continue;
