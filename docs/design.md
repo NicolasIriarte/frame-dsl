@@ -218,6 +218,20 @@ alternative is finding out on a live link.
     than a scalar is a run of bytes with no single value to multiply. Without this the width would be
     computed from whatever the first eight bytes of a payload happened to be.
 
+**Calibrations**
+
+17. Calibration names are unique in a file.
+18. A calibration named by `@cal:` or called from another calibration must exist. A typo would
+    otherwise leave a field silently uncalibrated.
+19. The only bare name a calibration's body may use is its own parameter -- and in an `inverse`, the
+    inverse's parameter. Fields are not in scope: a curve belongs to no packet.
+20. A calibration may not call itself, directly or through another. Calls are inlined at load time
+    and there is no condition to end a recursion. Only a forward body's calls count: an `inverse` may
+    call its own forward curve, which is a different function.
+21. `@cal:` may only go on a scalar field. A bit string is bytes, not one number.
+22. A calibration may not divide by a constant zero. A divisor that is zero only for some raw values
+    is not a load-time error; that reading is refused at run time instead.
+
 ### Deciding distinguishability
 
 Check 12 needs a definition precise enough to implement, and it is worth writing down because the
@@ -362,16 +376,52 @@ and the pool of width instructions. Compilation walks each width expression twic
 what it will emit, once to emit it -- which is what lets the count be known before anything is
 allocated. The alternative was an allocation count that depended on the input.
 
-## Where calibration curves will attach
+## Calibrations
 
-In scope as a concern, not designed. The place they attach is decided, so that adding them later is
-not a redesign: a curve is a per-field transformation between the raw value on the wire and the
-engineering value a caller sees, applied after decode and before encode, on the boundary the arena
-already draws between wire order and host values.
+A curve is a per-field transformation between the raw value on the wire and the engineering value a
+caller sees, applied on the way out of a read and on the way into a write -- on the boundary the
+arena already drew between wire order and host values. The layout rules did not change, which is the
+property that was worth preserving when this section only said where curves would attach.
 
-That means a field instruction gains an optional transform reference, and the arena may need to hold
-an engineering value alongside the raw one. It means the language gains a per-field attribute. It
-does not mean anything about the layout rules changes, which is the property worth preserving now.
+**The arena holds raw values only.** An engineering value is computed when it is asked for. The
+alternative -- holding both -- would have meant a second slot per calibrated field, a decode that
+runs every curve whether anybody wants it or not, and two copies that could disagree. This way a
+field without a curve, or a decode nobody reads in engineering units, costs exactly what it did.
+
+**A calibration is its own function, not a field attribute's expression.** `cal name(raw) = ...;` at
+file scope, attached with `@cal: name;`. Declaring it once and naming it means one curve serves every
+field that shares a sensor, a curve can call another (`current` is `volts` over a shunt), and a
+program can call a curve by name with no field at all -- to turn a limit in volts into counts, say.
+
+**Compiled two ways.** When the file loads, each curve is analysed for being a line: `a * x + b`,
+through negation, constant factors, constant divisors and calls to other lines. Most real curves are,
+and those become two numbers and two floating-point operations. Anything else becomes a postfix
+program over a fixed stack of doubles, shaped like a width program: constant subtrees folded, and
+every call inlined with its argument held in a register, so a program never calls anything. Inlining
+is bounded (`CAL_CODE_MAX`, `CAL_REGISTER_MAX`) so that a file cannot make loading exponential.
+
+Folding a line reassociates the arithmetic -- `raw * 3.3 / 4095` runs as `raw * 0.000805...` -- so a
+result may differ from the source's literal order in the last bit. That is accepted: the compiled form
+*is* the definition of the value, and everything else is generated from it.
+
+**The inverse.** Encoding from an engineering value needs the curve backwards. A line is inverted
+automatically, as `(y - b) / a` rather than as another line, which would round twice. Anything else
+must declare `inverse (eng) = ...;` -- general inversion (bisection over the raw range, say) was
+rejected because it needs the curve to be monotonic, which cannot be checked from the source, and a
+wrong answer from a non-monotonic curve would be silent. An `inverse` somebody wrote wins even over a
+line: they may know something about rounding that solving the line does not. The raw value is rounded
+to the nearest integer, half away from zero, which bounds a round trip at half a raw step.
+
+**Ahead of time.** `framedsl_emit_c()` writes each compiled curve as a `static inline double` function:
+a line as `a * raw + b` with the folded constants printed to 17 significant digits (enough for a
+double to read back as itself), code as the postfix program turned back into fully parenthesised
+infix. Because it comes from the compiled form, it is the same operations in the same order, and a
+test compiles it and compares hex-float output against the library bit for bit. What can still break
+that is the C compiler reassociating or fusing, which `-ffast-math` and FMA contraction do; neither is
+on under `-std=c11`.
+
+A JIT was considered and not built: the line fast path already removes the interpreter from most
+curves, and the emitted C removes it from the rest for anybody who can compile.
 
 ### What a decode reports
 

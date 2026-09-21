@@ -121,6 +121,19 @@ packet whose length is a field inside it. A frame nothing matches, one that runs
 one whose length field claims more than its field reserved are three different messages, because
 they mean three different things to whoever is holding the capture.
 
+A field with a calibration shows its engineering value beside the raw one, and `--emit-c` writes
+every calibration in the file out as C, for a program that wants the curves compiled in:
+
+```sh
+$ frame-dsl examples/calibrated_sensor.fdsl -d "10 80 07 FF 03 20 07 FF"
+...
+    board          800 (0x320) = 10 [celsius]
+...
+$ frame-dsl examples/calibrated_sensor.fdsl --emit-c > curves.h
+```
+
+See [Calibrations](manual/language.md#calibrations) for how a curve is written.
+
 Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
 invocation is.
 
