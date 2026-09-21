@@ -1,10 +1,12 @@
-/* frame-dsl: validate a definition file, describe what is in it, and decode bytes against it.
+/* frame-dsl: validate a definition file, describe what is in it, decode bytes against it, and write
+ * its calibrations out as C.
  *
  * Written against the public header alone, with nothing internal included. That is deliberate: if
  * the tool shipped with the project needs to reach inside, the interface is not finished. Decoding a
  * capture turned out to need nothing that was not already public, which is the useful half of that
  * discipline -- it is an answer, not a rule. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "framedsl.h"
@@ -73,7 +75,14 @@ static void describe(const FramedslDefinition *definition) {
           (unsigned long long)field.fixed
         );
       } else {
-        log_info("    %-14s %s, %llu bits", field.name, offset, (unsigned long long)field.width_bits);
+        log_info(
+          "    %-14s %s, %llu bits%s%s",
+          field.name,
+          offset,
+          (unsigned long long)field.width_bits,
+          field.cal != NULL ? ", cal " : "",
+          field.cal != NULL ? field.cal : ""
+        );
       }
     }
   }
@@ -196,7 +205,22 @@ static void report_frame(
 
     if (field.is_scalar) {
       uint64_t value = 0;
-      if (framedsl_get_u64(frame, id, &value) == FRAMEDSL_OK) {
+      double eng = 0;
+      if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
+        continue;
+      }
+      /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
+       * value is what anybody reading this actually wants to know. */
+      if (field.cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
+        log_base(
+          "    %-14s %llu (%#llx) = %.10g [%s]",
+          field.name,
+          (unsigned long long)value,
+          (unsigned long long)value,
+          eng,
+          field.cal
+        );
+      } else {
         log_base("    %-14s %llu (%#llx)", field.name, (unsigned long long)value, (unsigned long long)value);
       }
       continue;
@@ -269,8 +293,24 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   return status;
 }
 
+/* The calibrations as a C header, on stdout, for a program that wants them compiled in. */
+static int emit_c(const FramedslDefinition *definition) {
+  size_t length = framedsl_emit_c(definition, NULL, NULL, 0);
+  char *header = malloc(length + 1);
+  if (length == 0 || header == NULL) {
+    free(header);
+    log_fail("the calibrations could not be written as C");
+    return 2;
+  }
+  framedsl_emit_c(definition, NULL, header, length + 1);
+  fputs(header, stdout);
+  free(header);
+  return 0;
+}
+
 static void usage(const char *program) {
   log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
+  log_fail("       %s <definition.fdsl> --emit-c", program);
   log_fail("  with no -d, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
 }
@@ -278,6 +318,7 @@ static void usage(const char *program) {
 int main(int argc, char **argv) {
   const char *path = NULL;
   const char *hex = NULL;
+  bool emit = false;
 
   /* The flag may come before or after the file. Nothing here needs an argument parser: two shapes,
    * and anything else is a usage error rather than something to guess at. */
@@ -289,6 +330,8 @@ int main(int argc, char **argv) {
         return 2;
       }
       hex = argv[++i];
+    } else if (strcmp(argv[i], "--emit-c") == 0) {
+      emit = true;
     } else if (path == NULL) {
       path = argv[i];
     } else {
@@ -298,7 +341,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (path == NULL) {
+  if (path == NULL || (emit && hex != NULL)) {
     usage(argv[0]);
     return 2;
   }
@@ -313,6 +356,11 @@ int main(int argc, char **argv) {
   switch (framedsl_status(result)) {
   case FRAMEDSL_OK: {
     const FramedslDefinition *definition = framedsl_definition(result);
+
+    if (emit) {
+      status = emit_c(definition);
+      break;
+    }
 
     if (hex != NULL) {
       /* Static rather than automatic: 64KB is more than a stack frame should carry, and the whole

@@ -1,0 +1,12 @@
+# REJECTED: check 21 -- a calibration applies to a scalar field only.
+#
+# `samples` is 128 bits: a run of bytes rather than one number, so there is no single raw value to
+# put through a curve.
+
+cal volts(raw) = raw * 3.3 / 4095;
+
+pkt TM_ADC {
+  id: 8 = 0x01;
+  [ @cal: volts; ]
+  samples: 128;
+};

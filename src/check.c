@@ -663,6 +663,215 @@ static void check_distinguishable(Checker *checker) {
   }
 }
 
+/* ---- Calibrations (checks 17 to 22) --------------------------------------------------------- */
+
+static const AstCal *find_cal(const AstFile *file, const char *name, size_t *index) {
+  for (size_t i = 0; i < file->cal_count; ++i) {
+    if (strcmp(file->cals[i].name, name) == 0) {
+      if (index != NULL) {
+        *index = i;
+      }
+      return &file->cals[i];
+    }
+  }
+  return NULL;
+}
+
+/* A subtree's value, when it has no name and no call in it -- which is what check 22 needs to see a
+ * division by zero that no raw value could avoid. */
+static bool cal_constant(const CalExpr *expr, double *out) {
+  switch (expr->kind) {
+  case CAL_EXPR_NUMBER:
+    *out = expr->number;
+    return true;
+  case CAL_EXPR_NEGATE:
+    if (!cal_constant(expr->lhs, out)) {
+      return false;
+    }
+    *out = -*out;
+    return true;
+  case CAL_EXPR_BINARY: {
+    double lhs;
+    double rhs;
+    if (!cal_constant(expr->lhs, &lhs) || !cal_constant(expr->rhs, &rhs)) {
+      return false;
+    }
+    switch (expr->op) {
+    case '+':
+      *out = lhs + rhs;
+      break;
+    case '-':
+      *out = lhs - rhs;
+      break;
+    case '*':
+      *out = lhs * rhs;
+      break;
+    default:
+      *out = rhs == 0 ? 0 : lhs / rhs;
+      break;
+    }
+    return true;
+  }
+  default:
+    return false;
+  }
+}
+
+/* Checks 18, 19 and 22 over one body. `param` is the only bare name it may use. */
+static void check_cal_body(Checker *checker, const AstCal *cal, const char *param, const CalExpr *expr) {
+  if (expr == NULL) {
+    return;
+  }
+
+  switch (expr->kind) {
+  case CAL_EXPR_NUMBER:
+    return;
+  case CAL_EXPR_NAME:
+    if (strcmp(expr->name, param) != 0) {
+      fail(
+        checker,
+        expr->line,
+        expr->column,
+        19,
+        "'%s' in calibration '%s' is not its parameter '%s'; a calibration sees only the value it is "
+        "given",
+        expr->name,
+        cal->name,
+        param
+      );
+    }
+    return;
+  case CAL_EXPR_CALL:
+    if (find_cal(checker->file, expr->name, NULL) == NULL) {
+      fail(checker, expr->line, expr->column, 18, "'%s' calls '%s', which is not a calibration", cal->name, expr->name);
+    }
+    check_cal_body(checker, cal, param, expr->lhs);
+    return;
+  case CAL_EXPR_NEGATE:
+    check_cal_body(checker, cal, param, expr->lhs);
+    return;
+  case CAL_EXPR_BINARY: {
+    check_cal_body(checker, cal, param, expr->lhs);
+    check_cal_body(checker, cal, param, expr->rhs);
+    double divisor;
+    if (expr->op == '/' && cal_constant(expr->rhs, &divisor) && divisor == 0) {
+      fail(checker, expr->rhs->line, expr->rhs->column, 22, "calibration '%s' divides by a constant zero", cal->name);
+    }
+    return;
+  }
+  }
+}
+
+/* Check 20: whether `target` can be reached again from the calls in `expr`, by depth-first search.
+ * Asked per calibration, so a curve that only calls *into* somebody else's cycle is not blamed for it.
+ * Only a *forward* body's calls count: an inverse may call its own forward curve, which is a
+ * different function rather than recursion. `seen` stops the walk revisiting a curve. */
+static bool reaches(const AstFile *file, const CalExpr *expr, size_t target, uint8_t *seen) {
+  if (expr == NULL) {
+    return false;
+  }
+  if (expr->kind == CAL_EXPR_CALL) {
+    size_t callee;
+    if (find_cal(file, expr->name, &callee) != NULL) {
+      if (callee == target) {
+        return true;
+      }
+      if (!seen[callee]) {
+        seen[callee] = 1;
+        if (reaches(file, file->cals[callee].body, target, seen)) {
+          return true;
+        }
+      }
+    }
+  }
+  return reaches(file, expr->lhs, target, seen) || reaches(file, expr->rhs, target, seen);
+}
+
+static void check_cals(Checker *checker) {
+  const AstFile *file = checker->file;
+
+  for (size_t i = 0; i < file->cal_count; ++i) {
+    const AstCal *cal = &file->cals[i];
+
+    /* Check 17. */
+    for (size_t j = 0; j < i; ++j) {
+      if (strcmp(file->cals[j].name, cal->name) == 0) {
+        fail(checker, cal->line, cal->column, 17, "there is already a calibration called '%s'", cal->name);
+        break;
+      }
+    }
+
+    check_cal_body(checker, cal, cal->param, cal->body);
+    if (cal->inverse != NULL) {
+      check_cal_body(checker, cal, cal->inverse_param, cal->inverse);
+    }
+  }
+
+  if (file->cal_count > 0) {
+    uint8_t *state = calloc(file->cal_count, 1);
+    if (state == NULL) {
+      fail(checker, 1, 1, 0, "out of memory");
+      return;
+    }
+    for (size_t i = 0; i < file->cal_count; ++i) {
+      memset(state, 0, file->cal_count);
+      if (reaches(file, file->cals[i].body, i, state)) {
+        fail(
+          checker,
+          file->cals[i].line,
+          file->cals[i].column,
+          20,
+          "calibration '%s' calls itself, directly or through another; a curve has to finish",
+          file->cals[i].name
+        );
+      }
+    }
+    free(state);
+  }
+
+  for (size_t p = 0; p < file->packet_count; ++p) {
+    const AstPacket *packet = &file->packets[p];
+    if (checker->layout->packets[p].fields == NULL) {
+      continue; /* its allocation failed, and check_packet() said so */
+    }
+    for (size_t f = 0; f < packet->field_count; ++f) {
+      const AstField *field = &packet->fields[f];
+      if (field->cal == NULL) {
+        continue;
+      }
+
+      /* Check 18, from the field's side. */
+      if (find_cal(file, field->cal, NULL) == NULL) {
+        fail(
+          checker,
+          field->cal_line,
+          field->cal_column,
+          18,
+          "'%s.%s' names the calibration '%s', and there is none",
+          packet->name,
+          field->name,
+          field->cal
+        );
+      }
+
+      /* Check 21. Asked of the width directly rather than of is_scalar, which a width that failed
+       * check 4 leaves unset -- and that failure has been reported already. */
+      const FieldLayout *slot = &checker->layout->packets[p].fields[f];
+      if (slot->variable || slot->width_bits > FRAMEDSL_SCALAR_MAX_BITS) {
+        fail(
+          checker,
+          field->cal_line,
+          field->cal_column,
+          21,
+          "'%s.%s' is a bit string, not a number, so a calibration cannot apply to it",
+          packet->name,
+          field->name
+        );
+      }
+    }
+  }
+}
+
 Layout *check_file(const AstFile *file, DiagList *diags) {
   Layout *layout = calloc(1, sizeof(Layout));
   if (layout == NULL) {
@@ -700,6 +909,7 @@ Layout *check_file(const AstFile *file, DiagList *diags) {
   for (size_t i = 0; i < file->packet_count; ++i) {
     check_packet(&checker, i);
   }
+  check_cals(&checker);
 
   /* Only worth asking once every packet's own fixed fields are known to be sound: a packet that
    * failed check 8 or 11 has a projection nobody should draw conclusions from. */

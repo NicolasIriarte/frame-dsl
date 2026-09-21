@@ -1,6 +1,8 @@
 #include "lexer.h"
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -80,6 +82,61 @@ static void skip_trivia(Lexer *lexer) {
   }
 }
 
+/* The rest of a decimal real, from `start`, which is where its integer digits began. strtod() does the
+ * conversion: correctly rounding a decimal to a double is not something to write by hand. */
+static Token lex_real(Lexer *lexer, int line, int column, size_t start) {
+  Token token = make(TOK_REAL, line, column);
+
+  if (peek(lexer, 0) == '.') {
+    advance(lexer);
+    while (is_digit(peek(lexer, 0))) {
+      advance(lexer);
+    }
+  }
+  if (peek(lexer, 0) == 'e' || peek(lexer, 0) == 'E') {
+    advance(lexer);
+    if (peek(lexer, 0) == '+' || peek(lexer, 0) == '-') {
+      advance(lexer);
+    }
+    while (is_digit(peek(lexer, 0))) {
+      advance(lexer);
+    }
+  }
+
+  if (is_ident_start(peek(lexer, 0)) || peek(lexer, 0) == '.') {
+    diag_add(
+      lexer->diags,
+      lexer->line,
+      lexer->column,
+      0,
+      "unexpected character '%c' immediately after a number",
+      peek(lexer, 0)
+    );
+    token.kind = TOK_INVALID;
+    return token;
+  }
+
+  char digits[64];
+  size_t length = lexer->position - start;
+  if (length >= sizeof(digits)) {
+    diag_add(lexer->diags, line, column, 0, "a real literal of more than %zu characters", sizeof(digits) - 1);
+    token.kind = TOK_INVALID;
+    return token;
+  }
+  memcpy(digits, lexer->source + start, length);
+  digits[length] = '\0';
+
+  token.real = strtod(digits, NULL);
+  if (!isfinite(token.real)) {
+    diag_add(lexer->diags, line, column, 0, "real literal is too large for a double");
+    token.kind = TOK_INVALID;
+    return token;
+  }
+  token.text = lexer->source + start;
+  token.length = length;
+  return token;
+}
+
 static Token lex_number(Lexer *lexer, int line, int column) {
   Token token = make(TOK_INT, line, column);
   size_t start = lexer->position;
@@ -114,6 +171,16 @@ static Token lex_number(Lexer *lexer, int line, int column) {
   } else {
     while (is_digit(peek(lexer, 0))) {
       advance(lexer);
+    }
+
+    /* A fraction or an exponent makes it a real, which only a calibration accepts. Both need a digit
+     * after them, so `8.` stays an error rather than quietly becoming 8.0. */
+    bool fraction = peek(lexer, 0) == '.' && is_digit(peek(lexer, 1));
+    bool exponent =
+      (peek(lexer, 0) == 'e' || peek(lexer, 0) == 'E')
+      && (is_digit(peek(lexer, 1)) || ((peek(lexer, 1) == '+' || peek(lexer, 1) == '-') && is_digit(peek(lexer, 2))));
+    if (fraction || exponent) {
+      return lex_real(lexer, line, column, start);
     }
   }
 
@@ -153,6 +220,7 @@ static Token lex_number(Lexer *lexer, int line, int column) {
   }
 
   token.value = value;
+  token.real = (double)value;
   token.text = lexer->source + start;
   token.length = lexer->position - start;
   return token;
@@ -245,6 +313,8 @@ const char *token_kind_name(TokenKind kind) {
     return "a name";
   case TOK_INT:
     return "a number";
+  case TOK_REAL:
+    return "a real number";
   case TOK_PKT:
     return "'pkt'";
   case TOK_VALOF:
@@ -291,6 +361,11 @@ const char *token_describe(const Token *token) {
   if (token->kind == TOK_IDENT) {
     int length = (int)(token->length < 40 ? token->length : 40);
     snprintf(buffer, sizeof(buffer), "the name '%.*s'", length, token->text);
+    return buffer;
+  }
+  if (token->kind == TOK_REAL) {
+    int length = (int)(token->length < 40 ? token->length : 40);
+    snprintf(buffer, sizeof(buffer), "the number %.*s", length, token->text);
     return buffer;
   }
   if (token->kind == TOK_INT) {

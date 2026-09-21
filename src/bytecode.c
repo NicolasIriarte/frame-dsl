@@ -138,6 +138,19 @@ static uint32_t stack_depth(const WidthInstruction *code, size_t length) {
 
 /* ---- Compilation ----------------------------------------------------------------------------- */
 
+/* The calibration a field names, by index. Check 18 guarantees it exists. */
+static int32_t cal_index(const AstFile *file, const char *name) {
+  if (name == NULL) {
+    return -1;
+  }
+  for (size_t i = 0; i < file->cal_count; ++i) {
+    if (strcmp(file->cals[i].name, name) == 0) {
+      return (int32_t)i;
+    }
+  }
+  return -1;
+}
+
 static size_t round_up(size_t value, size_t alignment) {
   size_t remainder = value % alignment;
   return remainder == 0 ? value : value + (alignment - remainder);
@@ -201,6 +214,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .is_scalar = slot->is_scalar,
         .has_fixed = field->has_fixed,
         .fixed = field->has_fixed ? field->fixed : 0,
+        .cal = cal_index(file, field->cal),
         .bit_order = field->bit_order,
         .byte_order = field->byte_order,
       };

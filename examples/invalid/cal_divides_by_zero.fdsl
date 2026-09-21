@@ -1,0 +1,13 @@
+# REJECTED: check 22 -- a calibration may not divide by a constant zero.
+#
+# `4095 - 4095` is zero whatever the raw value is, so every reading through this curve would fail.
+# A divisor that is zero only for some raw values is not an error here; that reading is refused at
+# run time instead.
+
+cal volts(raw) = raw * 3.3 / (4095 - 4095);
+
+pkt TM_ADC {
+  id: 8 = 0x01;
+  [ @cal: volts; ]
+  reading: 16;
+};

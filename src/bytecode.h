@@ -90,6 +90,10 @@ typedef struct {
   bool has_fixed;
   uint64_t fixed;
 
+  /** @brief Index into the definition's calibrations, or -1. Resolved here so that reading an
+   * engineering value never searches by name. */
+  int32_t cal;
+
   /** @brief Resolved: what applies after file, packet, block and field scope are combined. */
   BitOrder bit_order;
   ByteOrder byte_order;

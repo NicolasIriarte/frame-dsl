@@ -204,7 +204,17 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
   for (size_t n = 0; n < names.count; ++n) {
     for (size_t v = 0; v < values.count; ++v) {
       char definition[256];
-      snprintf(definition, sizeof(definition), "@%s: %s;\npkt A { x: 8 = 1; };", names.words[n], values.words[v]);
+      /* On a byte-wide field rather than at file scope, because `@cal` applies to one field and
+       * nowhere else; and with a calibration named after the value, because `@cal`'s value is the
+       * name of one. Neither changes anything for the attributes that do not care. */
+      snprintf(
+        definition,
+        sizeof(definition),
+        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
+        values.words[v],
+        names.words[n],
+        values.words[v]
+      );
       /* A value belongs to one attribute, so most pairings are rejected. What matters is that every
        * name pairs with at least one value -- a name nothing accepts is a name that has gone. */
       if (loads(definition)) {
