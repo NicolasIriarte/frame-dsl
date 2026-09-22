@@ -42,3 +42,8 @@ jobs:
 
       - name: Run the test suite
         run: make test
+
+      # Built, not run: a timing on a shared runner means nothing, but a benchmark that no longer
+      # compiles would only be noticed the next time somebody wanted a number.
+      - name: Build the benchmark
+        run: make build/bench

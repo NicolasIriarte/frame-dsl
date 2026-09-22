@@ -70,6 +70,7 @@ SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 # library, exactly as somebody else's program would be. A system test runs it, so it cannot bit-rot
 # without a test failing first -- it is an example, and the test is only there to keep it true.
 EXAMPLE_UART_DEVICE := $(BUILD)/uart_device
+BENCH := $(BUILD)/bench
 
 # The library as one file, so a program outside this repository -- a copy of the example being
 # played with, most likely -- compiles with `-Lbuild -lframedsl` instead of naming object files.
@@ -86,7 +87,7 @@ TESTSUITE_SYSTEM_OBJ := $(BUILD)/testsuite_system.o
 COMPILE_COMMANDS := compile_commands.json
 
 # Every first-party C source. Not third_party/ (not ours to reformat) and not build/ (generated).
-FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c)
+FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c bench/*.c)
 
 # .clang-format uses keys that arrived in clang-format 21 (BreakAfterOpenBracketFunction,
 # BreakBeforeCloseBracketFunction). An older binary does not format differently -- it refuses to read
@@ -115,7 +116,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean
+	format-tool hooks clean bench
 
 # Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
 # person running this has in their own configuration cannot make the mode look like it works.
@@ -134,6 +135,12 @@ deps: $(DEPS)
 example: $(EXAMPLE_UART_DEVICE)
 
 lib: $(LIB_ARCHIVE)
+
+# Not part of `test`, and nothing in it fails on a slow result: timing on a shared machine is too noisy
+# to fail a build on. BENCH_SECONDS is the minimum each measurement runs for.
+BENCH_SECONDS ?= 0.25
+bench: $(BENCH)
+	$(BENCH) $(BENCH_SECONDS)
 
 # Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
 # and silently skipped outside a git checkout -- e.g. building from a released tarball, which has no
@@ -178,6 +185,12 @@ $(LIB_ARCHIVE): $(LIB_OBJ)
 $(EXAMPLE_UART_DEVICE): examples/uart_device.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Iinclude examples/uart_device.c -L$(BUILD) -lframedsl -o $@
+
+# Built like the example: a user of the library, against the public header and the archive. -O2 comes
+# from CFLAGS, as it would for anybody building their own program.
+$(BENCH): bench/bench.c $(LIB_ARCHIVE)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Iinclude bench/bench.c -L$(BUILD) -lframedsl -o $@
 
 $(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
 	@mkdir -p $(@D)
