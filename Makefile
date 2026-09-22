@@ -181,11 +181,18 @@ fuzz: $(FUZZ_BINS)
 
 # Every seed and every past crash, through each target, under the sanitizers. Fast: a few hundred
 # inputs, run once each.
+#
+# Wrapped in `timeout` on top of replay.c's own alarm(): the alarm is what usually fires and says which
+# input hung, but it is one process's signal handler, and a CI runner once saw it not fire at all --
+# never diagnosed, not reproducible on three different machines and compilers tried locally. `timeout`
+# is enforced by the kernel from outside the process, so a second failure of the same kind still ends
+# the build instead of hanging it, even without knowing why the first one happened.
+REPLAY_TIMEOUT_SECONDS ?= 120
 test-fuzz-replay: $(REPLAY_BINS)
 	@for target in $(FUZZ_TARGETS); do \
 	  mkdir -p fuzz/regressions/$$target; \
 	  printf "fuzz replay: %s: " $$target; \
-	  $(BUILD)/replay/$$target fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
+	  timeout $(REPLAY_TIMEOUT_SECONDS) $(BUILD)/replay/$$target fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
 	done
 
 # Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
