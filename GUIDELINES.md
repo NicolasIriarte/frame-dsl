@@ -38,7 +38,9 @@ MUST NOT is not negotiable, SHOULD / SHOULD NOT is a default that a stated reaso
    except an issue the model created itself, which it may complete directly.
 4. An AI model MUST NOT merge a PR unless explicitly told to, for that PR, in that moment. Being
    told once does not carry forward to future PRs.
-5. Issues MUST follow the template provided under the `templates/` directory.
+5. Issues MUST follow the template provided under `.forgejo/issue_template/`. Pull requests have a
+   template too, at `.forgejo/PULL_REQUEST_TEMPLATE.md`, whose self-attribution checkbox is not
+   optional -- tick it only once rule 6 above is actually true.
 
 ## Forgejo access
 

@@ -250,7 +250,7 @@ configured.
 | `examples/`          | example definition files, doubling as the parser's fixtures                        |
 | `editors/`           | `frame-dsl-mode.el`, an Emacs major mode for `.fdsl` files                          |
 | `scripts/`           | `vendor_clibs.sh`, which updates the committed CLibs tarballs                      |
-| `templates/`         | issue templates; `GUIDELINES.md` requires issues to follow them                    |
+| `.forgejo/`          | CI, and the issue/PR templates `GUIDELINES.md` requires following                  |
 | `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time                   |
 
 ## Working on this repository

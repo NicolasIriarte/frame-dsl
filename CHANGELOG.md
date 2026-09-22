@@ -6,7 +6,7 @@ All notable changes to this project are recorded here. The format follows
 
 Cutting a release closes out `[Unreleased]` and opens a fresh one above it; a tag whose version has
 nothing written under it fails the release rather than publishing an empty page. See
-`templates/tag_issue.md`.
+`.forgejo/issue_template/tag.md`.
 
 ## [Unreleased]
 
