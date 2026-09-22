@@ -1,0 +1,13 @@
+# REJECTED: check 20 -- a calibration may not call itself, directly or through another.
+#
+# Calls are inlined when the file loads, and there is no condition to stop a recursion, so it could
+# only ever run forever.
+
+cal a(x) = b(x) + 1;
+cal b(x) = a(x) * 2;
+
+pkt TM_ADC {
+  id: 8 = 0x01;
+  [ @cal: a; ]
+  reading: 16;
+};

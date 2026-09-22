@@ -172,15 +172,19 @@ alternative is finding out on a live link.
 
 **Widths**
 
-4. A width expression not containing `valof()` must evaluate to a positive constant.
+4. A width expression not containing `valof()` must evaluate to a positive constant, no more than
+   half a gigabyte -- a width no sane frame reaches, held to stop a mistake from asking the arena for
+   more than that in one field.
 5. A width expression containing `valof()` must reserve a slot, written `name[bytes]`.
-6. A reservation must be a positive constant expression, and must not itself contain `valof()`.
+6. A reservation must be a positive constant expression, must not itself contain `valof()`, and is
+   held to the same half-gigabyte as check 4 -- it becomes bits, and the arena allocates it.
 7. A `valof()` must name a field **declared earlier in the same packet**. Reading a field requires
    knowing where it starts, which requires every field before it to be resolved already.
 
 **Values**
 
-8. A fixed value must fit in its field's declared width.
+8. A fixed value must fit in its field's declared width, and the field must be a scalar -- a bit
+   string is bytes the caller handed over, not a number to hold one against.
 9. A field may not have both `= <value>` and a variable width -- a width unknown until decode time
    cannot also be a discriminator.
 
@@ -248,6 +252,14 @@ alternative is finding out on a live link.
 28. Two different declarations of one name may not reach a file through flat imports. The same
     declaration reached twice -- two libraries importing a third -- is not a clash. A local
     declaration of an imported name is check 1 or 17, reported where it is written.
+
+**Shape**
+
+29. A packet has at most 4096 fields, block and composition expansion included. Found by fuzzing
+    (#59): several checks above, duplicate names foremost, are quadratic in field count -- fine for a
+    real frame's dozens of fields, a multi-minute hang for a fuzzer-sized packet with hundreds of
+    thousands of one-bit fields. Checked before any of them runs, so the packet that would make them
+    slow is rejected in the time check 4 already takes.
 
 ### Deciding distinguishability
 

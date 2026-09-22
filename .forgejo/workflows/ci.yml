@@ -47,3 +47,35 @@ jobs:
       # compiles would only be noticed the next time somebody wanted a number.
       - name: Build the benchmark
         run: make build/bench
+
+      # #59: a bounded fuzz run, only if this runner's clang can produce one. A one-line program probes
+      # -fsanitize=fuzzer before committing to the real build -- a runner without it is a skip, exactly
+      # what the issue asks for, rather than a CI failure nobody installed clang to fix. The probe also
+      # decides FUZZ_FLAGS: some images need --gcc-install-dir pointed at a libstdc++ clang would
+      # otherwise miss (see the Makefile), found by trying the plain link first and only reaching for it
+      # on that specific failure.
+      - name: Fuzz
+        run: |
+          apt-get install -y -qq --no-install-recommends clang || true
+          if ! command -v clang >/dev/null; then
+            echo "no clang on this runner -- skipping the fuzz run"
+            exit 0
+          fi
+
+          probe=$(mktemp --suffix=.c)
+          printf 'int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long n){(void)d;(void)n;return 0;}\n' >"$probe"
+          gcc_install_dir=/usr/lib/gcc/x86_64-linux-gnu/13
+          flags=""
+          if clang -fsanitize=fuzzer,address,undefined -o /tmp/fuzz_probe "$probe" 2>/tmp/fuzz_probe.log; then
+            :
+          elif grep -q 'cannot find -lstdc++' /tmp/fuzz_probe.log \
+              && clang "--gcc-install-dir=$gcc_install_dir" -fsanitize=fuzzer,address,undefined -o /tmp/fuzz_probe "$probe" \
+                2>/tmp/fuzz_probe.log; then
+            flags="--gcc-install-dir=$gcc_install_dir"
+          else
+            echo "this runner's clang does not support -fsanitize=fuzzer -- skipping the fuzz run"
+            cat /tmp/fuzz_probe.log
+            exit 0
+          fi
+
+          make fuzz FUZZ_CC=clang FUZZ_FLAGS="$flags" FUZZ_SECONDS=30

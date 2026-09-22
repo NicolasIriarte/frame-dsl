@@ -1,0 +1,11 @@
+# REJECTED: check 7 -- a valof() may only name a field declared earlier in the same packet.
+#
+# `data` is sized from `len`, which is declared after it. Reading a field means knowing where it
+# starts, and that means every field before it has already been resolved. A decoder walking this
+# packet would reach `data` with nothing to size it by.
+
+pkt TM_BACKWARDS {
+  hdr: 8 = 0xAA;
+  data[64]: valof(len) * 8;
+  len: 16;
+};

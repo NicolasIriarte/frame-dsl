@@ -1,0 +1,12 @@
+# REJECTED: check 8 -- a fixed value must fit in its field's width.
+#
+# 0xFF needs 8 bits and the field is 4. Truncating silently would produce a frame that does not
+# match what the file says, and a decoder built from the same file would then reject it.
+#
+# `body` is 20 bits so the packet totals 24: a fixture should fail the one check it is named for and
+# no other.
+
+pkt TM_OVERFLOW {
+  kind: 4 = 0xFF;
+  body: 20;
+};

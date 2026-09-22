@@ -1074,9 +1074,28 @@ AstFile *parse(const char *source, DiagList *diags) {
     /* The group in front of 'pkt' is the packet's default, so its fields inherit it rather than
      * having written it. */
     Attributes body_attrs = inherited(packet_attrs);
+    size_t diags_before_body = parser.diags->count;
     while (!check(&parser, TOK_RBRACE) && !check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID)
            && !parser.out_of_memory) {
       parse_declaration(&parser, packet, body_attrs);
+    }
+
+    /* The grammar requires at least one declaration, and a packet without fields would encode to no
+     * bytes at all -- a frame nothing could ever decode. Found by fuzzing (#59): checks 11 and 13 both
+     * look at fields, so an empty packet passed every one of them.
+     *
+     * Only reported when the body was clean: a malformed field already leaves field_count at 0 and
+     * reports its own diagnostic, and this one -- anchored on the packet's own opening brace -- would
+     * otherwise sort ahead of it and become the diagnostic callers see first. */
+    if (packet->field_count == 0 && parser.diags->count == diags_before_body) {
+      diag_add(
+        parser.diags,
+        packet->line,
+        packet->column,
+        0,
+        "a %s must declare at least one field",
+        is_block ? "block" : "packet"
+      );
     }
 
     packet->end_line = parser.current.line;

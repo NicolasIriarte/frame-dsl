@@ -1,0 +1,20 @@
+# Severacot laid out uniformly, and repeating the attribute on
+# each 2of them is how you eventually miss  TCs_Sone.
+
+@bit_order:  msb_first;              # file default: applies to every packet below
+@byte_order: big_endian;
+
+[ @byte_order: little_endian; ]      # the whole packet
+pkt TM_MIXED {
+  marker: 16 = 0xCAFE;               # little_endian, from the packet
+
+  [ @byte_order: big_endian; ]       # one field, overriding the p       # bit order is independent of 
+  mode: 8;
+};
+
+pkt TC_PAYLOAD {
+  type: 8 = 0x03;
+  seq: 16;
+  len: 16;                           # counts payload bytes
+  body[806666664]: valof(len) * 8;
+};

@@ -72,6 +72,26 @@ SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 EXAMPLE_UART_DEVICE := $(BUILD)/uart_device
 BENCH := $(BUILD)/bench
 
+# Fuzzing (#59). The targets are fuzz/fuzz_*.c. `make fuzz` runs them under libFuzzer, which needs
+# clang; the replay binaries run every saved input through the same targets with the ordinary compiler,
+# and are part of `make test`, so a regression input keeps being checked on every machine and in CI.
+FUZZ_TARGETS := decode load
+FUZZ_CC ?= clang
+# Extra flags for FUZZ_CC. On a machine where clang picks a gcc installation without libstdc++'s
+# development files, libFuzzer's C++ runtime will not link; point it at one that has them, e.g.
+#   make fuzz FUZZ_CC=clang-18 FUZZ_FLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13
+FUZZ_FLAGS ?=
+FUZZ_SECONDS ?= 60
+# libFuzzer's own per-input timeout defaults to 1200s, entirely separate from -max_total_time above: if
+# one input hangs the target, that one execution blocks for up to 20 minutes before -max_total_time is
+# ever checked again, since the check only runs between completed executions. Neither the decoder nor
+# the loader has any reason to take longer than this on any input, so a run that does is a hang, not a
+# slow machine.
+FUZZ_TIMEOUT ?= 5
+FUZZ_BINS := $(FUZZ_TARGETS:%=$(BUILD)/fuzz/%)
+REPLAY_BINS := $(FUZZ_TARGETS:%=$(BUILD)/replay/%)
+SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+
 # The library as one file, so a program outside this repository -- a copy of the example being
 # played with, most likely -- compiles with `-Lbuild -lframedsl` instead of naming object files.
 LIB_ARCHIVE := $(BUILD)/libframedsl.a
@@ -87,7 +107,7 @@ TESTSUITE_SYSTEM_OBJ := $(BUILD)/testsuite_system.o
 COMPILE_COMMANDS := compile_commands.json
 
 # Every first-party C source. Not third_party/ (not ours to reformat) and not build/ (generated).
-FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c bench/*.c)
+FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c bench/*.c fuzz/*.c)
 
 # .clang-format uses keys that arrived in clang-format 21 (BreakAfterOpenBracketFunction,
 # BreakBeforeCloseBracketFunction). An older binary does not format differently -- it refuses to read
@@ -116,7 +136,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean bench
+	format-tool hooks clean bench fuzz test-fuzz-replay
 
 # Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
 # person running this has in their own configuration cannot make the mode look like it works.
@@ -141,6 +161,32 @@ lib: $(LIB_ARCHIVE)
 BENCH_SECONDS ?= 0.25
 bench: $(BENCH)
 	$(BENCH) $(BENCH_SECONDS)
+
+# Each target for FUZZ_SECONDS, starting from a working copy of its seed corpus -- libFuzzer adds to the
+# corpus it is given, and what it finds interesting belongs in build/, not in the repository. A crash
+# is written to build/fuzz/ as crash-<hash>; copy it into fuzz/regressions/<target>/ once fixed, and
+# `make test` replays it from then on.
+#
+# fuzz/regressions/<target>/ is created if missing: git does not track an empty directory, so a target
+# with no regression yet -- decode, so far -- would not exist on a fresh clone, and both libFuzzer and
+# replay (fuzz/replay.c) refuse to open a corpus directory that is not there at all.
+fuzz: $(FUZZ_BINS)
+	@for target in $(FUZZ_TARGETS); do \
+	  mkdir -p $(BUILD)/fuzz/corpus/$$target fuzz/regressions/$$target && \
+	    cp -n fuzz/corpus/$$target/* $(BUILD)/fuzz/corpus/$$target/ ; \
+	  echo "fuzz: $$target for $(FUZZ_SECONDS)s"; \
+	  $(BUILD)/fuzz/$$target -max_total_time=$(FUZZ_SECONDS) -timeout=$(FUZZ_TIMEOUT) -print_final_stats=1 \
+	    -artifact_prefix=$(BUILD)/fuzz/ $(BUILD)/fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
+	done
+
+# Every seed and every past crash, through each target, under the sanitizers. Fast: a few hundred
+# inputs, run once each.
+test-fuzz-replay: $(REPLAY_BINS)
+	@for target in $(FUZZ_TARGETS); do \
+	  mkdir -p fuzz/regressions/$$target; \
+	  printf "fuzz replay: %s: " $$target; \
+	  $(BUILD)/replay/$$target fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
+	done
 
 # Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
 # and silently skipped outside a git checkout -- e.g. building from a released tarball, which has no
@@ -192,6 +238,17 @@ $(BENCH): bench/bench.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Iinclude bench/bench.c -L$(BUILD) -lframedsl -o $@
 
+# The library is compiled into each fuzz binary from source rather than linked from the archive: the
+# sanitizers and libFuzzer's coverage instrumentation have to reach inside it to see anything.
+$(BUILD)/fuzz/%: fuzz/fuzz_%.c $(LIB_SRC) $(wildcard src/*.h) include/framedsl.h
+	@mkdir -p $(@D)
+	$(FUZZ_CC) $(FUZZ_FLAGS) -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
+	  -D_DEFAULT_SOURCE -Iinclude -Isrc $< $(LIB_SRC) -o $@
+
+$(BUILD)/replay/%: fuzz/fuzz_%.c fuzz/replay.c $(LIB_SRC) $(wildcard src/*.h) include/framedsl.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -g -O1 $(SANITIZE) -D_DEFAULT_SOURCE -Iinclude -Isrc $< fuzz/replay.c $(LIB_SRC) -o $@
+
 $(TESTSUITE_UNIT_OBJ): $(TESTING)/testsuite.c $(UNIT_REGISTRY) | $(DEPS)
 	@mkdir -p $(@D)
 	$(CC) $(THIRD_PARTY_CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -c $< -o $@
@@ -222,7 +279,7 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system test-editors
+test: test-unit test-system test-editors test-fuzz-replay
 
 test-unit: $(UNIT_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)

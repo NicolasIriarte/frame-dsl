@@ -1,0 +1,14 @@
+# A valof() field, exercised at zero, at a middling length and at exactly its reservation.
+#
+# `crc` after it is the interesting part: it lands wherever the resolved width put it, so a row that
+# reads it back is checking that the walk continued from the right offset.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt VARIABLE {
+  hdr:      8 = 0xAA;
+  len:      8;
+  data[8]:  valof(len) * 8;
+  crc:      8;
+};

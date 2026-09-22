@@ -4,6 +4,7 @@
  * CLibs' test suite allows sixteen cases per story, and because these three are separate
  * concerns that happen to share a parser. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "check.h"
@@ -110,6 +111,53 @@ static int us3_tc09_rejects_a_field_with_both_fixed_value_and_max(const TestArgu
   return 0;
 }
 
+/* Found by fuzzing (#59): a fixed value stored as a uint64_t cannot describe a field wider than one,
+ * and encoding it read past those 64 bits. */
+static int us3_tc10_rejects_a_fixed_value_on_a_bit_string(const TestArguments *args) {
+  (void)args;
+  if (!rejected_by("pkt A { h: 8 = 1; b: 72 = 0xCAFE; };", 8)) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
+/* Found by fuzzing (#59): fold()'s literal ceiling is meant as bits, and a reservation is bytes, so
+ * it let a field ask the arena for up to 4GiB before this. */
+static int us3_tc11_rejects_a_reservation_over_the_ceiling(const TestArguments *args) {
+  (void)args;
+  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[600000000]: valof(n) * 8; };", 6)) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
+/* Found by fuzzing (#59): duplicate-name checking, among others, is quadratic in field count -- a
+ * hang for a fuzzer-sized packet, not a crash, which is why -max_total_time alone did not catch it. A
+ * count just over the ceiling is enough to prove the check fires; nothing here needs the tens of
+ * thousands of fields that made it slow before this. */
+static int us3_tc12_rejects_a_packet_with_too_many_fields(const TestArguments *args) {
+  (void)args;
+
+  size_t count = 4097;
+  size_t capacity = 32 + count * 16;
+  char *source = malloc(capacity);
+  if (source == NULL) {
+    FORCE_FAILURE();
+  }
+  size_t length = (size_t)snprintf(source, capacity, "pkt A { h: 8 = 1;");
+  for (size_t i = 0; i < count; ++i) {
+    length += (size_t)snprintf(source + length, capacity - length, " f%zu: 1;", i);
+  }
+  length += (size_t)snprintf(source + length, capacity - length, " pad: 7; };");
+
+  bool found = rejected_by(source, 29);
+  free(source);
+  if (!found) {
+    FORCE_FAILURE();
+  }
+  return 0;
+}
+
 void register_user_story3(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us3_tc01_rejects_a_duplicate_packet_name, "check 1: duplicate packet name", false);
@@ -129,4 +177,13 @@ void register_user_story3(void) {
     "check 9: a field cannot be both variable and a discriminator",
     false
   );
+  ADD_TEST_CASE(
+    us3_tc10_rejects_a_fixed_value_on_a_bit_string, "check 8: a fixed value cannot be given to a bit string", false
+  );
+  ADD_TEST_CASE(
+    us3_tc11_rejects_a_reservation_over_the_ceiling,
+    "check 6: a reservation is held to the same ceiling as a width",
+    false
+  );
+  ADD_TEST_CASE(us3_tc12_rejects_a_packet_with_too_many_fields, "check 29: a packet has at most 4096 fields", false);
 }

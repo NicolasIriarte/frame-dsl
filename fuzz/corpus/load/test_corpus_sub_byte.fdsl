@@ -1,0 +1,20 @@
+# Sub-byte fields packing against each other with no padding, three of them straddling a byte
+# boundary. The CCSDS primary header's shape, which is the case this language exists for.
+#
+# version 3 = 0b000, type 1 = 0, sec 1 = 1, apid 11 = 0b101_0101_0101:
+#   bits:  000 0 1 10101010101
+#   bytes: 0000 1101  0101 0101  ->  0x0D 0x55
+# then seq_flags 2 = 0b11, seq_count 14 = 0x0001:
+#   bits:  11 00000000000001    ->  1100 0000  0000 0001  ->  0xC0 0x01
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt SUB_BYTE {
+  version:   3 = 0b000;
+  type:      1 = 0b0;
+  sec:       1;
+  apid:     11;
+  seq_flags: 2;
+  seq_count:14;
+};

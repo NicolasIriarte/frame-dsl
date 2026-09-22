@@ -1,0 +1,15 @@
+# The same value, the same width, side by side, laid out two ways.
+#
+# `a` is 0x0F msb_first, so its high nibble leads: 0000 1111. `b` is 0x0F lsb_first, which reverses
+# the bits within the field: 1111 0000. Together, 0x0F then 0xF0.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt BIT_ORDER {
+  h: 8 = 0xAA;
+  a: 8;
+
+  [ @bit_order: lsb_first; ]
+  b: 8;
+};

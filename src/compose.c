@@ -145,7 +145,24 @@ static void apply_overrides(
   }
 }
 
+/* Check 29 (src/check.c), applied here too and not only there: the duplicate-name scan just below is
+ * quadratic in `container->field_count`, and that is the count as declared, before COMPOSE_FIELD_MAX
+ * or the checker ever sees it -- a container that declares this many fields directly pays the O(n^2)
+ * cost right here regardless of what either would have said about the result. Found by fuzzing (#59).
+ * Kept equal to check.c's ceiling: a container over it always expands to a packet over it too, so this
+ * never rejects anything the checker would not have. */
+#define COMPOSE_DECLARED_FIELD_CEILING 4096
+
 static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out) {
+  if (container->field_count > COMPOSE_DECLARED_FIELD_CEILING) {
+    char message[256];
+    snprintf(
+      message, sizeof(message), "'%s' declares more fields than a packet or block may ever have", container->name
+    );
+    fail(composer, container->line, container->column, 29, message);
+    return;
+  }
+
   for (size_t f = 0; f < container->field_count; ++f) {
     const AstField *field = &container->fields[f];
 

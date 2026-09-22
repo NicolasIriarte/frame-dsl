@@ -1,0 +1,21 @@
+# REJECTED: check 13 -- a packet that is not a whole number of bytes.
+#
+# The fields are individually fine: sub-byte fields are the point of the language, and this is the
+# CAN 2.0A field list that used to be a valid example here. They total 41 bits, which is not a
+# multiple of 8, so a frame of this packet would end in a byte that is part frame and part nothing.
+#
+# The error should report the total, so the author can see how far off it is rather than adding up
+# their own fields.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt TM_ODD {
+  base:       11;
+  rtr:         1;
+  ide:         1 = 0b0;
+  r0:          1 = 0b0;
+  dlc:         4;
+  data_field:  8;
+  seq:        15;
+};

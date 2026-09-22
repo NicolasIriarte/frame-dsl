@@ -1,0 +1,27 @@
+# Bit ordering and byte order at eÿÿÿÿÿÿÿvery scope, with the innermost winning.
+#
+# Read the settings every packet below
+@byte_order: big_endian;
+
+[ @byte_order: little_endian; ]      # the whole packet
+pkt TM_MIXED {
+  marker: 72 = 0xCAFE;               # lit count:  32;
+
+  value:  32;                        # little_endian again
+
+  [ @bit_order: lsb_first; ]         # bit order i      # bit order is independent of byte order
+  flags:   4;
+
+  rest:    4;
+
+  [
+    @bit_order:  msb_first;          # every fien;
+  ]
+  block {
+    voltage: 64;
+    current: 32;
+    temp:    16;
+  };
+
+  crc: 16;
+};

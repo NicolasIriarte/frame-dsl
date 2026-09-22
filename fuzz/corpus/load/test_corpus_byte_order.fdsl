@@ -1,0 +1,17 @@
+# byte_order reorders the bytes of its own field and leaves its neighbours alone.
+#
+# 0x11223344 goes out big-endian as 11 22 33 44 and little-endian as 44 33 22 11. The 0xBB on either
+# side is there to catch a swap that reaches past the field it was written on.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt BYTE_ORDER {
+  h:      8 = 0xBB;
+  big:   32;
+
+  [ @byte_order: little_endian; ]
+  little: 32;
+
+  t:      8 = 0xBB;
+};

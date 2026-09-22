@@ -9,6 +9,13 @@
  * limit. 2^32 bits is half a gigabyte in one field. */
 #define WIDTH_CEILING ((int64_t)1 << 32)
 
+/* A field count no sane packet reaches, block expansion included. Found by fuzzing (#59): several
+ * checks below -- duplicate names foremost -- are quadratic in field count, which is fine for a real
+ * frame's dozens of fields and is a multi-minute hang for a fuzzer-sized packet with hundreds of
+ * thousands of one-bit fields. Checked before any of them runs, so the packet that would make them slow
+ * is rejected in the time check 4 already takes. */
+#define FIELD_CEILING 4096
+
 typedef struct {
   const AstFile *file;
   DiagList *diags;
@@ -295,6 +302,23 @@ static void project(const AstField *field, uint64_t offset, uint64_t width, uint
  * skipped for a block: a header need not be a whole number of bytes, nor identify anything, on its
  * own. */
 static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout *layout, bool is_block) {
+  /* Check 29, ahead of even the allocation below: once a packet is this big, the quadratic checks
+   * further down -- duplicate names foremost -- are the actual cost, and there is no reason to pay it,
+   * or size the layout for it, just to report the same rejection more slowly. */
+  if (packet->field_count > FIELD_CEILING) {
+    fail(
+      checker,
+      packet->line,
+      packet->column,
+      29,
+      "'%s' has %zu fields, more than a %s may ever have",
+      packet->name,
+      packet->field_count,
+      is_block ? "block" : "packet"
+    );
+    return;
+  }
+
   layout->fields = calloc(packet->field_count == 0 ? 1 : packet->field_count, sizeof(FieldLayout));
   if (layout->fields == NULL) {
     fail(checker, packet->line, packet->column, 0, "out of memory");
@@ -431,6 +455,20 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
           packet->name,
           field->name
         );
+      } else if ((uint64_t)bound > (uint64_t)WIDTH_CEILING / 8) {
+        /* Found by fuzzing (#59): fold()'s own ceiling bounds a literal to WIDTH_CEILING, but that is
+         * meant as bits -- applied to a reservation, which is bytes, it let a field ask the arena for
+         * up to 4GiB instead of the half-gigabyte every other width is held to. */
+        fail(
+          checker,
+          field->reserve->line,
+          field->reserve->column,
+          6,
+          "'%s.%s' reserves %lld bytes, more than any field may ever reserve",
+          packet->name,
+          field->name,
+          (long long)bound
+        );
       } else {
         slot->max_bits = (uint64_t)bound * 8;
       }
@@ -472,11 +510,27 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     slot->offset_known = offset_known;
     slot->offset_bits = offset_known ? offset : 0;
 
-    /* Check 8. */
+    /* Check 8. A fixed value is a number, stored and compared as one; a field wider than a scalar is a
+     * bit string, the bytes the caller handed over, with no single value to hold one against. Found by
+     * fuzzing (#59): nothing stopped a fixed value from being written on one, and encoding it read past
+     * the 64 bits `field->fixed` actually has. */
     if (field->has_fixed) {
       has_fixed = true;
       uint64_t width = slot->width_bits;
-      if (!variable && width > 0 && width < 64 && field->fixed >= ((uint64_t)1 << width)) {
+      if (!variable && width > FRAMEDSL_SCALAR_MAX_BITS) {
+        fail(
+          checker,
+          field->fixed_line,
+          field->fixed_column,
+          8,
+          "'%s.%s' is %llu bits, wider than a scalar's %d -- a fixed value cannot be given to a bit "
+          "string",
+          packet->name,
+          field->name,
+          (unsigned long long)width,
+          FRAMEDSL_SCALAR_MAX_BITS
+        );
+      } else if (!variable && width > 0 && width < 64 && field->fixed >= ((uint64_t)1 << width)) {
         fail(
           checker,
           field->fixed_line,

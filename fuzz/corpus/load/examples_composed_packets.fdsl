@@ -1,0 +1,54 @@
+# Composition: a header written once and reused by every packet, each changing only what differs.
+#
+# A named block is declared at file level and used as a field whose width is the block's name. Its
+# fields are copied into the packet under the instance's name -- `hdr.sequence`, `gyro.z` -- which
+# is also how the C API, `frame-dsl -e` and `-d` address them. `{ id = 0x02; }` fixes a field for this
+# use only, which is how a shared header becomes each packet's discriminator.
+#
+# A block must be declared above anything that uses it. Its layout -- widths, bit and byte order --
+# is decided here, where it is declared, and is the same in every packet.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+block Header {
+  id:       8;              # left open: every packet fixes its own
+  sequence: 16;
+  version:  4 = 0x1;        # fixed by the block, the same everywhere unless a use says otherwise
+  flags:    4;
+};
+
+block Vector3 {
+  x: 16;
+  y: 16;
+  z: 16;
+};
+
+# A block may use another, and a valof() inside one sizes a field of the same instance.
+block Sample {
+  axes:      Vector3;
+  size:      8;
+  extra[32]: valof(size) * 8;
+};
+
+pkt TC_SET_LIMIT {
+  hdr:     Header { id = 0x02; };
+  channel: 8;
+  limit:   32;
+};
+
+pkt TM_ACK {
+  hdr:    Header { id = 0x81; };
+  result: 8;
+};
+
+pkt TM_IMU {
+  hdr:   Header { id = 0x83; flags = 0x3; };
+  accel: Vector3;           # the same block twice: that is why an instance has a name
+  gyro:  Vector3;
+};
+
+pkt TM_SAMPLE {
+  hdr:    Header { id = 0x84; version = 0x2; };
+  sample: Sample { axes.z = 0; };
+};

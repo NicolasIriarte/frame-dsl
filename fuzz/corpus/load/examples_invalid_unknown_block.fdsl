@@ -1,0 +1,13 @@
+# REJECTED: check 23 -- a field whose width is a name must name a block.
+#
+# `Heder` is a typo for `Header`. A name where a width goes can only mean a block, so the message says
+# which name it could not find rather than that a number was expected.
+
+block Header {
+  id:       8;
+  sequence: 16;
+};
+
+pkt TC_PING {
+  hdr: Heder { id = 0x01; };
+};

@@ -1,0 +1,56 @@
+# The protocol examples/uart_device.c speaks over its pretend UART: an application being written on
+# one side, a device that does not exist on the other. Both ends load this file; neither has a byte
+# layout compiled into it, so changing a width here changes both without recompiling either.
+#
+# Telecommands (TC_*) travel to the device, telemetry (TM_*) comes back. Every packet opens with an
+# 8-bit id, and that fixed value is the whole reason a receiver never has to be told what arrived --
+# checks 11 and 12 make sure each packet has one and that no two can be confused.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+############################
+# TCs
+############################
+
+# Ask the device for what it is reading right now.
+pkt TC_HK_REQ {
+  id:       8 = 0x01;
+  sequence: 16;
+};
+
+# Set the limit the device compares its readings against.
+pkt TC_SET_LIMIT {
+  id:       8 = 0x02;
+  sequence: 16;
+  channel:  8;
+  limit:    32;
+};
+
+# Variable size packet
+pkt TC_WRITE {
+  id:        8 = 0x03;
+  size:      8;
+  data[256]: valof(size) * 8;
+  crc:       16;
+};
+
+############################
+# TMs
+############################
+
+# The device's answer to a command: the sequence it is answering, and whether it took it.
+pkt TM_ACK {
+  id:       8 = 0x81;
+  sequence: 16;
+  result:   8;
+};
+
+# Housekeeping: the reading, and the limit the device is holding for that channel.
+pkt TM_HK {
+  id:       8 = 0x82;
+  sequence: 16;
+  channel:  8;
+  reading:  32;
+  limit:    32;
+};

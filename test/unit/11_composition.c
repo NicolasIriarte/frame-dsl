@@ -4,6 +4,7 @@
  * somebody could have written by hand, names and all, so these cases look at the fields it produces
  * and at checks 23 to 25. The bytes it leads to are story 10 of the system tests. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "check.h"
@@ -323,6 +324,33 @@ static int us11_tc15_a_path_is_a_string_on_one_line(const TestArguments *args) {
   return 0;
 }
 
+/* Found by fuzzing (#59): the duplicate-name scan in compose.c's expand() is quadratic in a
+ * container's declared field count, paid before the checker -- or COMPOSE_FIELD_MAX -- ever sees the
+ * result. A count just over the ceiling proves the check fires without needing the tens of thousands
+ * of block instances that made it slow before this. */
+static int us11_tc16_check_29_a_block_or_packet_declares_too_many_fields(const TestArguments *args) {
+  (void)args;
+
+  size_t count = 4097;
+  size_t capacity = strlen(HEADER) + 64 + count * 16;
+  char *source = malloc(capacity);
+  if (source == NULL) {
+    return __LINE__;
+  }
+  size_t length = (size_t)snprintf(source, capacity, "%spkt A { id: 8 = 1;", HEADER);
+  for (size_t i = 0; i < count; ++i) {
+    length += (size_t)snprintf(source + length, capacity - length, " a%zu: Header;", i);
+  }
+  length += (size_t)snprintf(source + length, capacity - length, " };");
+
+  bool found = reports(source, 29, "more fields");
+  free(source);
+  if (!found) {
+    return __LINE__;
+  }
+  return 0;
+}
+
 void register_user_story11(void) {
   START_REGISTERING();
   ADD_TEST_CASE(
@@ -356,4 +384,9 @@ void register_user_story11(void) {
   );
   ADD_TEST_CASE(us11_tc14_an_import_goes_at_the_top, "an import below anything else is refused", false);
   ADD_TEST_CASE(us11_tc15_a_path_is_a_string_on_one_line, "an import's path is a quoted string on one line", false);
+  ADD_TEST_CASE(
+    us11_tc16_check_29_a_block_or_packet_declares_too_many_fields,
+    "check 29: a packet or block has at most 4096 declared fields",
+    false
+  );
 }

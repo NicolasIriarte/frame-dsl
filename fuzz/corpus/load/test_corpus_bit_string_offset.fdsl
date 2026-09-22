@@ -1,0 +1,13 @@
+# A bit string that does not start on a byte boundary, which is the case a memcpy gets wrong.
+#
+# Four bits of 0xA, then nine bytes: each output byte carries the low nibble of one input byte and
+# the high nibble of the next. The 4-bit pad afterwards is what makes the packet whole bytes.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt BIT_STRING_OFFSET {
+  h:     4 = 0xA;
+  wide: 72;
+  pad:   4;
+};
