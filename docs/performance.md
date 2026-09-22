@@ -32,11 +32,30 @@ one operation on one frame; each measurement ran for at least half a second.
 Two runs on this machine differed by up to half as much again on the smallest packets (a whole-byte
 decode measured 121 ns in one and 183 ns in the next), so treat differences under that as noise.
 
-## What the numbers say
+## After copying whole bytes (#62), same machine
+
+Fields now move up to a byte at a time -- a copy on a byte boundary, shifted bytes off one, `msb_first`
+scalars in runs of up to eight bits -- instead of one bit at a time.
+
+| Operation | Packet | Before | After |
+| --- | --- | --- | --- |
+| encode | 8 bytes, whole-byte fields | 183 ns | 67 ns |
+| decode | same | 183 ns | 86 ns |
+| encode | 9 bytes, sub-byte fields and a little-endian one | 227 ns | 110 ns |
+| decode | same | 214 ns | 117 ns |
+| encode | 203 bytes, a `valof()` payload of 200 | 3166 ns | 71 ns |
+| decode | same | 1803 ns | 94 ns |
+| encode | 19 bytes, built from two blocks and a calibrated pair | 411 ns | 137 ns |
+| decode | same | 368 ns | 132 ns |
+
+A payload now costs about what the packet around it does. `lsb_first` scalars still go a bit at a time:
+the order is the reverse of the stream's, and it is rare.
+
+## What the first numbers said
 
 - **Payloads cost about 15 ns a byte to encode and 9 ns to decode, and dominate every frame that has
   one.** Every field is written and read one *bit* at a time, including a byte-aligned run of bytes
-  that could be copied whole. That is the obvious first optimisation, and it is #62.
+  that could be copied whole. That was the obvious first optimisation; it is #62, measured above.
 - **Calibrations are cheap next to a frame.** A linear curve is a multiply and an add, and costs less
   than a tenth of decoding the smallest packet; the bytecode interpreter roughly doubles that. The
   generated C (`--emit-c`) was not measured here, because it is whatever the caller's compiler makes

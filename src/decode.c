@@ -28,11 +28,25 @@ static uint64_t read_scalar(
 ) {
   uint64_t value = 0;
 
-  for (uint64_t j = 0; j < width; ++j) {
-    if (!read_bit(buffer, offset + j)) {
-      continue;
+  if (bit_order == BIT_ORDER_MSB_FIRST) {
+    /* The stream holds the value's bits in order, so they come in runs: what is left of the current
+     * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. */
+    uint64_t position = offset;
+    uint64_t remaining = width;
+    while (remaining > 0) {
+      uint64_t used = position % 8;
+      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
+      uint64_t bits = ((uint64_t)buffer[position / 8] >> (8 - used - run)) & ((1u << run) - 1);
+      value = (value << run) | bits;
+      position += run;
+      remaining -= run;
     }
-    value |= bit_order == BIT_ORDER_MSB_FIRST ? ((uint64_t)1 << (width - 1 - j)) : ((uint64_t)1 << j);
+  } else {
+    for (uint64_t j = 0; j < width; ++j) {
+      if (read_bit(buffer, offset + j)) {
+        value |= (uint64_t)1 << j;
+      }
+    }
   }
 
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
@@ -45,15 +59,21 @@ static uint64_t read_scalar(
   return value;
 }
 
+/* The caller has checked the whole field lies inside the buffer. Off a byte boundary that includes
+ * the byte after the last whole one, which holds the field's final bits. */
 static void read_bytes(const uint8_t *buffer, uint64_t offset, uint8_t *out, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    uint8_t byte = 0;
-    for (uint64_t j = 0; j < 8; ++j) {
-      if (read_bit(buffer, offset + i * 8 + j)) {
-        byte |= (uint8_t)(1u << (7 - j));
-      }
+  const uint8_t *at = buffer + offset / 8;
+  const unsigned shift = (unsigned)(offset % 8);
+
+  if (shift == 0) {
+    if (length > 0) {
+      memcpy(out, at, length);
     }
-    out[i] = byte;
+    return;
+  }
+
+  for (size_t i = 0; i < length; ++i) {
+    out[i] = (uint8_t)((at[i] << shift) | (at[i + 1] >> (8 - shift)));
   }
 }
 

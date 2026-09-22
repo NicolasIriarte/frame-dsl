@@ -52,9 +52,27 @@ static void write_scalar(
     value = swapped;
   }
 
+  /* msb_first is the value's bits in stream order, so it goes out in runs: as many as are left in the
+   * current byte, at most eight at a time, whatever the alignment. The output was zeroed before the
+   * walk and no two fields overlap, so a run is OR'd in rather than written bit by bit. */
+  if (bit_order == BIT_ORDER_MSB_FIRST) {
+    uint64_t position = offset;
+    uint64_t remaining = width;
+    while (remaining > 0) {
+      uint64_t used = position % 8;
+      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
+      uint64_t bits = (value >> (remaining - run)) & ((1u << run) - 1);
+      out[position / 8] |= (uint8_t)(bits << (8 - used - run));
+      position += run;
+      remaining -= run;
+    }
+    return;
+  }
+
+  /* lsb_first puts the value's bits in the opposite order to the stream's, so it stays a bit at a
+   * time. It is the rare case, and reversing a value to reuse the loop above would cost as much. */
   for (uint64_t j = 0; j < width; ++j) {
-    uint64_t bit = bit_order == BIT_ORDER_MSB_FIRST ? (value >> (width - 1 - j)) & 1 : (value >> j) & 1;
-    write_bit(out, offset + j, bit != 0);
+    write_bit(out, offset + j, ((value >> j) & 1) != 0);
   }
 }
 
@@ -62,10 +80,22 @@ static void write_scalar(
  * the field sits. Neither attribute applies to it -- check 15 rejects writing one on a bit-string
  * field -- because these are bytes somebody handed over rather than a number with an order. */
 static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, size_t length) {
-  for (size_t i = 0; i < length; ++i) {
-    for (uint64_t j = 0; j < 8; ++j) {
-      write_bit(out, offset + i * 8 + j, ((bytes[i] >> (7 - j)) & 1) != 0);
+  uint8_t *at = out + offset / 8;
+  const unsigned shift = (unsigned)(offset % 8);
+
+  /* On a byte boundary it is a copy, which is the common case and was the benchmark's biggest cost. */
+  if (shift == 0) {
+    if (length > 0) {
+      memcpy(at, bytes, length);
     }
+    return;
+  }
+
+  /* Off one, each byte straddles two: its high bits finish the current output byte and its low bits
+   * start the next. The output was zeroed before the walk, so both halves are OR'd in. */
+  for (size_t i = 0; i < length; ++i) {
+    at[i] |= (uint8_t)(bytes[i] >> shift);
+    at[i + 1] |= (uint8_t)(bytes[i] << (8 - shift));
   }
 }
 
