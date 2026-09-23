@@ -7,6 +7,6 @@
 # Dropping the brackets is the fix.
 
 pkt TM_REDUNDANT {
-  hdr: 8 = 0xAA;
+  hdr:     8 = 0xAA;
   body[4]: 32;
 };

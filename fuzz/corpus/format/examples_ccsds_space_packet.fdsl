@@ -1,0 +1,33 @@
+# The CCSDS Space Packet primary header, from CCSDS 133.0-B-2.
+#
+# Six of the seven header fields are sub-byte, three of them cross a byte boundary, and the whole
+# header is exactly 48 bits. That combination is the case this language exists for: nothing here is
+# expressible as a packed struct, and nothing here needs padding invented for it.
+#
+# It replaces the CAN 2.0A frame that used to sit in this file. CAN is a bit-stuffed bus protocol
+# with no byte framing at all -- a standard data frame is 44 + 8n bits under every decomposition, so
+# it can never satisfy check 13, and the version written here was wrong besides: its `seq: 15` was
+# really the 15-bit CRC, and it hard-coded a single data byte.
+#
+# `user_data` shows the byte-multiple analysis doing something a literal `* 8` would not cover.
+# CCSDS defines the length field as "number of octets in the packet data field, minus one", so the
+# width is `(valof(data_length) + 1) * 8`. That is not constant, but one factor is a multiple of
+# eight, so the product is -- which is all check 13 needs to know.
+#
+# The reservation is the standard's own limit: a 16-bit length field counting octets minus one tops
+# out at 65536 octets. It is written in bytes, which is what makes that correspondence visible.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt TM_SPACE_PACKET {
+  version:          3 = 0b000;       # fixed: the only version the standard defines
+  type:             1 = 0b0;         # fixed: 0 is telemetry, 1 is telecommand
+  sec_hdr_flag:     1;               # whether a secondary header follows this one
+  apid:            11;               # application process identifier
+  seq_flags:        2;               # standalone, first, continuation or last segment
+  seq_count:       14;               # sequence count, or a name when seq_flags says so
+  data_length:     16;               # octets in the data field, minus one
+
+  user_data[65536]: (valof(data_length) + 1) * 8;
+};

@@ -4,10 +4,11 @@
 # look at first.
 
 cal volts(raw) = raw * 3.3 / 4095;
+
 cal volts(raw) = raw * 5.0 / 4095;
 
 pkt TM_ADC {
-  id: 8 = 0x01;
+  id:      8 = 0x01;
   [ @cal: volts; ]
   reading: 16;
 };

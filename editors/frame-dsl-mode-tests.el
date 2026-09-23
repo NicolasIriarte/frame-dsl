@@ -241,6 +241,77 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
             (should (string-prefix-p "in lib/link.fdsl:3:1: " (nth 3 (car diagnostics))))))
       (delete-directory directory t))))
 
+;; ---------------------------------------------------------------------------------------------
+;; Formatting.
+
+(ert-deftest frame-dsl-tests-format-buffer-rewrites-and-keeps-point ()
+  "The buffer comes back in the tool's layout, with point on the same text."
+  (skip-unless (executable-find frame-dsl-program))
+  (with-temp-buffer
+    (insert "pkt TM {\n\tid:8=1;\n  sequence :16;\n};\n")
+    (let ((frame-dsl-flymake nil))
+      (frame-dsl-mode))
+    (goto-char (point-min))
+    (search-forward "sequence")
+    (frame-dsl-format-buffer)
+    (should (equal (buffer-string) "pkt TM {\n  id:       8 = 1;\n  sequence: 16;\n};\n"))
+    (should (looking-back "sequence" (line-beginning-position)))))
+
+(ert-deftest frame-dsl-tests-format-buffer-leaves-a-broken-buffer-alone ()
+  "A buffer that does not parse is not touched, and the error says why."
+  (skip-unless (executable-find frame-dsl-program))
+  (with-temp-buffer
+    (insert "pkt TM {\n  id: 8\n};\n")
+    (let ((frame-dsl-flymake nil))
+      (frame-dsl-mode))
+    (let ((error (should-error (frame-dsl-format-buffer) :type 'user-error)))
+      (should (string-match-p "expected ';'" (cadr error))))
+    (should (equal (buffer-string) "pkt TM {\n  id: 8\n};\n"))))
+
+;; ---------------------------------------------------------------------------------------------
+;; The language server, through eglot -- the client this mode is written against.
+
+(ert-deftest frame-dsl-tests-eglot-knows-how-to-start-the-server ()
+  "Eglot is told what to run, and it is whatever `frame-dsl-program' names."
+  (skip-unless (require 'eglot nil t))
+  (let ((entry (assq 'frame-dsl-mode eglot-server-programs)))
+    (should entry)
+    (let ((frame-dsl-program "/somewhere/frame-dsl"))
+      (should (equal (funcall (cdr entry)) '("/somewhere/frame-dsl" "--lsp"))))))
+
+(ert-deftest frame-dsl-tests-eglot-reports-the-compilers-diagnostics ()
+  "A buffer managed by eglot shows what the server says about it."
+  (skip-unless (and (require 'eglot nil t) (executable-find frame-dsl-program)))
+  (let* ((directory (make-temp-file "frame-dsl-eglot" t))
+         (file (expand-file-name "broken.fdsl" directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "pkt TM {\n  id: 8\n};\n"))
+          (let ((buffer (find-file-noselect file)))
+            (unwind-protect
+                (with-current-buffer buffer
+                  (let ((frame-dsl-flymake nil))
+                    (frame-dsl-mode))
+                  ;; `eglot-ensure' waits for `post-command-hook', which never runs in batch; this is
+                  ;; what it would have called.
+                  (apply #'eglot (eglot--guess-contact))
+                  ;; Eglot keeps what the server published and hands it to Flymake when Flymake asks;
+                  ;; in batch nothing asks on its own.
+                  (flymake-mode 1)
+                  (with-timeout (20 (error "The server never reported anything"))
+                    (while (null (flymake-diagnostics))
+                      (accept-process-output nil 0.05)
+                      (flymake-start)))
+                  (let ((diagnostic (car (flymake-diagnostics))))
+                    (should (string-match-p "expected ';'" (flymake-diagnostic-text diagnostic)))
+                    ;; Eglot's own severity, which Flymake maps to the error face.
+                    (should (memq (flymake-diagnostic-type diagnostic) '(:error eglot-error)))))
+              (with-current-buffer buffer
+                (when (and (fboundp 'eglot-current-server) (eglot-current-server))
+                  (eglot-shutdown (eglot-current-server))))
+              (kill-buffer buffer))))
+      (delete-directory directory t))))
+
 (provide 'frame-dsl-mode-tests)
 
 ;;; frame-dsl-mode-tests.el ends here

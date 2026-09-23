@@ -1,0 +1,12 @@
+# Whole-byte fields, default orders: the bytes are the values, in order.
+#
+# The baseline. If this row fails, nothing else in the table means anything.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt BYTE_ALIGNED {
+  hdr:  8 = 0xAA;
+  seq:  16;
+  tail: 8;
+};

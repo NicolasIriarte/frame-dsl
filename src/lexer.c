@@ -333,6 +333,36 @@ Token lexer_next(Lexer *lexer) {
   return make(TOK_INVALID, line, column);
 }
 
+Token lexer_next_spelled(Lexer *lexer) {
+  while (peek(lexer, 0) == ' ' || peek(lexer, 0) == '\t' || peek(lexer, 0) == '\r' || peek(lexer, 0) == '\n') {
+    advance(lexer);
+  }
+
+  size_t start = lexer->position;
+  Token token;
+  if (peek(lexer, 0) == '#') {
+    token = make(TOK_COMMENT, lexer->line, lexer->column);
+    while (peek(lexer, 0) != '\0' && peek(lexer, 0) != '\n') {
+      advance(lexer);
+    }
+  } else {
+    token = lexer_next(lexer);
+  }
+
+  /* A comment's trailing spaces are not part of what it says, and would otherwise survive every
+   * reformat as invisible noise at the end of a line. */
+  size_t end = lexer->position;
+  if (token.kind == TOK_COMMENT) {
+    while (end > start
+           && (lexer->source[end - 1] == ' ' || lexer->source[end - 1] == '\t' || lexer->source[end - 1] == '\r')) {
+      end -= 1;
+    }
+  }
+  token.text = lexer->source + start;
+  token.length = end - start;
+  return token;
+}
+
 const char *token_kind_name(TokenKind kind) {
   switch (kind) {
   case TOK_EOF:
@@ -383,6 +413,8 @@ const char *token_kind_name(TokenKind kind) {
     return "a quoted path";
   case TOK_INVALID:
     return "invalid input";
+  case TOK_COMMENT:
+    return "a comment";
   }
   return "something";
 }

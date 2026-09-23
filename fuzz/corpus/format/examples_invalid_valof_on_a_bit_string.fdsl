@@ -1,0 +1,11 @@
+# REJECTED: check 16 -- a valof() must name a scalar field.
+#
+# `len` is 128 bits, so it has no single value to compute a width from. Allowing it would mean the
+# length of `data` came from whatever the first eight bytes of that field happened to hold, which is
+# not a rule anybody could predict from reading the file.
+
+pkt TM_WIDE_LENGTH {
+  hdr: 8 = 0xAA;
+  len: 128;
+  data[64]: valof(len) * 8;
+};

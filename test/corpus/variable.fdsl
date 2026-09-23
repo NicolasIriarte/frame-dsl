@@ -7,8 +7,8 @@
 @byte_order: big_endian;
 
 pkt VARIABLE {
-  hdr:      8 = 0xAA;
-  len:      8;
-  data[8]:  valof(len) * 8;
-  crc:      8;
+  hdr:     8 = 0xAA;
+  len:     8;
+  data[8]: valof(len) * 8;
+  crc:     8;
 };

@@ -1,0 +1,13 @@
+# REJECTED: check 5 -- a width that depends on another field must reserve a slot.
+#
+# `data` is sized per frame, so nothing here says how much room the arena should set aside for it.
+# Requirement 2 in docs/scope.md asks that encoding and decoding never allocate, which is only
+# possible if every field's slot is sized once, when the file loads.
+#
+# Writing `data[64]:` would fix it.
+
+pkt TM_UNBOUNDED {
+  hdr: 8 = 0xAA;
+  len: 32;
+  data: valof(len) * 8;
+};

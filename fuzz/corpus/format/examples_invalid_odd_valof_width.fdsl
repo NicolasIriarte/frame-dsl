@@ -1,0 +1,17 @@
+# REJECTED: check 13 -- a variable width that is not provably a whole number of bytes.
+#
+# The other half of check 13. The fixed-width fields here add up to 40 bits, which is fine on its
+# own, but `payload` is three bits per unit of `count`. Whether the packet lands on a byte boundary
+# would depend on the value of `count` in each frame, which is not something a definition may leave
+# open: the width has to be a multiple of 8 for every frame, or it is rejected here.
+#
+# `valof(count) * 8` or `(valof(count) + 1) * 8` would both be accepted.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt TM_ODD_PAYLOAD {
+  header:  8 = 0xAA;
+  count:  32;
+  payload[384]: valof(count) * 3;
+};

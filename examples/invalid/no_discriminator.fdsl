@@ -8,11 +8,11 @@
 # It is 48 bits, deliberately: a fixture should fail the one check it is named for and no other.
 
 pkt TM_UNIDENTIFIED {
-  version:       3;
-  type:          1;
-  sec_hdr_flag:  1;
+  version:      3;
+  type:         1;
+  sec_hdr_flag: 1;
   apid:         11;
-  seq_flags:     2;
+  seq_flags:    2;
   seq_count:    14;
   data_length:  16;
 };

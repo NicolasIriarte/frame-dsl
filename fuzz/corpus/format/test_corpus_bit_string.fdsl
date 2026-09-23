@@ -1,0 +1,10 @@
+# A field wider than 64 bits: a bit string, read and written as bytes. Neither ordering attribute
+# applies to one (check 15), so it goes out as the bytes it was handed.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt BIT_STRING {
+  h:     8 = 0xAA;
+  wide: 72;
+};

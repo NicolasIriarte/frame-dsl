@@ -12,6 +12,7 @@
 #include "compose.h"
 #include "definition.h"
 #include "diag.h"
+#include "format.h"
 #include "import.h"
 #include "lint.h"
 #include "parser.h"
@@ -225,6 +226,22 @@ FramedslResult *framedsl_load_source(const char *source, const char *path) {
     return framedsl_load_string(NULL, path);
   }
   return load_as(source, path);
+}
+
+FramedslStatus framedsl_format(const char *source, char **out) {
+  if (source == NULL || out == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  DiagList diags;
+  diag_init(&diags);
+  char *formatted = format_source(source, &diags);
+  bool invalid = diag_error_count(&diags) > 0;
+  diag_free(&diags);
+  if (formatted == NULL) {
+    return invalid ? FRAMEDSL_ERROR_INVALID : FRAMEDSL_ERROR_MEMORY;
+  }
+  *out = formatted;
+  return FRAMEDSL_OK;
 }
 
 void framedsl_result_free(FramedslResult *result) {

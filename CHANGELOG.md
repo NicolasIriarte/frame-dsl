@@ -19,6 +19,17 @@ nothing written under it fails the release rather than publishing an empty page.
 - **Diagnostics have a severity and a span.** `FramedslDiagnostic` gains `severity` (error or
   warning; a warning does not fail the load) and `end_line`/`end_column`, the end of the token the
   problem is about. `framedsl_load_source()` loads a string as though it were a named file.
+- **A language server**: `frame-dsl --lsp`. Diagnostics as you type (on the buffer, not the file on
+  disk, with imports resolved from beside it), formatting, and semantic highlighting classified by the
+  compiler's own lexer. JSON-RPC over stdio with a hand-written JSON reader and writer, fuzzed like
+  the loader. `frame-dsl-mode` registers it with eglot and lsp-mode, so `M-x eglot` needs no
+  configuration. `docs/highlighting.md` is now `docs/editors.md`, and `manual/editors.md` is new.
+- **A formatter.** `frame-dsl <file>... --format` rewrites definition files into one layout -- two
+  spaces, no tabs, fields aligned on their widths, trailing comments aligned, numbers and comments
+  kept as written -- and `--format --check` reports the files that would change. It refuses a file
+  that does not parse. `framedsl_format()` is the same thing through the API, and
+  `frame-dsl-format-buffer` in Emacs. `make format` and `make format-check` cover `.fdsl` files, and
+  every one in the repository is now in the layout.
 - **Warnings**, which do not fail a load: a block, calibration or import nothing uses (check 30, only
   in a file with packets -- a file without is a library), and an attribute repeating what an enclosing
   written attribute already says (check 31). An imported file's warnings are not repeated in the

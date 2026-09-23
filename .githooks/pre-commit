@@ -1,5 +1,6 @@
 #!/bin/sh
-# Auto-formats staged C sources before they are committed, and re-stages the result.
+# Auto-formats staged C sources and definition files before they are committed, and re-stages the
+# result.
 #
 # Convenience only: CI's `make format-check` is what actually enforces formatting, since nothing
 # stops --no-verify or a clone that never ran `make` to wire this hook up in the first place.
@@ -8,6 +9,20 @@ set -e
 # Same override the Makefile takes, for the same reason: on a distribution whose `clang-format` is
 # older than 21 the binary to run is clang-format-22, and it is worth being able to say so here too.
 CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
+
+# Definition files are formatted by the tool itself (#29), so only when there is a built one to run --
+# a fresh clone that has not run `make` yet commits them as they are, and CI's format-check still
+# catches it. A file that does not parse is left alone and its errors printed; that does not block the
+# commit, since the hook is a convenience and the file may be a work in progress.
+if [ -x build/frame-dsl ]; then
+  staged_fdsl() {
+    git diff --cached --name-only -z --diff-filter=ACMR -- 'examples/*.fdsl' 'examples/*/*.fdsl' 'test/corpus/*.fdsl'
+  }
+  staged_fdsl | xargs -0 -r build/frame-dsl --format || true
+  staged_fdsl | xargs -0 -r git add
+else
+  echo "pre-commit: build/frame-dsl not built, not formatting .fdsl files (CI will still check this)" >&2
+fi
 
 if ! command -v "$CLANG_FORMAT" >/dev/null 2>&1; then
   echo "pre-commit: $CLANG_FORMAT not found on PATH, skipping (CI will still check this)" >&2
@@ -31,3 +46,4 @@ staged() {
 
 staged | xargs -0 -r "$CLANG_FORMAT" -i
 staged | xargs -0 -r git add
+

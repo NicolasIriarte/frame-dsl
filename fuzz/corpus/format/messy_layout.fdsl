@@ -1,0 +1,28 @@
+# header comment
+
+
+
+
+@bit_order:msb_first;
+
+
+@byte_order :   little_endian; # trailing
+cal  f( x )=-x*2+( 3-x )/4 inverse(y)=y ;
+[@byte_order:big_endian;]
+pkt	TM_A{
+	id:8=0xAA;   # the id
+  # standalone inside
+
+
+  len : 16 ;
+  [ @bit_order: lsb_first;   # why
+    @byte_order: little_endian; ]
+  data [ 32 ] :valof( len )*8-32;
+  block {
+      x:8;
+  };
+  h : l . Header {id=1;flags=0x3 ;};
+
+
+};
+# trailing file comment

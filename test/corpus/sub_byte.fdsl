@@ -14,7 +14,7 @@ pkt SUB_BYTE {
   version:   3 = 0b000;
   type:      1 = 0b0;
   sec:       1;
-  apid:     11;
+  apid:      11;
   seq_flags: 2;
-  seq_count:14;
+  seq_count: 14;
 };

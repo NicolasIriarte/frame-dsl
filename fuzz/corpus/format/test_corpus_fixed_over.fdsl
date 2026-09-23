@@ -1,0 +1,11 @@
+# A discriminator the caller writes over. The encoder takes it from the definition, so the frame
+# identifies itself whatever is in the slot -- and it decodes back as the definition's value, not as
+# what the caller put there.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+pkt FIXED_OVER {
+  hdr:  8 = 0xAA;
+  body: 8;
+};

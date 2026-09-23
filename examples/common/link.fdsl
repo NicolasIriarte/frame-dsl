@@ -7,7 +7,7 @@
 @byte_order: big_endian;
 
 block Header {
-  id:       8;              # each packet fixes its own
+  id:       8;  # each packet fixes its own
   sequence: 16;
 };
 

@@ -1,0 +1,12 @@
+# REJECTED: check 19 -- the only bare name a calibration may use is its own parameter.
+#
+# A curve sees the value it is given and nothing else. `offset` here reads like a reference to a
+# field, and fields are not in scope: a calibration belongs to no packet.
+
+cal volts(raw) = raw * 3.3 / 4095 - offset;
+
+pkt TM_ADC {
+  id: 8 = 0x01;
+  [ @cal: volts; ]
+  reading: 16;
+};

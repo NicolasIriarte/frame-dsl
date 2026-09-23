@@ -476,6 +476,60 @@ itself, `@cal:` may only go on a scalar field, and no calibration may divide by 
 That is the only comment form. There is no block comment: a definition file is short, every editor
 comments a region by prefixing its lines, and it leaves `/` meaning division and nothing else.
 
+## Layout
+
+There is one layout, and `frame-dsl <file> --format` writes it -- nobody has to remember it, and a
+review never has to discuss it. It is the layout every file under `examples/` is in:
+
+```
+@bit_order:  msb_first;
+@byte_order: little_endian;
+
+[ @byte_order: big_endian; ]
+pkt TM_STATUS {
+  id:       8 = 0x10;  # the discriminator
+  hdr:      Header { flags = 0x3; };
+  size:     8;
+  data[64]: valof(size) * 8;
+  [
+    @bit_order:  lsb_first;
+    @byte_order: little_endian;
+  ]
+  block {
+    a:  8;
+    bb: 8;
+  };
+  crc: 16;
+};
+```
+
+- **Two spaces a level**, and no tabs anywhere. Packets, blocks and multi-line attribute groups nest.
+- **Fields align on their widths.** The colon stays on the name, and the width starts in one column
+  for every field of a *run*: the fields directly inside one packet or block. Blank lines, comments
+  and attribute groups do not end a run; a nested `block { }` does, so the fields after it align on
+  their own. File settings align on their values the same way, and so do the settings of a group.
+- **Trailing comments align too**, two spaces past the longest line of the run that has one.
+- **One setting in a group stays on one line**, `[ @byte_order: big_endian; ]`; more than one is one
+  setting per line.
+- **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
+  parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
+  on its line: `hdr: Header { id = 0x02; flags = 0x3; };`. A calibration is one line.
+- **Blank lines**: at most one in a row, none just inside a brace, exactly one between top-level
+  declarations -- a comment right in front of one stays with it. Imports stay together, and so do
+  file settings. The file ends in exactly one newline.
+- **Nothing else changes.** Numbers keep their spelling -- `0xCAFE` stays hex, `0b1010` binary -- and
+  a comment's text is never touched, only moved to its line's indentation. A comment in the middle of
+  a declaration stays there, and the declaration goes on on the next line, indented further.
+
+A file that does not parse is not formatted at all: its errors are printed and it is left as it
+was. One that parses and then fails a check is formatted like any other.
+
+```sh
+frame-dsl examples/*.fdsl --format           # rewrites any that are not in the layout
+frame-dsl examples/*.fdsl --format --check   # changes nothing; names those that would change
+frame-dsl - --format < in.fdsl > out.fdsl    # standard input to standard output
+```
+
 ## Complete examples
 
 [`examples/`](../examples) holds definition files that are kept valid against this document and are

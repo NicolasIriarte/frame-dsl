@@ -4,7 +4,11 @@
  * Written against the public header alone, with nothing internal included. That is deliberate: if
  * the tool shipped with the project needs to reach inside, the interface is not finished. Decoding a
  * capture turned out to need nothing that was not already public, which is the useful half of that
- * discipline -- it is an answer, not a rule. */
+ * discipline -- it is an answer, not a rule.
+ *
+ * The one exception is `--lsp`, which hands over to the language server (src/lsp.c) and nothing else.
+ * That server does reach inside -- semantic highlighting is the lexer's answer, and publishing the
+ * lexer would be making an interface for one caller in this repository. */
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +16,7 @@
 
 #include "framedsl.h"
 #include "logger.h"
+#include "lsp.h"
 
 /* The largest capture this tool will take, in bytes. A frame is a few dozen bytes and a hex string
  * on a command line is bounded by the shell long before this; the number exists so that the buffer
@@ -107,6 +112,101 @@ static FramedslResult *load_path(const char *path, const char *stdin_name) {
   char *source = read_stdin();
   FramedslResult *result =
     stdin_name != NULL ? framedsl_load_source(source, stdin_name) : framedsl_load_string(source, "<stdin>");
+  free(source);
+  return result;
+}
+
+/* All of a file, terminated. NULL if it could not be read. */
+static char *read_file(const char *path) {
+  FILE *handle = fopen(path, "rb");
+  if (handle == NULL) {
+    return NULL;
+  }
+  size_t capacity = 4096;
+  size_t used = 0;
+  char *text = malloc(capacity);
+  while (text != NULL) {
+    if (used + 1 >= capacity) {
+      char *grown = realloc(text, capacity * 2);
+      if (grown == NULL) {
+        free(text);
+        text = NULL;
+        break;
+      }
+      text = grown;
+      capacity *= 2;
+    }
+    size_t got = fread(text + used, 1, capacity - used - 1, handle);
+    used += got;
+    if (got == 0) {
+      text[used] = '\0';
+      break;
+    }
+  }
+  bool failed = ferror(handle) != 0;
+  fclose(handle);
+  if (failed) {
+    free(text);
+    return NULL;
+  }
+  return text;
+}
+
+/* --format on one file. In place, and only when something changes, so a formatted file keeps its
+ * timestamp; `-` goes from standard input to standard output. With `check`, nothing is written and a
+ * file that would change is named instead. A file that does not parse is left exactly as it is, and
+ * its errors are printed the way --check prints them. Returns the file's exit status. */
+static int format_one(const char *path, const char *stdin_name, bool check) {
+  const bool piped = strcmp(path, "-") == 0;
+  const char *name = piped ? (stdin_name != NULL ? stdin_name : "<stdin>") : path;
+  char *source = piped ? read_stdin() : read_file(path);
+  if (source == NULL) {
+    printf("%s: error: cannot read '%s'\n", name, name);
+    return 2;
+  }
+
+  char *formatted = NULL;
+  FramedslStatus status = framedsl_format(source, &formatted);
+  if (status == FRAMEDSL_ERROR_INVALID) {
+    /* The load stops at the same syntax errors the formatter did, and says what they are. */
+    FramedslResult *result = framedsl_load_source(source, name);
+    for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
+      if (framedsl_diagnostic(result, i)->severity != FRAMEDSL_SEVERITY_ERROR) {
+        continue;
+      }
+      const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
+      printf("%s:%d:%d: error: %s\n", diag->file != NULL ? diag->file : name, diag->line, diag->column, diag->message);
+    }
+    framedsl_result_free(result);
+    free(source);
+    return 1;
+  }
+  if (status != FRAMEDSL_OK) {
+    printf("%s: error: out of memory\n", name);
+    free(source);
+    return 2;
+  }
+
+  int result = 0;
+  const bool changed = strcmp(source, formatted) != 0;
+  if (check) {
+    if (changed) {
+      printf("%s\n", name);
+      result = 1;
+    }
+  } else if (piped) {
+    fputs(formatted, stdout);
+  } else if (changed) {
+    FILE *handle = fopen(path, "wb");
+    if (handle == NULL || fputs(formatted, handle) == EOF) {
+      printf("%s: error: cannot write '%s'\n", path, path);
+      result = 2;
+    }
+    if (handle != NULL && fclose(handle) != 0) {
+      result = 2;
+    }
+  }
+  free(formatted);
   free(source);
   return result;
 }
@@ -665,6 +765,8 @@ static void usage(const char *program) {
   log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
   log_fail("       %s <definition.fdsl> --emit-c", program);
   log_fail("       %s <definition.fdsl>... --check [--werror]", program);
+  log_fail("       %s <definition.fdsl>... --format [--check]", program);
+  log_fail("       %s --lsp        speak the Language Server Protocol on stdin and stdout", program);
   log_fail("  a definition of '-' is standard input; --stdin-name <path> says which file it is");
   log_fail("  with none of them, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
@@ -674,6 +776,8 @@ static void usage(const char *program) {
 int main(int argc, char **argv) {
   const char *path = NULL;
   bool check = false;
+  bool format = false;
+  bool lsp = false;
   bool werror = false;
   const char *stdin_name = NULL;
   const char *hex = NULL;
@@ -723,6 +827,10 @@ int main(int argc, char **argv) {
       emit = true;
     } else if (strcmp(argv[i], "--check") == 0) {
       check = true;
+    } else if (strcmp(argv[i], "--lsp") == 0) {
+      lsp = true;
+    } else if (strcmp(argv[i], "--format") == 0) {
+      format = true;
     } else if (strcmp(argv[i], "--werror") == 0) {
       werror = true;
     } else if (strcmp(argv[i], "--stdin-name") == 0) {
@@ -753,7 +861,9 @@ int main(int argc, char **argv) {
 
   /* Each of these is a guess the tool would otherwise have to make about which one was meant. */
   const char *conflict = NULL;
-  if (hex != NULL && packet != NULL) {
+  if (lsp && (path_count > 0 || check || format || emit || hex != NULL || packet != NULL || werror)) {
+    conflict = "--lsp talks to an editor on stdin and stdout, and takes nothing else";
+  } else if (hex != NULL && packet != NULL) {
     conflict = "-d and -e are two different questions; ask one at a time";
   } else if (packet == NULL && assigned > 0) {
     conflict = "field=value only means something with -e";
@@ -763,12 +873,16 @@ int main(int argc, char **argv) {
     conflict = "--emit-c writes the calibrations out; it does not decode or encode as well";
   } else if (packet == NULL && quiet) {
     conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
+  } else if (format && (emit || hex != NULL || packet != NULL)) {
+    conflict = "--format rewrites the definition; it does not decode, encode or emit as well";
+  } else if (format && werror) {
+    conflict = "--werror is about warnings, and --format does not report any";
   } else if (check && (emit || hex != NULL || packet != NULL)) {
     conflict = "--check only reports on the definition; it does not decode, encode or emit as well";
   } else if (werror && !check) {
     conflict = "--werror decides --check's exit status, and means nothing without it";
-  } else if (path_count > 1 && !check) {
-    conflict = "only --check takes more than one definition file";
+  } else if (path_count > 1 && !check && !format) {
+    conflict = "only --check and --format take more than one definition file";
   } else if (from_stdin > 1) {
     conflict = "standard input can be read once; name '-' once";
   } else if (stdin_name != NULL && from_stdin == 0) {
@@ -782,11 +896,29 @@ int main(int argc, char **argv) {
     return 2;
   }
 
+  /* Before the check below: the server is told what to work on by the editor, not by an argument. */
+  if (lsp) {
+    free(assignments);
+    free(paths);
+    return lsp_serve(stdin, stdout);
+  }
+
   if (path == NULL) {
     usage(argv[0]);
     free(assignments);
     free(paths);
     return 2;
+  }
+
+  if (format) {
+    int status = 0;
+    for (size_t i = 0; i < path_count; ++i) {
+      int one = format_one(paths[i], stdin_name, check);
+      status = one > status ? one : status;
+    }
+    free(assignments);
+    free(paths);
+    return status;
   }
 
   if (check) {

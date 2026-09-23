@@ -6,12 +6,12 @@
 
 pkt TC_PING {
   type: 8 = 0x01;
-  seq: 16;
+  seq:  16;
 };
 
 pkt TC_SET_MODE {
   type: 8 = 0x02;
-  seq: 16;
+  seq:  16;
   mode: 8;
 };
 

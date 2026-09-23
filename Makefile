@@ -75,7 +75,7 @@ BENCH := $(BUILD)/bench
 # Fuzzing (#59). The targets are fuzz/fuzz_*.c. `make fuzz` runs them under libFuzzer, which needs
 # clang; the replay binaries run every saved input through the same targets with the ordinary compiler,
 # and are part of `make test`, so a regression input keeps being checked on every machine and in CI.
-FUZZ_TARGETS := decode load
+FUZZ_TARGETS := decode load format json
 FUZZ_CC ?= clang
 # Extra flags for FUZZ_CC. On a machine where clang picks a gcc installation without libstdc++'s
 # development files, libFuzzer's C++ runtime will not link; point it at one that has them, e.g.
@@ -115,6 +115,9 @@ COMPILE_COMMANDS := compile_commands.json
 
 # Every first-party C source. Not third_party/ (not ours to reformat) and not build/ (generated).
 FORMAT_SRC := $(wildcard src/*.c src/*.h include/*.h test/unit/*.c test/system/*.c examples/*.c bench/*.c fuzz/*.c)
+# Definition files, formatted by the tool itself (#29) rather than clang-format. fuzz/ is left out: its
+# corpora are inputs, kept exactly as found.
+FDSL_FORMAT_SRC := $(wildcard examples/*.fdsl examples/*/*.fdsl test/corpus/*.fdsl)
 
 # .clang-format uses keys that arrived in clang-format 21 (BreakAfterOpenBracketFunction,
 # BreakBeforeCloseBracketFunction). An older binary does not format differently -- it refuses to read
@@ -345,16 +348,18 @@ format-tool:
 # Formats every first-party source in place. What a contributor runs by hand; the pre-commit hook
 # and CI both drive clang-format themselves rather than calling this, so that a missing tool on
 # either path is diagnosed there instead of as a generic make failure here.
-format: format-tool
+format: format-tool $(TARGET)
 	$(CLANG_FORMAT) -i $(FORMAT_SRC)
+	$(TARGET) $(FDSL_FORMAT_SRC) --format
 
 # Non-mutating: exits non-zero if formatting `format` would still change something, without
 # changing it. This is what CI runs, at the top of the job, before the build.
-format-check: format-tool
+format-check: format-tool $(TARGET)
 	@fail=0; \
 	for f in $(FORMAT_SRC); do \
 		$(CLANG_FORMAT) --dry-run --Werror "$$f" || fail=1; \
 	done; \
+	$(TARGET) $(FDSL_FORMAT_SRC) --format --check || fail=1; \
 	exit $$fail
 
 compile-commands: $(COMPILE_COMMANDS)

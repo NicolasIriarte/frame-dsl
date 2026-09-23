@@ -1,0 +1,12 @@
+# REJECTED: check 14 -- a reservation belongs only on a field whose width depends on another field.
+#
+# `body` is 32 bits wide, so its slot is already known to be four bytes and there is nothing to
+# reserve. The number in brackets could only ever agree with the width -- in which case it says
+# nothing -- or contradict it, in which case one of the two is wrong and the file cannot say which.
+#
+# Dropping the brackets is the fix.
+
+pkt TM_REDUNDANT {
+  hdr: 8 = 0xAA;
+  body[4]: 32;
+};

@@ -1,7 +1,13 @@
 # Editor support
 
-`.fdsl` files in an editor. Emacs only, for now -- the reasoning is in
-[`docs/highlighting.md`](../docs/highlighting.md), and other editors are
+`.fdsl` files in an editor.
+
+Most of what an editor shows comes from **`frame-dsl --lsp`**, the language server: diagnostics,
+formatting and highlighting, all of it the compiler's own answers. What is written per editor is the
+small part no server provides -- which files are `.fdsl`, what comments look like, how TAB indents --
+plus regular-expression highlighting for the moment before the server answers.
+[`manual/editors.md`](../manual/editors.md) says what the server does and
+[`docs/editors.md`](../docs/editors.md) why it is built that way. Editors other than Emacs are
 [#39](http://100.125.208.18:3000/nico/Frame-DSL/issues/39).
 
 | File | |
@@ -52,8 +58,8 @@ if you want the file opened lazily rather than at startup.
 
 What it does not do is understand the language: it is regular expressions, so a field named
 `msb_first` is coloured as an attribute value, and a `valof()` naming a field that does not exist
-looks exactly like one that does. `docs/highlighting.md` explains why that is the right trade for
-now and what would change it.
+looks exactly like one that does. With the language server running, that layer is only what
+you see in the moment before it answers; `docs/editors.md` explains the arrangement.
 
 - **Errors as you type.** A Flymake backend pipes the buffer to `frame-dsl - --check --stdin-name
   <file>`, so what is checked is what is on screen -- saved or not -- and imports resolve from beside
@@ -61,6 +67,27 @@ now and what would change it.
   `import` line that brought it in, naming the file and position it is really at. `flymake-mode` is
   switched on by itself when `frame-dsl` can be found; `M-x flymake-show-buffer-diagnostics` lists
   everything.
+
+- **The language server.** `M-x eglot` in a `.fdsl` buffer starts `frame-dsl --lsp` and needs no
+  configuration: the mode registers the server with eglot (built into Emacs 29 and later) and with
+  `lsp-mode` when that is what you use. What it gives you is in
+  [`manual/editors.md`](../manual/editors.md). With eglot running, its diagnostics replace the Flymake
+  backend below -- the same messages, from a server that is already holding the file. To start it
+  automatically:
+
+  ```elisp
+  (add-hook 'frame-dsl-mode-hook #'eglot-ensure)
+  ```
+
+- **Formatting.** `M-x frame-dsl-format-buffer` puts the buffer through `frame-dsl --format`, in the
+  layout every file in this repository is in. Only what changed is replaced, so point and undo
+  survive. A buffer that does not parse is left alone and the error says why. To do it on every
+  save:
+
+  ```elisp
+  (add-hook 'frame-dsl-mode-hook
+            (lambda () (add-hook 'before-save-hook #'frame-dsl-format-buffer nil t)))
+  ```
 
 ## Getting `frame-dsl` onto the PATH
 

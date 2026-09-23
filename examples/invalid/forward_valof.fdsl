@@ -5,7 +5,7 @@
 # packet would reach `data` with nothing to size it by.
 
 pkt TM_BACKWARDS {
-  hdr: 8 = 0xAA;
+  hdr:      8 = 0xAA;
   data[64]: valof(len) * 8;
-  len: 16;
+  len:      16;
 };

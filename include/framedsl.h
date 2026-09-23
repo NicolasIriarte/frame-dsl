@@ -248,6 +248,23 @@ FramedslResult *framedsl_load_source(const char *source, const char *path);
 
 void framedsl_result_free(FramedslResult *result);
 
+/**
+ * @brief Format definition source in the project's one layout.
+ *
+ * Two-space indentation, no tabs, fields and settings aligned on their values, trailing comments
+ * aligned, numbers spelled as written and comments kept word for word -- manual/language.md has the
+ * rules. Formatting is idempotent, and the formatted text loads to the same definition.
+ *
+ * Only a file that parses is formatted; one that does not is refused, and loading it says why. Only
+ * syntax matters here: a file that parses and then fails a check is formatted like any other.
+ *
+ * @param source The `.fdsl` source text.
+ * @param out On FRAMEDSL_OK, the formatted text, NUL-terminated; the caller frees it with free().
+ *     Untouched otherwise.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_INVALID when the source does not parse; FRAMEDSL_ERROR_MEMORY.
+ */
+FramedslStatus framedsl_format(const char *source, char **out);
+
 FramedslStatus framedsl_status(const FramedslResult *result);
 bool framedsl_ok(const FramedslResult *result);
 

@@ -11,8 +11,8 @@
 @byte_order: big_endian;
 
 pkt TM_DATAGRAM_02 {
-  some_header: 8 = 0xAA;             # fixed: this is what identifies the packet
-  len:         32;                   # counts payload bytes
-  data[128]:   valof(len) * 8;       # 128 bytes of arena; the width is per frame
+  some_header: 8 = 0xAA;        # fixed: this is what identifies the packet
+  len:         32;              # counts payload bytes
+  data[128]:   valof(len) * 8;  # 128 bytes of arena; the width is per frame
   crc:         16;
 };

@@ -10,8 +10,9 @@
 ;;
 ;; This is a regular-expression mode rather than a parser.  It knows the shape of the language and
 ;; not its meaning: `valof(len)' is a keyword and a paren to it, and a field named like an attribute
-;; value is coloured as one.  docs/highlighting.md says why that is the right trade for now, and
-;; where the alternatives (tree-sitter, and the language server of issue #30) fit.
+;; value is coloured as one.  That is the layer underneath: with `frame-dsl --lsp' running -- `M-x
+;; eglot' -- highlighting, diagnostics and formatting all come from the compiler instead, and this is
+;; what a buffer looks like in the moment before the server answers.  docs/editors.md says why.
 ;;
 ;; The three word lists below are the only place a word is written down, and a test in
 ;; test/unit/9_editor_support.c compares them against the compiler's own tables.  The failure this
@@ -21,6 +22,7 @@
 ;;; Code:
 
 (require 'flymake)
+(require 'subr-x)
 
 (defgroup frame-dsl nil
   "Major mode for Frame-DSL definition files."
@@ -259,6 +261,65 @@ on the `import' that brought it in, since that file is not the one on screen."
                    (kill-buffer (process-buffer process)))))))
       (process-send-region frame-dsl--flymake-process (point-min) (point-max))
       (process-send-eof frame-dsl--flymake-process))))
+
+;; ---------------------------------------------------------------------------------------------
+;; The language server.  `frame-dsl --lsp' answers with the compiler's own diagnostics, formatting and
+;; highlighting, so with it running this mode's regular expressions are the layer underneath rather
+;; than the whole story.  Both clients are registered; neither is required, and neither is loaded here.
+
+(defvar eglot-server-programs)
+(declare-function eglot-alternatives "eglot" (alternatives))
+
+(defun frame-dsl-server-command ()
+  "The command that starts the language server, from `frame-dsl-program'."
+  (list frame-dsl-program "--lsp"))
+
+(with-eval-after-load 'eglot
+  ;; A function rather than a list, so changing `frame-dsl-program' after loading still takes effect.
+  (add-to-list 'eglot-server-programs
+               (cons 'frame-dsl-mode (lambda (&rest _) (frame-dsl-server-command)))))
+
+(with-eval-after-load 'lsp-mode
+  (declare-function lsp-register-client "lsp-mode" (client))
+  (declare-function make-lsp-client "lsp-mode" (&rest args))
+  (declare-function lsp-stdio-connection "lsp-mode" (command &optional test-command))
+  (declare-function lsp-activate-on "lsp-mode" (&rest languages))
+  (defvar lsp-language-id-configuration)
+  (add-to-list 'lsp-language-id-configuration '(frame-dsl-mode . "fdsl"))
+  (lsp-register-client
+   (make-lsp-client :new-connection (lsp-stdio-connection #'frame-dsl-server-command)
+                    :activation-fn (lsp-activate-on "fdsl")
+                    :server-id 'frame-dsl)))
+
+;; ---------------------------------------------------------------------------------------------
+;; Formatting.  The layout is the tool's (`frame-dsl --format'), not this mode's: the buffer goes
+;; through it and comes back, and a buffer that does not parse is left exactly as it is.
+
+(defun frame-dsl-format-buffer ()
+  "Format the buffer with `frame-dsl --format'.
+Point stays where it was in the text.  When the buffer does not parse, nothing
+changes and the errors are shown instead."
+  (interactive)
+  (unless (executable-find frame-dsl-program)
+    (user-error "Cannot find `%s'; see `frame-dsl-program'" frame-dsl-program))
+  (let ((source (current-buffer))
+        (output (generate-new-buffer " *frame-dsl-format*"))
+        (name (or buffer-file-name (expand-file-name (buffer-name)))))
+    (unwind-protect
+        (let ((status (save-restriction
+                        (widen)
+                        (call-process-region (point-min) (point-max) frame-dsl-program nil output nil
+                                             "-" "--format" "--stdin-name" name))))
+          (if (not (eql status 0))
+              (user-error "Not formatted: %s"
+                          (string-trim (with-current-buffer output (buffer-string))))
+            (save-restriction
+              (widen)
+              ;; Only the differences are replaced, so point, marks and undo survive a reformat.
+              (replace-buffer-contents output))
+            (message "Formatted")))
+      (kill-buffer output)
+      (set-buffer source))))
 
 ;; ---------------------------------------------------------------------------------------------
 

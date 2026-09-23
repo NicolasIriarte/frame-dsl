@@ -44,6 +44,9 @@ typedef enum {
    * The parser stops at it rather than trying to make sense of what follows.
    */
   TOK_INVALID,
+
+  /** @brief `# ...` to the end of the line. Only from lexer_next_spelled(); a load never sees one. */
+  TOK_COMMENT,
 } TokenKind;
 
 typedef struct {
@@ -70,6 +73,13 @@ typedef struct {
 void lexer_init(Lexer *lexer, const char *source, DiagList *diags);
 
 Token lexer_next(Lexer *lexer);
+
+/**
+ * @brief As lexer_next(), for the formatter: comments come back as TOK_COMMENT tokens instead of being
+ * skipped, and every token -- not only a name -- has `text`/`length` set to its exact spelling in the
+ * source, so `0xCAFE` can be written back as `0xCAFE` and a string keeps its quotes.
+ */
+Token lexer_next_spelled(Lexer *lexer);
 
 /**
  * @brief For diagnostics: "expected X, found <this>".

@@ -8,11 +8,11 @@
 import "common/link.fdsl";
 import "common/sensors.fdsl" as sensors;
 
-@byte_order: little_endian;         # this file's default; the imported blocks keep their own
+@byte_order: little_endian;  # this file's default; the imported blocks keep their own
 
 pkt TM_TEMPERATURE {
-  hdr:     Header { id = 0x82; };               # from common/link.fdsl
-  reading: sensors.Header { kind = 0x1; };      # from common/sensors.fdsl
+  hdr:     Header { id = 0x82; };           # from common/link.fdsl
+  reading: sensors.Header { kind = 0x1; };  # from common/sensors.fdsl
 
   [ @cal: sensors.celsius; ]
   board:   16;

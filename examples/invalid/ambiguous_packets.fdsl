@@ -8,10 +8,10 @@
 
 pkt TM_ALPHA {
   hdr: 8 = 0xAA;
-  n: 16;
+  n:   16;
 };
 
 pkt TM_BETA {
   hdr: 8 = 0xAA;
-  m: 32;
+  m:   32;
 };

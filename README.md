@@ -200,10 +200,23 @@ frame-dsl - --check --stdin-name src/frames/device.fdsl < unsaved-buffer
 `make install PREFIX=~/.local` puts `frame-dsl` on the PATH, which is where every editor integration
 looks for it.
 
-Emacs users get syntax highlighting, comments, indentation and errors as they type (through
-Flymake and `--check`) for `.fdsl` files from [`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el); [`editors/README.md`](editors/README.md)
-says how to install it, and [`docs/highlighting.md`](docs/highlighting.md) says why it is a
-hand-written mode rather than a tree-sitter grammar or a language server.
+### Formatting a file
+
+`--format` rewrites each file named into the one layout the project uses, in place -- see
+[Layout](manual/language.md#layout) for what it is. `--format --check` changes nothing and names the
+files that would change, exiting `1` if there are any, which is what CI runs. `-` formats standard
+input to standard output, the form an editor uses to format a buffer on save. A file that does not
+parse is left exactly as it was, and its errors are printed.
+
+### In an editor
+
+`frame-dsl --lsp` is a language server: errors and warnings as you type, formatting, and highlighting
+that comes from the compiler's own lexer rather than from a copy of its word lists. Any editor with an
+LSP client can use it, and Emacs needs nothing configured beyond loading
+[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el).
+[`manual/editors.md`](manual/editors.md) says what it does,
+[`editors/README.md`](editors/README.md) how to set an editor up, and
+[`docs/editors.md`](docs/editors.md) why it is a server rather than a tree-sitter grammar.
 
 ## Building
 

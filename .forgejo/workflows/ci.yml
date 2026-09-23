@@ -29,7 +29,8 @@ jobs:
           scripts/ci_apt_get.sh update -qq
           scripts/ci_apt_get.sh install -y -qq --no-install-recommends build-essential emacs-nox clang-format-22
 
-      # Before the build, so a formatting problem is reported without waiting on a compile. The
+      # Before the full build, so a formatting problem is reported without waiting on all of it. It does
+      # build the tool itself: definition files are formatted by `frame-dsl --format`, not clang-format. The
       # pre-commit hook (.githooks/pre-commit) is a convenience that catches this earlier; this is
       # what actually enforces it, since a hook nobody installed or a --no-verify commit both reach
       # here regardless.
