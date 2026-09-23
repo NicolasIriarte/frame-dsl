@@ -760,17 +760,135 @@ static int emit_c(const FramedslDefinition *definition) {
   return 0;
 }
 
-static void usage(const char *program) {
-  log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
-  log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
-  log_fail("       %s <definition.fdsl> --emit-c", program);
-  log_fail("       %s <definition.fdsl>... --check [--werror]", program);
-  log_fail("       %s <definition.fdsl>... --format [--check]", program);
-  log_fail("       %s --lsp        speak the Language Server Protocol on stdin and stdout", program);
-  log_fail("  a definition of '-' is standard input; --stdin-name <path> says which file it is");
-  log_fail("  with none of them, describes the definition");
-  log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
-  log_fail("  %s frames.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234", program);
+/* ---- The command line ------------------------------------------------------------------------ */
+
+/* `git describe` of the checkout this was built from, passed in by the Makefile. */
+#ifndef FRAMEDSL_VERSION
+  #define FRAMEDSL_VERSION "unknown"
+#endif
+
+typedef enum {
+  OPTION_DECODE,
+  OPTION_ENCODE,
+  OPTION_REPORT,
+  OPTION_QUIET,
+  OPTION_EMIT_C,
+  OPTION_CHECK,
+  OPTION_WERROR,
+  OPTION_FORMAT,
+  OPTION_STDIN_NAME,
+  OPTION_LSP,
+  OPTION_HELP,
+  OPTION_VERSION,
+} OptionId;
+
+typedef struct {
+  OptionId id;
+  const char *short_name; /* NULL when there is none */
+  const char *long_name;
+  const char *argument; /* what the next argument is, or NULL when the flag takes none */
+  const char *help;
+} Option;
+
+/* Every flag there is, in the order --help lists them. The parser looks flags up here and --help
+ * prints this, so a flag cannot be accepted without also being documented -- and a script (the Bash
+ * completion, a test) can read the flags back out of --help and trust the list is whole. */
+static const Option OPTIONS[] = {
+  { OPTION_DECODE,     "-d", "--decode",     "<hex>",    "decode bytes into packets and their fields"         },
+  { OPTION_ENCODE,     "-e", "--encode",     "<packet>", "encode a packet from field=value, print it as hex"  },
+  { OPTION_REPORT,     "-r", "--report",     NULL,       "with -e: also print the frame decoded back"         },
+  { OPTION_QUIET,      "-q", "--quiet",      NULL,       "with -e: say nothing of fields left out as zero"    },
+  { OPTION_EMIT_C,     NULL, "--emit-c",     NULL,       "write the calibrations to stdout as C"              },
+  { OPTION_CHECK,      NULL, "--check",      NULL,       "only report problems; with --format, write nothing" },
+  { OPTION_WERROR,     NULL, "--werror",     NULL,       "with --check: fail on a warning too"                },
+  { OPTION_FORMAT,     NULL, "--format",     NULL,       "rewrite files in place, in the standard layout"     },
+  { OPTION_STDIN_NAME, NULL, "--stdin-name", "<path>",   "the file '-' stands for, for messages and imports"  },
+  { OPTION_LSP,        NULL, "--lsp",        NULL,       "be a language server on stdin and stdout"           },
+  { OPTION_HELP,       "-h", "--help",       NULL,       "print this help and exit"                           },
+  { OPTION_VERSION,    NULL, "--version",    NULL,       "print the version and exit"                         },
+};
+
+#define OPTION_COUNT (sizeof(OPTIONS) / sizeof(*OPTIONS))
+
+static const Option *find_option(const char *argument) {
+  for (size_t i = 0; i < OPTION_COUNT; ++i) {
+    const Option *option = &OPTIONS[i];
+    if ((option->short_name != NULL && strcmp(argument, option->short_name) == 0)
+        || strcmp(argument, option->long_name) == 0) {
+      return option;
+    }
+  }
+  return NULL;
+}
+
+/* Plain text on stdout, not the logger: this is the answer to a question, not a problem, and it has
+ * to read the same piped into a pager, a file or a completion script. */
+static void help(void) {
+  fputs(
+    "frame-dsl: check, describe, format, decode and encode against a Frame-DSL definition.\n"
+    "\n"
+    "usage:\n"
+    "  frame-dsl <file.fdsl>                                describe its packets and fields\n"
+    "  frame-dsl <file.fdsl> -d <hex>                       decode bytes\n"
+    "  frame-dsl <file.fdsl> -e <packet> [field=value ...]  encode a packet [-r] [-q]\n"
+    "  frame-dsl <file.fdsl> --emit-c                       write the calibrations out as C\n"
+    "  frame-dsl <file.fdsl>... --check [--werror]          report problems as path:line:col: message\n"
+    "  frame-dsl <file.fdsl>... --format [--check]          rewrite in the standard layout, or only\n"
+    "                                                       list the files that would change\n"
+    "  frame-dsl --lsp                                      be a language server for an editor\n"
+    "\n"
+    "options:\n",
+    stdout
+  );
+
+  for (size_t i = 0; i < OPTION_COUNT; ++i) {
+    const Option *option = &OPTIONS[i];
+    char flags[64];
+    snprintf(
+      flags,
+      sizeof(flags),
+      "%s%s%s%s%s",
+      option->short_name != NULL ? option->short_name : "",
+      option->short_name != NULL ? ", " : "    ",
+      option->long_name,
+      option->argument != NULL ? " " : "",
+      option->argument != NULL ? option->argument : ""
+    );
+    printf("  %-24s  %s\n", flags, option->help);
+  }
+
+  fputs(
+    "\n"
+    "arguments:\n"
+    "  <file.fdsl>   a definition file; '-' reads it from standard input\n"
+    "  <hex>         bytes as hex, one argument, separated any way or not at all: \"AA BB\", AA:BB, AABB\n"
+    "  field=value   a field of the -e packet: decimal or 0x hex for a number, hex bytes for a bit\n"
+    "                string; a field not given encodes as zero, and a fixed one cannot be given\n"
+    "\n"
+    "exit status:\n"
+    "  0  done, and nothing was wrong\n"
+    "  1  the definition, the bytes or a value is wrong; --check found an error (or, with\n"
+    "     --werror, a warning); --format --check found a file that would change\n"
+    "  2  the command line is wrong, a file cannot be read, or the input is not what it claims to be\n"
+    "\n"
+    "examples:\n"
+    "  frame-dsl examples/uart_device.fdsl\n"
+    "  frame-dsl examples/uart_device.fdsl -d \"81 00 07 01\"\n"
+    "  frame-dsl examples/uart_device.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234 -r\n"
+    "  frame-dsl examples/*.fdsl --check --werror\n"
+    "  frame-dsl examples/*.fdsl --format --check\n"
+    "  frame-dsl - --check --stdin-name src/device.fdsl < unsaved-buffer\n",
+    stdout
+  );
+}
+
+/* A mistake on the command line gets one line saying what it was, and a pointer to the rest --
+ * not the whole help text, which buries the one line that matters. Plain and on stderr, the way
+ * every other command-line tool says it, rather than through the logger, which writes to stdout. */
+static int usage_error(const char *program, const char *reason) {
+  fprintf(stderr, "%s: %s\n", program, reason);
+  fprintf(stderr, "try '%s --help'\n", program);
+  return 2;
 }
 
 int main(int argc, char **argv) {
@@ -786,6 +904,22 @@ int main(int argc, char **argv) {
   bool quiet = false;
   bool emit = false;
 
+  /* Before anything else, and wherever they appear: somebody adding --help to the end of a command
+   * that went wrong wants the help, not a complaint about the rest of the command. */
+  bool want_version = false;
+  for (int i = 1; i < argc; ++i) {
+    const Option *option = find_option(argv[i]);
+    if (option != NULL && option->id == OPTION_HELP) {
+      help();
+      return 0;
+    }
+    want_version |= option != NULL && option->id == OPTION_VERSION;
+  }
+  if (want_version) {
+    printf("frame-dsl %s\n", FRAMEDSL_VERSION);
+    return 0;
+  }
+
   /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
   const char **assignments = calloc((size_t)argc, sizeof(*assignments));
   size_t assigned = 0;
@@ -793,6 +927,7 @@ int main(int argc, char **argv) {
   const char **paths = calloc((size_t)argc, sizeof(*paths));
   size_t path_count = 0;
   if (assignments == NULL || paths == NULL) {
+    free(assignments);
     free(paths);
     log_fail("out of memory");
     return 2;
@@ -802,54 +937,70 @@ int main(int argc, char **argv) {
    * an `=` in it is a field's value, and anything else unexpected is a usage error rather than
    * something to guess at. */
   for (int i = 1; i < argc; ++i) {
-    const bool decode_flag = strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--decode") == 0;
-    const bool encode_flag = strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--encode") == 0;
+    const Option *option = find_option(argv[i]);
 
-    if (decode_flag || encode_flag) {
-      if (i + 1 >= argc) {
-        log_fail("%s: expected %s after it", argv[i], decode_flag ? "hex bytes" : "a packet name");
-        usage(argv[0]);
-        free(assignments);
-        return 2;
-      }
-      if (decode_flag) {
-        hex = argv[++i];
+    if (option == NULL) {
+      if (strchr(argv[i], '=') != NULL) {
+        assignments[assigned++] = argv[i];
+      } else if (argv[i][0] != '-' || strcmp(argv[i], "-") == 0) {
+        paths[path_count++] = argv[i];
       } else {
-        packet = argv[++i];
-      }
-    } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--report") == 0) {
-      show = true;
-    } else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
-      quiet = true;
-    } else if (strchr(argv[i], '=') != NULL) {
-      assignments[assigned++] = argv[i];
-    } else if (strcmp(argv[i], "--emit-c") == 0) {
-      emit = true;
-    } else if (strcmp(argv[i], "--check") == 0) {
-      check = true;
-    } else if (strcmp(argv[i], "--lsp") == 0) {
-      lsp = true;
-    } else if (strcmp(argv[i], "--format") == 0) {
-      format = true;
-    } else if (strcmp(argv[i], "--werror") == 0) {
-      werror = true;
-    } else if (strcmp(argv[i], "--stdin-name") == 0) {
-      if (i + 1 >= argc) {
-        log_fail("%s: expected a path after it", argv[i]);
-        usage(argv[0]);
+        char reason[256];
+        snprintf(reason, sizeof(reason), "unexpected argument '%s'", argv[i]);
         free(assignments);
         free(paths);
-        return 2;
+        return usage_error(argv[0], reason);
       }
-      stdin_name = argv[++i];
-    } else if (argv[i][0] != '-' || strcmp(argv[i], "-") == 0) {
-      paths[path_count++] = argv[i];
-    } else {
-      log_fail("unexpected argument '%s'", argv[i]);
-      usage(argv[0]);
-      free(assignments);
-      free(paths);
-      return 2;
+      continue;
+    }
+
+    const char *value = NULL;
+    if (option->argument != NULL) {
+      if (i + 1 >= argc) {
+        char reason[256];
+        snprintf(reason, sizeof(reason), "%s: expected %s after it", argv[i], option->argument);
+        free(assignments);
+        free(paths);
+        return usage_error(argv[0], reason);
+      }
+      value = argv[++i];
+    }
+
+    switch (option->id) {
+    case OPTION_DECODE:
+      hex = value;
+      break;
+    case OPTION_ENCODE:
+      packet = value;
+      break;
+    case OPTION_REPORT:
+      show = true;
+      break;
+    case OPTION_QUIET:
+      quiet = true;
+      break;
+    case OPTION_EMIT_C:
+      emit = true;
+      break;
+    case OPTION_CHECK:
+      check = true;
+      break;
+    case OPTION_WERROR:
+      werror = true;
+      break;
+    case OPTION_FORMAT:
+      format = true;
+      break;
+    case OPTION_STDIN_NAME:
+      stdin_name = value;
+      break;
+    case OPTION_LSP:
+      lsp = true;
+      break;
+    case OPTION_HELP:
+    case OPTION_VERSION:
+      /* Answered before this loop. */
+      break;
     }
   }
   path = path_count > 0 ? paths[0] : NULL;
@@ -889,11 +1040,9 @@ int main(int argc, char **argv) {
     conflict = "--stdin-name names what '-' reads, and means nothing without it";
   }
   if (conflict != NULL) {
-    log_fail("%s", conflict);
-    usage(argv[0]);
     free(assignments);
     free(paths);
-    return 2;
+    return usage_error(argv[0], conflict);
   }
 
   /* Before the check below: the server is told what to work on by the editor, not by an argument. */
@@ -904,10 +1053,9 @@ int main(int argc, char **argv) {
   }
 
   if (path == NULL) {
-    usage(argv[0]);
     free(assignments);
     free(paths);
-    return 2;
+    return usage_error(argv[0], "no definition file; usage: frame-dsl <file.fdsl> [options], or frame-dsl --lsp");
   }
 
   if (format) {

@@ -146,7 +146,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean bench fuzz test-fuzz-replay vsix
+	format-tool hooks clean bench fuzz test-fuzz-replay vsix FORCE
 
 # Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
 # the person running this has in their own configuration cannot make an editor look like it works.
@@ -268,6 +268,21 @@ $(DEPS): $(CLIBS_ARCHIVES)
 $(BUILD)/obj/%.o: src/%.c | $(DEPS)
 	@mkdir -p $(@D)
 	$(CC) $(SRC_FLAGS) -MMD -MP -c $< -o $@
+
+# What `frame-dsl --version` prints: `git describe` of this checkout, or "unknown" when there is no
+# git to ask. The stamp is rewritten only when that changes, so a new commit rebuilds main.o and
+# nothing else, and a build with nothing new rebuilds nothing.
+VERSION_STRING := $(shell git -C $(CURDIR) describe --always --dirty 2>/dev/null || echo unknown)
+VERSION_STAMP := $(BUILD)/version.stamp
+
+$(VERSION_STAMP): FORCE
+	@mkdir -p $(@D)
+	@echo '$(VERSION_STRING)' | cmp -s - $@ || echo '$(VERSION_STRING)' > $@
+
+$(MAIN_OBJ): $(VERSION_STAMP)
+$(MAIN_OBJ): SRC_FLAGS += -DFRAMEDSL_VERSION=\"$(VERSION_STRING)\"
+
+FORCE:
 
 $(TARGET): $(MAIN_OBJ) $(LIB_OBJ)
 	@mkdir -p $(@D)

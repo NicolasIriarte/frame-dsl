@@ -360,7 +360,7 @@ static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(con
   snprintf(arguments, sizeof(arguments), "%s/packet_family.fdsl -d", EXAMPLES_DIR);
   Run run = run_with(arguments);
 
-  if (run.status != 2 || strstr(run.output, "usage") == NULL) {
+  if (run.status != 2 || strstr(run.output, "--help") == NULL) {
     FORCE_FAILURE();
   }
 

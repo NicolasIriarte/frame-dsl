@@ -12,6 +12,12 @@ nothing written under it fails the release rather than publishing an empty page.
 
 ### Added
 
+- **`frame-dsl --help`** (and `-h`) prints every mode and option, what each argument takes, the exit
+  statuses and examples, as plain text on stdout, from wherever it appears on the command line.
+  **`frame-dsl --version`** prints the `git describe` of the checkout it was built from. A usage
+  mistake now says what it was in one line on stderr and points at `--help`, instead of printing the
+  whole usage text through the logger.
+
 - **`frame-dsl <file>... --check [--werror]`** prints a definition's problems and nothing else, one per
   line as `path:line:col: error: message [check N]` -- the shape Flymake, Vim's `errorformat`, ALE and
   a VS Code problem matcher all read. `-` reads the definition from standard input, and

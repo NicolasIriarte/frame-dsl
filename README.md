@@ -111,6 +111,8 @@ and the design behind it in [`docs/`](docs).
 frame-dsl examples/packet_family.fdsl
 ```
 
+`frame-dsl --help` lists every mode and option, with examples; what follows is the tour.
+
 Give it bytes and it decodes them instead, working out which packet they are from the frame itself:
 
 ```sh
