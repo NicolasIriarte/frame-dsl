@@ -1,0 +1,41 @@
+{
+  "name": "frame-dsl",
+  "displayName": "Frame-DSL",
+  "description": "Highlighting, comments and indentation for .fdsl files, plus diagnostics, formatting and semantic highlighting from frame-dsl --lsp.",
+  "version": "0.1.0",
+  "publisher": "frame-dsl",
+  "private": true,
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:fdsl"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "fdsl",
+        "aliases": ["Frame-DSL", "fdsl"],
+        "extensions": [".fdsl"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "fdsl",
+        "scopeName": "source.fdsl",
+        "path": "./syntaxes/fdsl.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Frame-DSL",
+      "properties": {
+        "frameDsl.path": {
+          "type": "string",
+          "default": "frame-dsl",
+          "description": "Path to the frame-dsl binary. A bare name is looked up on PATH; 'make install PREFIX=~/.local' puts one there."
+        }
+      }
+    }
+  }
+}

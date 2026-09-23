@@ -211,11 +211,13 @@ parse is left exactly as it was, and its errors are printed.
 ### In an editor
 
 `frame-dsl --lsp` is a language server: errors and warnings as you type, formatting, and highlighting
-that comes from the compiler's own lexer rather than from a copy of its word lists. Any editor with an
-LSP client can use it, and Emacs needs nothing configured beyond loading
-[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el).
-[`manual/editors.md`](manual/editors.md) says what it does,
-[`editors/README.md`](editors/README.md) how to set an editor up, and
+that comes from the compiler's own lexer rather than from a copy of its word lists. Emacs, Vim, Neovim
+and VS Code each get highlighting, comments and indentation on their own, and a client for the server
+on top -- Emacs needs nothing configured beyond loading
+[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el), Neovim 0.11+ beyond
+`vim.lsp.enable('frame_dsl')` once `editors/vim` is on the runtime path.
+[`manual/editors.md`](manual/editors.md) says what the server does,
+[`editors/README.md`](editors/README.md) how to set each editor up, and
 [`docs/editors.md`](docs/editors.md) why it is a server rather than a tree-sitter grammar.
 
 ## Building
@@ -270,7 +272,8 @@ configured.
 | `make test`             | run both levels of tests                               |
 | `make test-unit`        | unit tests only                                        |
 | `make test-system`      | system tests only                                      |
-| `make test-editors`     | the Emacs mode's tests; skipped when Emacs is absent   |
+| `make test-editors`     | the Emacs, Vim and Neovim tests; each skipped when that editor is absent |
+| `make vsix`             | build `build/frame-dsl-<version>.vsix`, the VS Code extension |
 | `make format`           | reformat every first-party C source in place           |
 | `make format-check`     | check the formatting without changing anything         |
 | `make compile-commands` | regenerate `compile_commands.json` alone               |
@@ -287,8 +290,8 @@ configured.
 | `manual/`            | the language reference -- what someone writing a definition file needs             |
 | `docs/`              | design documents -- why the language and runtime are shaped the way they are       |
 | `examples/`          | example definition files, doubling as the parser's fixtures                        |
-| `editors/`           | `frame-dsl-mode.el`, an Emacs major mode for `.fdsl` files                          |
-| `scripts/`           | `vendor_clibs.sh`, which updates the committed CLibs tarballs                      |
+| `editors/`           | editor support: an Emacs major mode, a Vim/Neovim runtime directory, a VS Code extension |
+| `scripts/`           | `vendor_clibs.sh` and `vendor_vscode_languageclient.sh`, which update committed dependencies |
 | `.forgejo/`          | CI, and the issue/PR templates `GUIDELINES.md` requires following                  |
 | `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time                   |
 

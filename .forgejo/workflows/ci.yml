@@ -16,18 +16,22 @@ jobs:
       # third_party/clibs/ and unpacked locally. Nothing here reaches the network, and nothing here
       # needs a secret -- which is the point, since CLibs is private and the token a workflow is
       # given automatically cannot read another repository.
-      # emacs-nox is for `make test-editors' alone. The build does not need it and neither does any
-      # other target: that step skips with a message when Emacs is absent, so a contributor without
-      # it still runs everything else. It is installed here because a test that only ever skips in
-      # CI is a test nobody is running.
+      # emacs-nox, vim and neovim are for `make test-editors' alone -- none of them is needed to
+      # build, and each of those three halves skips with a message when its editor is absent, so a
+      # contributor without one still runs everything else. All three are installed here because a
+      # test that only ever skips in CI is a test nobody is running. jq, zip and unzip are for
+      # `make vsix` below. apt's neovim is 0.7.2 on this image (`ubuntu-latest` here is node:22-bookworm,
+      # Debian), too old for the `vim.lsp.start` the Neovim LSP test calls: that one test skips, and
+      # says so, while the rest of the Neovim half still runs.
       #
       # Through scripts/ci_apt_get.sh rather than apt-get itself: concurrent jobs on this runner share
       # an apt proxy that can leave a plain apt-get hung for good (#79). The script bounds and retries
-      # each call. `ubuntu-latest` on this runner is node:22-bookworm, so these are Debian packages.
+      # each call.
       - name: Install the toolchain
         run: |
           scripts/ci_apt_get.sh update -qq
-          scripts/ci_apt_get.sh install -y -qq --no-install-recommends build-essential emacs-nox clang-format-22
+          scripts/ci_apt_get.sh install -y -qq --no-install-recommends \
+            build-essential emacs-nox vim-nox neovim clang-format-22 jq zip unzip
 
       # Before the full build, so a formatting problem is reported without waiting on all of it. It does
       # build the tool itself: definition files are formatted by `frame-dsl --format`, not clang-format. The
@@ -52,6 +56,12 @@ jobs:
       # compiles would only be noticed the next time somebody wanted a number.
       - name: Build the benchmark
         run: make build/bench
+
+      # The VS Code extension, packaged the same way a release does. Needs no npm: the vendored
+      # client (editors/vscode/vendor/vscode-languageclient.js) is committed, like the CLibs
+      # tarballs. scripts/build_vsix.sh checks its own output has the files a .vsix needs.
+      - name: Build the VS Code extension
+        run: make vsix
 
       # #59: a bounded fuzz run, only if this runner's clang can produce one. A one-line program probes
       # -fsanitize=fuzzer before committing to the real build -- a runner without it is a skip, exactly

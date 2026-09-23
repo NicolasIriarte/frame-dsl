@@ -86,26 +86,39 @@ A regex highlighter carries its own copy of every word. The failure that copy ca
 lexer grows a keyword, the mode does not, and the file somebody is looking at stops being the file the
 compiler reads. Nothing fails and nothing warns.
 
-So the two are compared, in both directions, each by the method that suits it:
+So each regex highlighter is compared against the compiler, in both directions, each by the method
+that suits it -- three times over now, once for `frame-dsl-mode.el`'s word lists, once for
+`syntax/fdsl.vim`'s, once for the TextMate grammar's, all in
+[`test/unit/9_editor_support.c`](../test/unit/9_editor_support.c):
 
 | Direction | How | Where |
 | --- | --- | --- |
-| the mode's words are the compiler's | run the compiler: each word the mode reserves must be refused as a field name, each attribute it knows must load | `us9_tc01`, `us9_tc02` |
-| the compiler's words are the mode's | read `src/lexer.c` and `src/parser.c`, and compare the tables | `us9_tc03`, `us9_tc04` |
-| the comparison is comparing something | assert the scan finds the tables, and the expected number of words in them | `us9_tc05` |
+| a highlighter's words are the compiler's | run the compiler: each word it reserves must be refused as a field name, each attribute it knows must load | `us9_tc01`, `us9_tc02`, `us9_tc06`, `us9_tc07`, `us9_tc10`, `us9_tc11` |
+| the compiler's words are a highlighter's | read `src/lexer.c` and `src/parser.c`, and compare the tables | `us9_tc03`, `us9_tc04`, `us9_tc08`, `us9_tc09`, `us9_tc12`, `us9_tc13` |
+| the comparison is comparing something | assert the scan finds the tables, the expected number of words in them, and that the TextMate grammar and `package.json` parse as JSON at all | `us9_tc05`, `us9_tc14` |
 
 The second direction is the one that catches real drift, and it is the one that has to read the
 source: there is no way to ask a built library to list its keywords, and adding one to the public API
-for the benefit of a test would be the tail wagging the dog.
+for the benefit of a test would be the tail wagging the dog. The JSON side reads the grammar with
+`src/json.c`, the same reader the language server uses on the wire -- one JSON parser in this
+repository, used by the thing that speaks the protocol and by the test that checks the grammar beside
+it.
 
 **The server needs none of this.** Its classification comes from the lexer's own tokens, so the only
 thing to test about it is that each kind of name is classified as what it is -- which
 `test/unit/13_lsp.c` does by decoding the tokens it sends.
 
-The half that needs Emacs -- faces, comment commands, indentation, Flymake and the eglot round trip
-against the real server -- is [`editors/frame-dsl-mode-tests.el`](../editors/frame-dsl-mode-tests.el),
-run by `make test-editors`. It **skips**, loudly, on a machine with no Emacs.
+The half that needs an actual editor -- faces, comment commands, indentation, and a round trip
+against the real server -- is per editor: `make test-editors` runs
+[`editors/frame-dsl-mode-tests.el`](../editors/frame-dsl-mode-tests.el) under Emacs and
+[`editors/vim/frame-dsl-tests.vim`](../editors/vim/frame-dsl-tests.vim) under both Vim and Neovim,
+Neovim's run additionally starting `frame-dsl --lsp` through
+[`editors/vim/lsp/frame_dsl.lua`](../editors/vim/lsp/frame_dsl.lua) and checking a diagnostic comes
+back -- the same thing the Emacs run checks through eglot. Each **skips**, loudly, on a machine
+without that editor. VS Code has no headless batch mode to script this way, so it is checked by hand
+instead, each time #39 or a later editor issue changes it; see `editors/README.md`.
 
-One of those cases is worth naming, because it does more than it looks like: reindenting every file
-under `examples/` must change nothing. The examples are written by the formatter, so that is a direct
-assertion that the mode's idea of the layout and the formatter's are the same one.
+One of the Emacs and Vim cases is worth naming, because it does more than it looks like: reindenting
+every file under `examples/` must change nothing. The examples are written by the formatter, so that
+is a direct assertion that the mode's (or the indent file's) idea of the layout and the formatter's
+are the same one.

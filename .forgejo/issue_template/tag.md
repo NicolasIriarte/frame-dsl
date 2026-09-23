@@ -22,3 +22,4 @@ see `CHANGELOG.md`'s `[Unreleased]` section for what that is.
 
 - [ ] Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, and open a fresh `[Unreleased]` above it.
 - [ ] Merge the PR, tag the merge commit `vX.Y.Z`, and push the tag.
+- [ ] `make vsix`, and attach the `.vsix` it writes to this tag's Forgejo release.

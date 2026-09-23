@@ -1,0 +1,124 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Frame-DSL",
+  "scopeName": "source.fdsl",
+  "_comment": "Regular expressions, like the Emacs mode and the Vim syntax file: this is what a buffer looks like in the moment before 'frame-dsl --lsp' answers with the compiler's own classification. The three word lists below (keywords, attribute-names, attribute-values) are the only place a word is written down, and test/unit/9_editor_support.c compares them against src/lexer.c and src/parser.c. Add a word there and nowhere else.",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#import-statement" },
+    { "include": "#attribute" },
+    { "include": "#cal-declaration" },
+    { "include": "#cal-decl-name" },
+    { "include": "#packet-block-name" },
+    { "include": "#field-name" },
+    { "include": "#type-name" },
+    { "include": "#valof-target" },
+    { "include": "#inverse" },
+    { "include": "#keywords" },
+    { "include": "#numbers" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "keywords": {
+      "match": "\\b(pkt|valof|block)\\b",
+      "name": "keyword.control.fdsl"
+    },
+    "attribute-values": {
+      "match": "\\b(msb_first|lsb_first|big_endian|little_endian)\\b",
+      "name": "constant.language.fdsl"
+    },
+
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.fdsl"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.fdsl"
+    },
+    "numbers": {
+      "patterns": [
+        { "match": "\\b0[xX][0-9a-fA-F]+\\b", "name": "constant.numeric.hex.fdsl" },
+        { "match": "\\b0[bB][01]+\\b", "name": "constant.numeric.binary.fdsl" },
+        {
+          "match": "\\b\\d+(\\.\\d*)?([eE][-+]?\\d+)?\\b",
+          "name": "constant.numeric.decimal.fdsl"
+        }
+      ]
+    },
+    "operator": {
+      "match": "[-+*/=]",
+      "name": "keyword.operator.fdsl"
+    },
+
+    "import-statement": {
+      "begin": "^\\s*\\b(import)\\b",
+      "beginCaptures": { "1": { "name": "keyword.control.fdsl" } },
+      "end": ";",
+      "endCaptures": { "0": { "name": "punctuation.terminator.fdsl" } },
+      "patterns": [
+        { "include": "#string" },
+        {
+          "match": "\\b(as)\\b\\s*([A-Za-z_]\\w*)?",
+          "captures": {
+            "1": { "name": "keyword.control.fdsl" },
+            "2": { "name": "entity.name.namespace.fdsl" }
+          }
+        }
+      ]
+    },
+
+    "cal-declaration": {
+      "match": "^\\s*\\b(cal)\\b",
+      "name": "keyword.control.fdsl"
+    },
+    "cal-decl-name": {
+      "match": "(?<=^\\s{0,64}cal\\s)\\s*[A-Za-z_]\\w*",
+      "name": "entity.name.function.fdsl"
+    },
+
+    "packet-block-name": {
+      "match": "(?<=\\b(?:pkt|block)\\b\\s)\\s*[A-Za-z_]\\w*",
+      "name": "entity.name.type.fdsl"
+    },
+    "field-name": {
+      "match": "^\\s*([A-Za-z_]\\w*)(?=\\s*(?:\\[[^\\]]*\\])?\\s*:)",
+      "captures": { "1": { "name": "variable.other.member.fdsl" } }
+    },
+    "type-name": {
+      "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*[;{])",
+      "name": "entity.name.type.fdsl"
+    },
+    "valof-target": {
+      "match": "(?<=\\bvalof\\s{0,4}\\(\\s{0,4})\\w+",
+      "name": "variable.other.fdsl"
+    },
+    "inverse": {
+      "match": "\\b(inverse)\\b(?=\\s*\\()",
+      "name": "keyword.control.fdsl"
+    },
+
+    "attribute": {
+      "begin": "@",
+      "beginCaptures": { "0": { "name": "punctuation.definition.attribute.fdsl" } },
+      "end": ";",
+      "endCaptures": { "0": { "name": "punctuation.terminator.fdsl" } },
+      "patterns": [
+        { "include": "#attribute-header" },
+        { "include": "#attribute-values" },
+        { "include": "#comment" },
+        { "match": "[A-Za-z_]\\w*(?:\\.\\w+)*", "name": "entity.name.function.cal-name.fdsl" }
+      ]
+    },
+    "attribute-header": {
+      "comment": "Only the word right after '@' is judged: an unknown attribute name is painted as an error before anything is compiled, the way an unreserved cal name later in the same statement is not.",
+      "match": "\\G\\s{0,4}(?:(bit_order|byte_order|cal)|([A-Za-z_]\\w*))",
+      "captures": {
+        "1": { "name": "entity.other.attribute-name.fdsl" },
+        "2": { "name": "invalid.illegal.unknown-attribute.fdsl" }
+      }
+    }
+  }
+}

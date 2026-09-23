@@ -24,6 +24,8 @@
 #include <string.h>
 
 #include "framedsl.h"
+#include "json.h"
+#include "region.h"
 #include "testsuite.h"
 
 #define MAX_SOURCE 262144
@@ -135,6 +137,97 @@ static bool collect_elisp_list(const char *text, const char *name, WordList *out
   char opener[96];
   snprintf(opener, sizeof(opener), "(defconst %s", name);
   return collect_table(text, opener, ")", out);
+}
+
+/* Every `|`-separated piece between `from` and `until`, in order -- how a word list appears inside a
+ * regular expression's alternation, whether that regex came from the Vim syntax file or the TextMate
+ * grammar. */
+static bool collect_alternation(const char *from, const char *until, WordList *out) {
+  out->count = 0;
+  const char *at = from;
+  while (at < until) {
+    const char *bar = memchr(at, '|', (size_t)(until - at));
+    const char *piece_end = (bar != NULL && bar < until) ? bar : until;
+    if (!list_add(out, at, (size_t)(piece_end - at))) {
+      return false;
+    }
+    at = piece_end + 1;
+  }
+  return out->count > 0;
+}
+
+/* One of `syntax keyword <group> word word ... [contained]` in the Vim syntax file: `syntax/fdsl.vim`
+ * writes a word list as the words highlighted, not as a separate table, so this reads the same line
+ * the highlighter uses. `contained` is Vim's own keyword, not one of the language's, and is dropped. */
+static bool collect_vim_keyword_list(const char *text, const char *group, WordList *out) {
+  char needle[96];
+  snprintf(needle, sizeof(needle), "syntax keyword %s ", group);
+  const char *start = strstr(text, needle);
+  if (start == NULL) {
+    return false;
+  }
+  start += strlen(needle);
+  const char *end = strchr(start, '\n');
+  if (end == NULL) {
+    end = start + strlen(start);
+  }
+
+  out->count = 0;
+  const char *at = start;
+  while (at < end) {
+    while (at < end && *at == ' ') {
+      at++;
+    }
+    const char *word_end = at;
+    while (word_end < end && *word_end != ' ') {
+      word_end++;
+    }
+    size_t length = (size_t)(word_end - at);
+    if (length > 0 && !(length == strlen("contained") && strncmp(at, "contained", length) == 0)) {
+      if (!list_add(out, at, length)) {
+        return false;
+      }
+    }
+    at = word_end;
+  }
+  return out->count > 0;
+}
+
+/* The word list inside `repository["key"].match` in the TextMate grammar -- the same regular
+ * expression that does the highlighting, the way the Vim syntax file's word list does. The names
+ * this version of the language knows sit in the first parenthesised group, whether that group is the
+ * whole thing (`\b(a|b|c)\b`, for `keywords` and `attribute-values`) or the first half of an
+ * unnamed alternative (`(?:(a|b|c)|(...))`, for `attribute-header`'s known-name-or-error choice). */
+static bool collect_json_pattern_words(const Json *repository, const char *key, WordList *out) {
+  const Json *entry = json_get(repository, key);
+  const Json *match = entry != NULL ? json_get(entry, "match") : NULL;
+  const char *pattern = match != NULL ? json_string(match) : NULL;
+  if (pattern == NULL) {
+    return false;
+  }
+
+  const char *open_paren = strchr(pattern, '(');
+  if (open_paren == NULL) {
+    return false;
+  }
+  const char *group_start = open_paren + 1;
+  if (strncmp(group_start, "?:(", 3) == 0) {
+    group_start += 3;
+  }
+  const char *close_paren = strchr(group_start, ')');
+  if (close_paren == NULL) {
+    return false;
+  }
+  return collect_alternation(group_start, close_paren, out);
+}
+
+/* Parses a whole file as JSON, or NULL if it is not a file or is not valid JSON. */
+static Json *load_json(Region *region, const char *directory, const char *name) {
+  const char *text = slurp(directory, name);
+  if (text == NULL) {
+    return NULL;
+  }
+  return json_parse(region, text, strlen(text));
 }
 
 /* Loads a definition and says whether it was accepted. */
@@ -334,6 +427,361 @@ static int us9_tc05_the_word_lists_are_actually_found(const TestArguments *args)
   return 0;
 }
 
+/* ---- Vim to compiler, and back -- editors/vim/syntax/fdsl.vim ---------------------------------- */
+
+/* us9_tc01's question, asked of the Vim syntax file instead of the Emacs mode. */
+static int us9_tc06_every_word_the_vim_syntax_reserves_is_reserved(const TestArguments *args) {
+  (void)args;
+
+  const char *syntax = slurp(EDITORS_DIR, "vim/syntax/fdsl.vim");
+  if (syntax == NULL) {
+    FORCE_FAILURE();
+  }
+
+  WordList keywords;
+  if (!collect_vim_keyword_list(syntax, "fdslKeyword", &keywords)) {
+    FORCE_FAILURE();
+  }
+
+  for (size_t i = 0; i < keywords.count; ++i) {
+    char definition[256];
+    snprintf(definition, sizeof(definition), "pkt A { %s: 8 = 1; };", keywords.words[i]);
+    if (loads(definition)) {
+      return __LINE__;
+    }
+  }
+  if (!loads("pkt A { not_a_keyword: 8 = 1; };")) {
+    return __LINE__;
+  }
+  return 0;
+}
+
+/* us9_tc02's question, asked of the Vim syntax file. */
+static int us9_tc07_every_attribute_the_vim_syntax_knows_is_accepted(const TestArguments *args) {
+  (void)args;
+
+  const char *syntax = slurp(EDITORS_DIR, "vim/syntax/fdsl.vim");
+  if (syntax == NULL) {
+    FORCE_FAILURE();
+  }
+
+  WordList names;
+  WordList values;
+  if (!collect_vim_keyword_list(syntax, "fdslAttributeName", &names)) {
+    FORCE_FAILURE();
+  }
+  if (slurp(EDITORS_DIR, "vim/syntax/fdsl.vim") == NULL
+      || !collect_vim_keyword_list(source_buffer, "fdslAttributeValue", &values)) {
+    FORCE_FAILURE();
+  }
+
+  size_t accepted = 0;
+  for (size_t n = 0; n < names.count; ++n) {
+    for (size_t v = 0; v < values.count; ++v) {
+      char definition[256];
+      snprintf(
+        definition,
+        sizeof(definition),
+        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
+        values.words[v],
+        names.words[n],
+        values.words[v]
+      );
+      if (loads(definition)) {
+        accepted += 1;
+        break;
+      }
+      if (v + 1 == values.count) {
+        return __LINE__;
+      }
+    }
+  }
+
+  if (accepted != names.count) {
+    return __LINE__;
+  }
+  if (loads("@byte_ordre: big_endian;\npkt A { x: 8 = 1; };")) {
+    return __LINE__;
+  }
+  return 0;
+}
+
+/* us9_tc03's question, asked of the Vim syntax file. */
+static int us9_tc08_every_keyword_the_lexer_has_is_in_the_vim_syntax(const TestArguments *args) {
+  (void)args;
+
+  WordList lexer;
+  if (slurp(SOURCE_DIR, "lexer.c") == NULL || !collect_table(source_buffer, "KEYWORDS[] = {", "};", &lexer)) {
+    FORCE_FAILURE();
+  }
+
+  WordList syntax;
+  if (slurp(EDITORS_DIR, "vim/syntax/fdsl.vim") == NULL
+      || !collect_vim_keyword_list(source_buffer, "fdslKeyword", &syntax)) {
+    FORCE_FAILURE();
+  }
+
+  if (lexer.count != syntax.count) {
+    return __LINE__;
+  }
+  for (size_t i = 0; i < lexer.count; ++i) {
+    if (!list_has(&syntax, lexer.words[i])) {
+      return __LINE__;
+    }
+  }
+  return 0;
+}
+
+/* us9_tc04's question, asked of the Vim syntax file. */
+static int us9_tc09_every_attribute_the_parser_has_is_in_the_vim_syntax(const TestArguments *args) {
+  (void)args;
+
+  WordList parser_names;
+  WordList parser_values;
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "name", &parser_names)) {
+    FORCE_FAILURE();
+  }
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "value", &parser_values)) {
+    FORCE_FAILURE();
+  }
+
+  WordList syntax_names;
+  WordList syntax_values;
+  if (slurp(EDITORS_DIR, "vim/syntax/fdsl.vim") == NULL
+      || !collect_vim_keyword_list(source_buffer, "fdslAttributeName", &syntax_names)) {
+    FORCE_FAILURE();
+  }
+  if (slurp(EDITORS_DIR, "vim/syntax/fdsl.vim") == NULL
+      || !collect_vim_keyword_list(source_buffer, "fdslAttributeValue", &syntax_values)) {
+    FORCE_FAILURE();
+  }
+
+  if (parser_names.count != syntax_names.count || parser_values.count != syntax_values.count) {
+    return __LINE__;
+  }
+  for (size_t i = 0; i < parser_names.count; ++i) {
+    if (!list_has(&syntax_names, parser_names.words[i])) {
+      return __LINE__;
+    }
+  }
+  for (size_t i = 0; i < parser_values.count; ++i) {
+    if (!list_has(&syntax_values, parser_values.words[i])) {
+      return __LINE__;
+    }
+  }
+  return 0;
+}
+
+/* ---- The TextMate grammar to compiler, and back -- editors/vscode/syntaxes/fdsl.tmLanguage.json - */
+
+/* us9_tc01's question, asked of the grammar `keywords` matches. */
+static int us9_tc10_every_word_the_grammar_reserves_is_reserved(const TestArguments *args) {
+  (void)args;
+
+  Region *region = region_new();
+  Json *root = load_json(region, EDITORS_DIR, "vscode/syntaxes/fdsl.tmLanguage.json");
+  const Json *repository = root != NULL ? json_get(root, "repository") : NULL;
+  if (repository == NULL) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  WordList keywords;
+  if (!collect_json_pattern_words(repository, "keywords", &keywords)) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  int failure = 0;
+  for (size_t i = 0; i < keywords.count && failure == 0; ++i) {
+    char definition[256];
+    snprintf(definition, sizeof(definition), "pkt A { %s: 8 = 1; };", keywords.words[i]);
+    if (loads(definition)) {
+      failure = __LINE__;
+    }
+  }
+  if (failure == 0 && !loads("pkt A { not_a_keyword: 8 = 1; };")) {
+    failure = __LINE__;
+  }
+  region_free(region);
+  return failure;
+}
+
+/* us9_tc02's question, asked of the grammar's `attribute-header` and `attribute-values` matches. */
+static int us9_tc11_every_attribute_the_grammar_knows_is_accepted(const TestArguments *args) {
+  (void)args;
+
+  Region *region = region_new();
+  Json *root = load_json(region, EDITORS_DIR, "vscode/syntaxes/fdsl.tmLanguage.json");
+  const Json *repository = root != NULL ? json_get(root, "repository") : NULL;
+  if (repository == NULL) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  WordList names;
+  WordList values;
+  if (!collect_json_pattern_words(repository, "attribute-header", &names)
+      || !collect_json_pattern_words(repository, "attribute-values", &values)) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  int failure = 0;
+  size_t accepted = 0;
+  for (size_t n = 0; n < names.count && failure == 0; ++n) {
+    for (size_t v = 0; v < values.count; ++v) {
+      char definition[256];
+      snprintf(
+        definition,
+        sizeof(definition),
+        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
+        values.words[v],
+        names.words[n],
+        values.words[v]
+      );
+      if (loads(definition)) {
+        accepted += 1;
+        break;
+      }
+      if (v + 1 == values.count) {
+        failure = __LINE__;
+      }
+    }
+  }
+
+  if (failure == 0 && accepted != names.count) {
+    failure = __LINE__;
+  }
+  if (failure == 0 && loads("@byte_ordre: big_endian;\npkt A { x: 8 = 1; };")) {
+    failure = __LINE__;
+  }
+  region_free(region);
+  return failure;
+}
+
+/* us9_tc03's question, asked of the grammar. */
+static int us9_tc12_every_keyword_the_lexer_has_is_in_the_grammar(const TestArguments *args) {
+  (void)args;
+
+  WordList lexer;
+  if (slurp(SOURCE_DIR, "lexer.c") == NULL || !collect_table(source_buffer, "KEYWORDS[] = {", "};", &lexer)) {
+    FORCE_FAILURE();
+  }
+
+  Region *region = region_new();
+  Json *root = load_json(region, EDITORS_DIR, "vscode/syntaxes/fdsl.tmLanguage.json");
+  const Json *repository = root != NULL ? json_get(root, "repository") : NULL;
+  WordList grammar;
+  if (repository == NULL || !collect_json_pattern_words(repository, "keywords", &grammar)) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  int failure = 0;
+  if (lexer.count != grammar.count) {
+    failure = __LINE__;
+  }
+  for (size_t i = 0; failure == 0 && i < lexer.count; ++i) {
+    if (!list_has(&grammar, lexer.words[i])) {
+      failure = __LINE__;
+    }
+  }
+  region_free(region);
+  return failure;
+}
+
+/* us9_tc04's question, asked of the grammar. */
+static int us9_tc13_every_attribute_the_parser_has_is_in_the_grammar(const TestArguments *args) {
+  (void)args;
+
+  WordList parser_names;
+  WordList parser_values;
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "name", &parser_names)) {
+    FORCE_FAILURE();
+  }
+  if (slurp(SOURCE_DIR, "parser.c") == NULL || !collect_word_is(source_buffer, "value", &parser_values)) {
+    FORCE_FAILURE();
+  }
+
+  Region *region = region_new();
+  Json *root = load_json(region, EDITORS_DIR, "vscode/syntaxes/fdsl.tmLanguage.json");
+  const Json *repository = root != NULL ? json_get(root, "repository") : NULL;
+  WordList grammar_names;
+  WordList grammar_values;
+  if (repository == NULL || !collect_json_pattern_words(repository, "attribute-header", &grammar_names)
+      || !collect_json_pattern_words(repository, "attribute-values", &grammar_values)) {
+    region_free(region);
+    FORCE_FAILURE();
+  }
+
+  int failure = 0;
+  if (parser_names.count != grammar_names.count || parser_values.count != grammar_values.count) {
+    failure = __LINE__;
+  }
+  for (size_t i = 0; failure == 0 && i < parser_names.count; ++i) {
+    if (!list_has(&grammar_names, parser_names.words[i])) {
+      failure = __LINE__;
+    }
+  }
+  for (size_t i = 0; failure == 0 && i < parser_values.count; ++i) {
+    if (!list_has(&grammar_values, parser_values.words[i])) {
+      failure = __LINE__;
+    }
+  }
+  region_free(region);
+  return failure;
+}
+
+/* The Vim and JSON extractions are actually finding something, the way us9_tc05 checks the Emacs
+ * ones -- and, since nothing else in this file asks, that package.json and the grammar are valid
+ * JSON at all. json_parse refusing either is the same failure a `.vsix` built from a typo would
+ * hit, caught here instead. */
+static int us9_tc14_the_vim_and_json_word_lists_are_actually_found(const TestArguments *args) {
+  (void)args;
+
+  WordList list;
+  if (slurp(EDITORS_DIR, "vim/syntax/fdsl.vim") == NULL
+      || !collect_vim_keyword_list(source_buffer, "fdslKeyword", &list)) {
+    return __LINE__;
+  }
+  if (list.count != 3 || !list_has(&list, "pkt") || !list_has(&list, "valof") || !list_has(&list, "block")) {
+    return __LINE__;
+  }
+  if (collect_vim_keyword_list(source_buffer, "fdslNothingOfTheSort", &list)) {
+    return __LINE__;
+  }
+
+  Region *region = region_new();
+  Json *grammar = load_json(region, EDITORS_DIR, "vscode/syntaxes/fdsl.tmLanguage.json");
+  const Json *repository = grammar != NULL ? json_get(grammar, "repository") : NULL;
+  if (repository == NULL) {
+    region_free(region);
+    return __LINE__;
+  }
+  if (!collect_json_pattern_words(repository, "attribute-values", &list)) {
+    region_free(region);
+    return __LINE__;
+  }
+  if (list.count != 4 || !list_has(&list, "msb_first") || !list_has(&list, "little_endian")) {
+    region_free(region);
+    return __LINE__;
+  }
+  if (collect_json_pattern_words(repository, "nothing-of-the-sort", &list)) {
+    region_free(region);
+    return __LINE__;
+  }
+
+  Json *package = load_json(region, EDITORS_DIR, "vscode/package.json");
+  if (package == NULL || json_get(package, "name") == NULL) {
+    region_free(region);
+    return __LINE__;
+  }
+
+  region_free(region);
+  return 0;
+}
+
 void register_user_story9(void) {
   START_REGISTERING();
   ADD_TEST_CASE(
@@ -357,4 +805,49 @@ void register_user_story9(void) {
     false
   );
   ADD_TEST_CASE(us9_tc05_the_word_lists_are_actually_found, "the scan finds the tables it claims to compare", true);
+  ADD_TEST_CASE(
+    us9_tc06_every_word_the_vim_syntax_reserves_is_reserved,
+    "every word the Vim syntax file calls a keyword is rejected as a field name",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc07_every_attribute_the_vim_syntax_knows_is_accepted,
+    "every attribute the Vim syntax file knows is one the parser accepts",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc08_every_keyword_the_lexer_has_is_in_the_vim_syntax,
+    "a keyword added to the lexer and not to the Vim syntax file is caught",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc09_every_attribute_the_parser_has_is_in_the_vim_syntax,
+    "an attribute added to the parser and not to the Vim syntax file is caught",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc10_every_word_the_grammar_reserves_is_reserved,
+    "every word the TextMate grammar calls a keyword is rejected as a field name",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc11_every_attribute_the_grammar_knows_is_accepted,
+    "every attribute the TextMate grammar knows is one the parser accepts",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc12_every_keyword_the_lexer_has_is_in_the_grammar,
+    "a keyword added to the lexer and not to the TextMate grammar is caught",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc13_every_attribute_the_parser_has_is_in_the_grammar,
+    "an attribute added to the parser and not to the TextMate grammar is caught",
+    false
+  );
+  ADD_TEST_CASE(
+    us9_tc14_the_vim_and_json_word_lists_are_actually_found,
+    "the scan finds the Vim and JSON tables too, and both files are valid JSON where that applies",
+    true
+  );
 }

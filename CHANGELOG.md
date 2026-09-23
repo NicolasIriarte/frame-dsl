@@ -24,6 +24,15 @@ nothing written under it fails the release rather than publishing an empty page.
   compiler's own lexer. JSON-RPC over stdio with a hand-written JSON reader and writer, fuzzed like
   the loader. `frame-dsl-mode` registers it with eglot and lsp-mode, so `M-x eglot` needs no
   configuration. `docs/highlighting.md` is now `docs/editors.md`, and `manual/editors.md` is new.
+- **Vim, Neovim and VS Code**, alongside Emacs: `editors/vim/` is one runtime directory for Vim and
+  Neovim -- filetype, syntax, indentation, `:make` from `--check`, Neovim 0.11+'s built-in LSP client
+  (`vim.lsp.enable('frame_dsl')`), and, for plain Vim, an ALE linter and fixer plus documented vim-lsp
+  configuration. `editors/vscode/` is a plain-JavaScript extension -- a TextMate grammar, a
+  `frameDsl.path` setting, and `frame-dsl --lsp` through a vendored `vscode-languageclient`
+  (`scripts/vendor_vscode_languageclient.sh` produces it; nothing here needs npm to build or test).
+  `make vsix` packages it with `zip` alone, for attaching to a release; no marketplace publishing.
+  `test/unit/9_editor_support.c`'s drift test now covers the Vim syntax file and the TextMate grammar
+  the same way it already covered the Emacs mode.
 - **A formatter.** `frame-dsl <file>... --format` rewrites definition files into one layout -- two
   spaces, no tabs, fields aligned on their widths, trailing comments aligned, numbers and comments
   kept as written -- and `--format --check` reports the files that would change. It refuses a file

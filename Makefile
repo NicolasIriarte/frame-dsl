@@ -146,14 +146,21 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean bench fuzz test-fuzz-replay
+	format-tool hooks clean bench fuzz test-fuzz-replay vsix
 
-# Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
-# person running this has in their own configuration cannot make the mode look like it works.
+# Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
+# the person running this has in their own configuration cannot make an editor look like it works.
 EDITORS := editors
 EMACS ?= emacs
 EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.el \
 	--eval '(setq frame-dsl-program "$(abspath $(TARGET))")' -f ert-run-tests-batch-and-exit
+
+VIM ?= vim
+NVIM ?= nvim
+# PATH, not the -program equivalents above: the Vim runtime files have no config knob for it, and
+# find frame-dsl the way an editor started from a shell does -- so $(TARGET)'s directory goes first.
+VIM_TEST_CMD = PATH="$(abspath $(BUILD)):$$PATH" $(1) -u NONE -N -es --cmd 'set rtp^=$(EDITORS)/vim' \
+	-S $(EDITORS)/vim/frame-dsl-tests.vim
 
 # Where `make install` puts the tool. Every editor integration starts by finding `frame-dsl` on the
 # PATH, so ~/.local is the usual answer for one person: make install PREFIX=~/.local
@@ -169,6 +176,21 @@ deps: $(DEPS)
 example: $(EXAMPLE_UART_DEVICE)
 
 lib: $(LIB_ARCHIVE)
+
+# The VS Code extension, packaged with zip alone -- see scripts/build_vsix.sh. The version comes
+# from editors/vscode/package.json, not this Makefile: there is exactly one place that number is
+# written. Depends on the vendored client rather than building it, since producing that needs npm
+# and nothing else here does; scripts/vendor_vscode_languageclient.sh is run by hand instead.
+VSIX_VERSION = $(shell jq -r .version editors/vscode/package.json)
+VSIX := $(BUILD)/frame-dsl-$(VSIX_VERSION).vsix
+VSCODE_SRC := editors/vscode/package.json editors/vscode/language-configuration.json \
+	editors/vscode/extension.js editors/vscode/syntaxes/fdsl.tmLanguage.json \
+	editors/vscode/vendor/vscode-languageclient.js
+
+vsix: $(VSIX)
+
+$(VSIX): $(VSCODE_SRC) scripts/build_vsix.sh
+	scripts/build_vsix.sh $@
 
 # The tool only. The library and its header are consumed from the build tree by a project linking
 # them, which is a different question from putting a command on somebody's PATH.
@@ -317,15 +339,26 @@ test-unit: $(UNIT_RUNNER)
 test-system: $(SYSTEM_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/system ./$(SYSTEM_RUNNER)
 
-# The Emacs half of the editor support. Skipped, loudly, when Emacs is not installed: this project
-# builds and tests with a C compiler, make and tar, and a highlighter is not a reason to add a third
-# thing somebody has to install to run the suite. What that skip gives up is covered without Emacs by
-# test/unit/9_editor_support.c, which compares the mode's word lists against the compiler's.
+# The Emacs, Vim and Neovim halves of the editor support. Each is skipped, loudly, when that editor
+# is not installed: this project builds and tests with a C compiler, make and tar, and a highlighter
+# is not a reason to add a fourth thing somebody has to install to run the suite. What the skips give
+# up is covered without any editor by test/unit/9_editor_support.c, which compares the word lists
+# against the compiler's.
 test-editors: $(TARGET)
 	@if command -v $(EMACS) >/dev/null 2>&1; then \
 		$(EMACS) $(EMACS_TEST_FLAGS); \
 	else \
 		echo "test-editors: no $(EMACS) on PATH, skipping editors/frame-dsl-mode.el tests"; \
+	fi
+	@if command -v $(VIM) >/dev/null 2>&1; then \
+		$(call VIM_TEST_CMD,$(VIM)); \
+	else \
+		echo "test-editors: no $(VIM) on PATH, skipping editors/vim tests"; \
+	fi
+	@if command -v $(NVIM) >/dev/null 2>&1; then \
+		$(call VIM_TEST_CMD,$(NVIM)); \
+	else \
+		echo "test-editors: no $(NVIM) on PATH, skipping editors/vim tests under Neovim"; \
 	fi
 
 # Checked once, before either recipe below runs, so that "your clang-format is too old" is said once
