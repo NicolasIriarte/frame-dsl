@@ -25,6 +25,14 @@
   (file-name-directory (or load-file-name buffer-file-name))
   "Where this file lives, so examples/ can be found relative to it.")
 
+(defun frame-dsl-tests--indent-buffer ()
+  "Reindent the whole buffer, without `indent-region's progress messages.
+
+Under --batch every `message' goes to stderr, so the \"Indenting region...\" pair it prints for
+each call would otherwise land in the middle of `make test' once per example file."
+  (let ((inhibit-message t))
+    (indent-region (point-min) (point-max))))
+
 (defun frame-dsl-tests--fontify (text)
   "Put TEXT in a Frame-DSL buffer, fontify it, and return the buffer."
   (let ((buffer (generate-new-buffer " *frame-dsl-test*")))
@@ -141,7 +149,7 @@
     (with-temp-buffer
       (insert flat)
       (frame-dsl-mode)
-      (indent-region (point-min) (point-max))
+      (frame-dsl-tests--indent-buffer)
       (should (string= (buffer-string) want)))))
 
 (ert-deftest frame-dsl-tests-every-example-fontifies ()
@@ -164,7 +172,7 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
                 ;; Every valid example is; the invalid ones are invalid to the *checker*, not to
                 ;; the layout, so they are held to the same standard.
                 (let ((before (buffer-string)))
-                  (indent-region (point-min) (point-max))
+                  (frame-dsl-tests--indent-buffer)
                   (should (string= before (buffer-string)))))
             (kill-buffer buffer)))))))
 

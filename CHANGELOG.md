@@ -86,3 +86,8 @@ nothing written under it fails the release rather than publishing an empty page.
 - `README.md`, and a written scope in `docs/scope.md` stating what the project will not do as well
   as what it will.
 - `CHANGELOG.md`.
+
+### Fixed
+
+- `make test` no longer prints an `Indenting region...` pair per example file in the middle of the
+  Emacs results: the editor tests reindent with `inhibit-message` bound.
