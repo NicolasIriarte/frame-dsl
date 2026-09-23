@@ -90,7 +90,14 @@ FUZZ_SECONDS ?= 60
 FUZZ_TIMEOUT ?= 5
 FUZZ_BINS := $(FUZZ_TARGETS:%=$(BUILD)/fuzz/%)
 REPLAY_BINS := $(FUZZ_TARGETS:%=$(BUILD)/replay/%)
-SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+# Non-PIE, because ASan in GCC 12 and clang 14 -- what CI's image has -- fails at random on a kernel
+# with vm.mmap_rnd_bits = 32, which CI's has: wherever ASLR places a position-independent executable,
+# the shadow memory can collide with it, and the program prints AddressSanitizer:DEADLYSIGNAL in a
+# loop without ever reaching main (#80). About one run in five did, of any sanitized binary however
+# trivial. A fixed load address takes the collision away; newer runtimes avoid it on their own.
+SANITIZE_NO_PIE := -fno-pie -no-pie
+SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
+	$(SANITIZE_NO_PIE)
 
 # The library as one file, so a program outside this repository -- a copy of the example being
 # played with, most likely -- compiles with `-Lbuild -lframedsl` instead of naming object files.
@@ -196,10 +203,10 @@ fuzz: $(FUZZ_BINS)
 # inputs, run once each.
 #
 # Wrapped in `timeout` on top of replay.c's own alarm(): the alarm is what usually fires and says which
-# input hung, but it is one process's signal handler, and a CI runner once saw it not fire at all --
-# never diagnosed, not reproducible on three different machines and compilers tried locally. `timeout`
-# is enforced by the kernel from outside the process, so a second failure of the same kind still ends
-# the build instead of hanging it, even without knowing why the first one happened.
+# input hung, but it is one process's signal handler, and a CI runner once saw it not fire at all.
+# That turned out to be ASan faulting in a loop before main was reached, so before the alarm was ever
+# set (#80, see SANITIZE_NO_PIE above). `timeout` is enforced by the kernel from outside the process,
+# so a failure that never gets as far as the alarm still ends the build instead of hanging it.
 REPLAY_TIMEOUT_SECONDS ?= 120
 test-fuzz-replay: $(REPLAY_BINS)
 	@for target in $(FUZZ_TARGETS); do \
@@ -263,7 +270,7 @@ $(BENCH): bench/bench.c $(LIB_ARCHIVE)
 $(BUILD)/fuzz/%: fuzz/fuzz_%.c $(LIB_SRC) $(wildcard src/*.h) include/framedsl.h
 	@mkdir -p $(@D)
 	$(FUZZ_CC) $(FUZZ_FLAGS) -std=c11 -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all \
-	  -D_DEFAULT_SOURCE -Iinclude -Isrc $< $(LIB_SRC) -o $@
+	  $(SANITIZE_NO_PIE) -D_DEFAULT_SOURCE -Iinclude -Isrc $< $(LIB_SRC) -o $@
 
 $(BUILD)/replay/%: fuzz/fuzz_%.c fuzz/replay.c $(LIB_SRC) $(wildcard src/*.h) include/framedsl.h
 	@mkdir -p $(@D)

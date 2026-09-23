@@ -20,10 +20,14 @@ jobs:
       # other target: that step skips with a message when Emacs is absent, so a contributor without
       # it still runs everything else. It is installed here because a test that only ever skips in
       # CI is a test nobody is running.
+      #
+      # Through scripts/ci_apt_get.sh rather than apt-get itself: concurrent jobs on this runner share
+      # an apt proxy that can leave a plain apt-get hung for good (#79). The script bounds and retries
+      # each call. `ubuntu-latest` on this runner is node:22-bookworm, so these are Debian packages.
       - name: Install the toolchain
         run: |
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends build-essential emacs-nox clang-format-22
+          scripts/ci_apt_get.sh update -qq
+          scripts/ci_apt_get.sh install -y -qq --no-install-recommends build-essential emacs-nox clang-format-22
 
       # Before the build, so a formatting problem is reported without waiting on a compile. The
       # pre-commit hook (.githooks/pre-commit) is a convenience that catches this earlier; this is
@@ -56,7 +60,7 @@ jobs:
       # on that specific failure.
       - name: Fuzz
         run: |
-          apt-get install -y -qq --no-install-recommends clang || true
+          scripts/ci_apt_get.sh install -y -qq --no-install-recommends clang || true
           if ! command -v clang >/dev/null; then
             echo "no clang on this runner -- skipping the fuzz run"
             exit 0
