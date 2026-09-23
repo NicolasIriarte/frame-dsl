@@ -6,7 +6,7 @@
 
 | File | |
 | --- | --- |
-| [`frame-dsl-mode.el`](frame-dsl-mode.el) | the major mode: font lock, comments, indentation |
+| [`frame-dsl-mode.el`](frame-dsl-mode.el) | the major mode: font lock, comments, indentation, Flymake |
 | [`frame-dsl-mode-tests.el`](frame-dsl-mode-tests.el) | its tests, run by `make test-editors` |
 
 ## Installing
@@ -55,10 +55,34 @@ What it does not do is understand the language: it is regular expressions, so a 
 looks exactly like one that does. `docs/highlighting.md` explains why that is the right trade for
 now and what would change it.
 
+- **Errors as you type.** A Flymake backend pipes the buffer to `frame-dsl - --check --stdin-name
+  <file>`, so what is checked is what is on screen -- saved or not -- and imports resolve from beside
+  the file. The messages are the compiler's own. A problem inside an imported file is shown on the
+  `import` line that brought it in, naming the file and position it is really at. `flymake-mode` is
+  switched on by itself when `frame-dsl` can be found; `M-x flymake-show-buffer-diagnostics` lists
+  everything.
+
+## Getting `frame-dsl` onto the PATH
+
+The Flymake backend runs the `frame-dsl` tool, so it has to be somewhere Emacs can find it. From the
+repository root:
+
+```sh
+make install PREFIX=~/.local     # puts ~/.local/bin/frame-dsl
+```
+
+and make sure `~/.local/bin` is on `exec-path`. Or point the mode straight at a build:
+
+```elisp
+(setq frame-dsl-program "~/src/frame-dsl/build/frame-dsl")
+```
+
 ## Configuring
 
 ```elisp
 (setq frame-dsl-indent-offset 2)   ; the default
+(setq frame-dsl-program "frame-dsl")  ; the default: a name on exec-path, or a file name
+(setq frame-dsl-flymake nil)       ; don't switch flymake-mode on by itself
 ```
 
 ## Running the tests

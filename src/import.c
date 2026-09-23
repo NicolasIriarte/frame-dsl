@@ -160,16 +160,25 @@ static bool merge(
   AstFile *file,
   AstFile *imported,
   const char *real,
-  const AstImport *import,
+  AstImport *import,
   Merged *merged,
   DiagList *diags
 ) {
   bool failed = false;
   const char *prefix = import->alias;
 
+  /* Everything the imported file offers counts as brought by this import, admitted or not: a name
+   * skipped as a diamond is still one this import makes available. */
+  import->brought_count = 0;
+  import->brought = region_alloc(file->region, (imported->block_count + imported->cal_count + 1) * sizeof(char *));
+  if (import->brought == NULL) {
+    return false;
+  }
+
   for (size_t b = 0; b < imported->block_count; ++b) {
     const AstPacket *block = &imported->blocks[b];
     const char *name = prefixed(file, prefix, block->name);
+    import->brought[import->brought_count++] = name;
     const char *origin = block->origin != NULL ? block->origin : keep(file, real);
 
     bool admitted = true;
@@ -209,6 +218,7 @@ static bool merge(
   for (size_t c = 0; c < imported->cal_count; ++c) {
     const AstCal *cal = &imported->cals[c];
     const char *name = prefixed(file, prefix, cal->name);
+    import->brought[import->brought_count++] = name;
     const char *origin = cal->origin != NULL ? cal->origin : keep(file, real);
 
     bool admitted = true;
@@ -259,12 +269,11 @@ static AstFile *load_imported(const char *shown, const char *real, Chain *chain,
   DiagList own;
   diag_init(&own);
   AstFile *imported = parse(source, &own);
-  free(source);
 
   char directory[PATH_MAX];
   directory_of(shown, directory, sizeof(directory));
 
-  bool ok = imported != NULL && own.count == 0;
+  bool ok = imported != NULL && diag_error_count(&own) == 0;
   if (ok) {
     chain->stack[chain->depth++] = real;
     ok = resolve(imported, directory, chain, &own);
@@ -279,6 +288,13 @@ static AstFile *load_imported(const char *shown, const char *real, Chain *chain,
     layout_free(layout);
   }
 
+  /* Spans are found in this file's own text, which is about to go: past here its diagnostics are
+   * attributed to it and nothing has its source to look them up in. */
+  diag_fill_spans(&own, source);
+  free(source);
+  /* A warning is advice to whoever edits that file, and they see it when they check it; repeated here
+   * it would be noise about a file this one only uses. */
+  diag_drop_warnings(&own);
   diag_append(diags, &own, shown);
   diag_free(&own);
   if (!ok) {
@@ -292,7 +308,7 @@ static bool resolve(AstFile *file, const char *base_dir, Chain *chain, DiagList 
   bool ok = true;
   Merged merged = { 0 };
 
-  for (const AstImport *import = file->imports; import != NULL; import = import->next) {
+  for (AstImport *import = file->imports; import != NULL; import = import->next) {
     char shown[PATH_MAX];
     if (import->path[0] == '/' || strcmp(base_dir, ".") == 0) {
       snprintf(shown, sizeof(shown), "%s", import->path);
@@ -327,10 +343,10 @@ static bool resolve(AstFile *file, const char *base_dir, Chain *chain, DiagList 
       continue;
     }
 
-    size_t reported = diags->count;
+    size_t reported = diag_error_count(diags);
     AstFile *imported = load_imported(shown, real, chain, diags);
     if (imported == NULL) {
-      if (diags->count == reported) {
+      if (diag_error_count(diags) == reported) {
         diag_add(diags, import->line, import->column, 26, "cannot read '%s'", shown);
       }
       ok = false;
@@ -381,7 +397,7 @@ static bool resolve(AstFile *file, const char *base_dir, Chain *chain, DiagList 
   free(merged.blocks);
   free(merged.cals);
 
-  if (!ok && diags->count == 0) {
+  if (!ok && diag_error_count(diags) == 0) {
     diag_add(diags, 1, 1, 0, "out of memory");
   }
   return ok;

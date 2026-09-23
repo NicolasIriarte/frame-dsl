@@ -209,6 +209,12 @@ typedef struct {
   ByteOrder byte_order;
   bool bit_written;
   bool byte_written;
+  /* Whether the value in effect was written somewhere -- here or in an enclosing scope -- rather than
+   * being the language's default. Survives inherited(), which is the point: it is what tells an
+   * attribute repeating its enclosing scope (a warning, check 31) from one spelling out the default
+   * (documentation, and silent). */
+  bool bit_explicit;
+  bool byte_explicit;
   int bit_line;
   int bit_column;
   int byte_line;
@@ -280,6 +286,23 @@ static const char *dotted_name(Parser *parser, const char *first, size_t first_l
   return copy;
 }
 
+/* Check 31, a warning: an attribute setting what an enclosing scope already wrote. At the value, which
+ * is the part that says nothing new. */
+static void redundant(Parser *parser, const Token *value, const char *name, int from_line) {
+  diag_warn(
+    parser->diags,
+    value->line,
+    value->column,
+    31,
+    "'@%s: %.*s' changes nothing: the '@%s' on line %d already applies here",
+    name,
+    (int)value->length,
+    value->text,
+    name,
+    from_line
+  );
+}
+
 /* attribute = "@" identifier ":" identifier ";" */
 static bool parse_attribute(Parser *parser, Attributes *attrs) {
   int line = parser->current.line;
@@ -306,6 +329,15 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
   advance(parser);
 
   bool ok = true;
+  /* What applied before this attribute, and whether it came from a scope enclosing this one. Written
+   * earlier in the *same* group is not that: the group is one scope, repeating itself. */
+  const bool bit_inherited = attrs->bit_explicit && !attrs->bit_written;
+  const bool byte_inherited = attrs->byte_explicit && !attrs->byte_written;
+  const BitOrder bit_before = attrs->bit_order;
+  const ByteOrder byte_before = attrs->byte_order;
+  const int bit_from = attrs->bit_line;
+  const int byte_from = attrs->byte_line;
+
   if (word_is(&name, "bit_order")) {
     if (word_is(&value, "msb_first")) {
       attrs->bit_order = BIT_ORDER_MSB_FIRST;
@@ -323,7 +355,11 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
       );
       ok = false;
     }
+    if (ok && bit_inherited && attrs->bit_order == bit_before) {
+      redundant(parser, &value, "bit_order", bit_from);
+    }
     attrs->bit_written = ok;
+    attrs->bit_explicit = attrs->bit_explicit || ok;
     attrs->bit_line = line;
     attrs->bit_column = column;
   } else if (word_is(&name, "byte_order")) {
@@ -343,7 +379,11 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
       );
       ok = false;
     }
+    if (ok && byte_inherited && attrs->byte_order == byte_before) {
+      redundant(parser, &value, "byte_order", byte_from);
+    }
     attrs->byte_written = ok;
+    attrs->byte_explicit = attrs->byte_explicit || ok;
     /* Positioned at the '@', which is what check 10 points the author at. */
     attrs->byte_line = line;
     attrs->byte_column = column;
@@ -881,6 +921,8 @@ static void parse_cal(Parser *parser) {
     recover_to_field_end(parser);
     return;
   }
+  cal->name_line = parser->current.line;
+  cal->name_column = parser->current.column;
   cal->name = take_name(parser);
 
   if (!parse_cal_function(parser, &cal->param, &cal->body)) {
@@ -1059,6 +1101,8 @@ AstFile *parse(const char *source, DiagList *diags) {
       recover_to_packet_end(&parser);
       continue;
     }
+    packet->name_line = parser.current.line;
+    packet->name_column = parser.current.column;
     packet->name = region_strndup(parser.file->region, parser.current.text, parser.current.length);
     if (packet->name == NULL) {
       parser.out_of_memory = true;
@@ -1074,7 +1118,7 @@ AstFile *parse(const char *source, DiagList *diags) {
     /* The group in front of 'pkt' is the packet's default, so its fields inherit it rather than
      * having written it. */
     Attributes body_attrs = inherited(packet_attrs);
-    size_t diags_before_body = parser.diags->count;
+    size_t diags_before_body = diag_error_count(parser.diags);
     while (!check(&parser, TOK_RBRACE) && !check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID)
            && !parser.out_of_memory) {
       parse_declaration(&parser, packet, body_attrs);
@@ -1087,7 +1131,7 @@ AstFile *parse(const char *source, DiagList *diags) {
      * Only reported when the body was clean: a malformed field already leaves field_count at 0 and
      * reports its own diagnostic, and this one -- anchored on the packet's own opening brace -- would
      * otherwise sort ahead of it and become the diagnostic callers see first. */
-    if (packet->field_count == 0 && parser.diags->count == diags_before_body) {
+    if (packet->field_count == 0 && diag_error_count(parser.diags) == diags_before_body) {
       diag_add(
         parser.diags,
         packet->line,

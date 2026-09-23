@@ -31,12 +31,126 @@ static void report(const FramedslResult *result) {
       snprintf(check, sizeof(check), " [check %d]", diag->check);
     }
 
-    if (diag->line > 0) {
+    if (diag->severity == FRAMEDSL_SEVERITY_WARNING) {
+      if (diag->line > 0) {
+        log_warn("%s:%d:%d:%s %s", name, diag->line, diag->column, check, diag->message);
+      } else {
+        log_warn("%s:%s %s", name, check, diag->message);
+      }
+    } else if (diag->line > 0) {
       log_fail("%s:%d:%d:%s %s", name, diag->line, diag->column, check, diag->message);
     } else {
       log_fail("%s:%s %s", name, check, diag->message);
     }
   }
+}
+
+/* --check's output: one diagnostic per line in the shape gcc prints, and nothing else -- no colour,
+ * no logger prefix, no summary. Every editor already knows how to read this shape (flymake, Vim's
+ * errorformat, ALE, a VS Code problem matcher), which is the whole reason to print it. */
+static void report_plain(const FramedslResult *result) {
+  for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
+    const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
+    const char *name = diag->file != NULL ? diag->file : framedsl_source_name(result);
+    const char *severity = diag->severity == FRAMEDSL_SEVERITY_WARNING ? "warning" : "error";
+
+    if (diag->line > 0) {
+      printf("%s:%d:%d: %s: %s", name, diag->line, diag->column, severity, diag->message);
+    } else {
+      printf("%s: %s: %s", name, severity, diag->message);
+    }
+    if (diag->check > 0) {
+      printf(" [check %d]", diag->check);
+    }
+    putchar('\n');
+  }
+}
+
+/* All of standard input, terminated. NULL if it could not be read. */
+static char *read_stdin(void) {
+  size_t capacity = 4096;
+  size_t used = 0;
+  char *text = malloc(capacity);
+  if (text == NULL) {
+    return NULL;
+  }
+  for (;;) {
+    if (used + 1 >= capacity) {
+      char *grown = realloc(text, capacity * 2);
+      if (grown == NULL) {
+        free(text);
+        return NULL;
+      }
+      text = grown;
+      capacity *= 2;
+    }
+    size_t got = fread(text + used, 1, capacity - used - 1, stdin);
+    used += got;
+    if (got == 0) {
+      break;
+    }
+  }
+  if (ferror(stdin)) {
+    free(text);
+    return NULL;
+  }
+  text[used] = '\0';
+  return text;
+}
+
+/* `-` is standard input, attributed to `stdin_name` when there is one: an editor pipes the buffer as
+ * typed and says which file it belongs to, so imports resolve from beside it. */
+static FramedslResult *load_path(const char *path, const char *stdin_name) {
+  if (strcmp(path, "-") != 0) {
+    return framedsl_load_file(path);
+  }
+  char *source = read_stdin();
+  FramedslResult *result =
+    stdin_name != NULL ? framedsl_load_source(source, stdin_name) : framedsl_load_string(source, "<stdin>");
+  free(source);
+  return result;
+}
+
+static bool has_warnings(const FramedslResult *result) {
+  for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
+    if (framedsl_diagnostic(result, i)->severity == FRAMEDSL_SEVERITY_WARNING) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* --check: every file, every diagnostic, and an exit status a script can branch on. The worst file
+ * decides it: 2 if one could not be read at all, 1 if one is wrong (or only warned, under --werror),
+ * 0 otherwise. */
+static int check_files(const char **paths, size_t count, const char *stdin_name, bool werror) {
+  int status = 0;
+  for (size_t i = 0; i < count; ++i) {
+    FramedslResult *result = load_path(paths[i], stdin_name);
+    if (result == NULL) {
+      printf("%s: error: out of memory\n", paths[i]);
+      return 2;
+    }
+    report_plain(result);
+
+    int this_one = 0;
+    switch (framedsl_status(result)) {
+    case FRAMEDSL_OK:
+      this_one = werror && has_warnings(result) ? 1 : 0;
+      break;
+    case FRAMEDSL_ERROR_INVALID:
+      this_one = 1;
+      break;
+    default:
+      this_one = 2;
+      break;
+    }
+    if (this_one > status) {
+      status = this_one;
+    }
+    framedsl_result_free(result);
+  }
+  return status;
 }
 
 static void describe(const FramedslDefinition *definition) {
@@ -550,6 +664,8 @@ static void usage(const char *program) {
   log_fail("usage: %s <definition.fdsl> [-d|--decode <hex>]", program);
   log_fail("       %s <definition.fdsl> -e|--encode <packet> [field=value ...] [-r|--report] [-q|--quiet]", program);
   log_fail("       %s <definition.fdsl> --emit-c", program);
+  log_fail("       %s <definition.fdsl>... --check [--werror]", program);
+  log_fail("  a definition of '-' is standard input; --stdin-name <path> says which file it is");
   log_fail("  with none of them, describes the definition");
   log_fail("  %s frames.fdsl -d \"AA BB CC DD\"", program);
   log_fail("  %s frames.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234", program);
@@ -557,6 +673,9 @@ static void usage(const char *program) {
 
 int main(int argc, char **argv) {
   const char *path = NULL;
+  bool check = false;
+  bool werror = false;
+  const char *stdin_name = NULL;
   const char *hex = NULL;
   const char *packet = NULL;
   bool show = false;
@@ -566,7 +685,11 @@ int main(int argc, char **argv) {
   /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
   const char **assignments = calloc((size_t)argc, sizeof(*assignments));
   size_t assigned = 0;
-  if (assignments == NULL) {
+  /* Likewise every definition file named; more than one only means something to --check. */
+  const char **paths = calloc((size_t)argc, sizeof(*paths));
+  size_t path_count = 0;
+  if (assignments == NULL || paths == NULL) {
+    free(paths);
     log_fail("out of memory");
     return 2;
   }
@@ -598,14 +721,34 @@ int main(int argc, char **argv) {
       assignments[assigned++] = argv[i];
     } else if (strcmp(argv[i], "--emit-c") == 0) {
       emit = true;
-    } else if (path == NULL) {
-      path = argv[i];
+    } else if (strcmp(argv[i], "--check") == 0) {
+      check = true;
+    } else if (strcmp(argv[i], "--werror") == 0) {
+      werror = true;
+    } else if (strcmp(argv[i], "--stdin-name") == 0) {
+      if (i + 1 >= argc) {
+        log_fail("%s: expected a path after it", argv[i]);
+        usage(argv[0]);
+        free(assignments);
+        free(paths);
+        return 2;
+      }
+      stdin_name = argv[++i];
+    } else if (argv[i][0] != '-' || strcmp(argv[i], "-") == 0) {
+      paths[path_count++] = argv[i];
     } else {
       log_fail("unexpected argument '%s'", argv[i]);
       usage(argv[0]);
       free(assignments);
+      free(paths);
       return 2;
     }
+  }
+  path = path_count > 0 ? paths[0] : NULL;
+
+  size_t from_stdin = 0;
+  for (size_t i = 0; i < path_count; ++i) {
+    from_stdin += strcmp(paths[i], "-") == 0;
   }
 
   /* Each of these is a guess the tool would otherwise have to make about which one was meant. */
@@ -620,23 +763,44 @@ int main(int argc, char **argv) {
     conflict = "--emit-c writes the calibrations out; it does not decode or encode as well";
   } else if (packet == NULL && quiet) {
     conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
+  } else if (check && (emit || hex != NULL || packet != NULL)) {
+    conflict = "--check only reports on the definition; it does not decode, encode or emit as well";
+  } else if (werror && !check) {
+    conflict = "--werror decides --check's exit status, and means nothing without it";
+  } else if (path_count > 1 && !check) {
+    conflict = "only --check takes more than one definition file";
+  } else if (from_stdin > 1) {
+    conflict = "standard input can be read once; name '-' once";
+  } else if (stdin_name != NULL && from_stdin == 0) {
+    conflict = "--stdin-name names what '-' reads, and means nothing without it";
   }
   if (conflict != NULL) {
     log_fail("%s", conflict);
     usage(argv[0]);
     free(assignments);
+    free(paths);
     return 2;
   }
 
   if (path == NULL) {
     usage(argv[0]);
     free(assignments);
+    free(paths);
     return 2;
   }
 
-  FramedslResult *result = framedsl_load_file(path);
+  if (check) {
+    int status = check_files(paths, path_count, stdin_name, werror);
+    free(assignments);
+    free(paths);
+    return status;
+  }
+
+  FramedslResult *result = load_path(path, stdin_name);
+  free(paths);
   if (result == NULL) {
     log_fail("out of memory");
+    free(assignments);
     return 2;
   }
 
@@ -644,6 +808,11 @@ int main(int argc, char **argv) {
   switch (framedsl_status(result)) {
   case FRAMEDSL_OK: {
     const FramedslDefinition *definition = framedsl_definition(result);
+
+    /* Not ahead of --emit-c, whose standard output is C and must stay nothing but C. */
+    if (!emit) {
+      report(result);
+    }
 
     if (emit) {
       status = emit_c(definition);

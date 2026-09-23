@@ -135,7 +135,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\" \
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
-.PHONY: all deps test test-unit test-system test-editors compile-commands format format-check \
+.PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
 	format-tool hooks clean bench fuzz test-fuzz-replay
 
 # Where the editor support lives, and the Emacs invocation that tests it. -Q so that whatever the
@@ -143,7 +143,11 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 EDITORS := editors
 EMACS ?= emacs
 EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.el \
-	-f ert-run-tests-batch-and-exit
+	--eval '(setq frame-dsl-program "$(abspath $(TARGET))")' -f ert-run-tests-batch-and-exit
+
+# Where `make install` puts the tool. Every editor integration starts by finding `frame-dsl` on the
+# PATH, so ~/.local is the usual answer for one person: make install PREFIX=~/.local
+PREFIX ?= /usr/local
 
 # compile_commands.json is built by default so a fresh clone is browsable after `make`, with no
 # second step for somebody to discover. hooks is here for the same reason: a fresh clone's first
@@ -155,6 +159,15 @@ deps: $(DEPS)
 example: $(EXAMPLE_UART_DEVICE)
 
 lib: $(LIB_ARCHIVE)
+
+# The tool only. The library and its header are consumed from the build tree by a project linking
+# them, which is a different question from putting a command on somebody's PATH.
+install: $(TARGET)
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/frame-dsl
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/frame-dsl
 
 # Not part of `test`, and nothing in it fails on a slow result: timing on a shared machine is too noisy
 # to fail a build on. BENCH_SECONDS is the minimum each measurement runs for.
@@ -298,7 +311,7 @@ test-system: $(SYSTEM_RUNNER)
 # builds and tests with a C compiler, make and tar, and a highlighter is not a reason to add a third
 # thing somebody has to install to run the suite. What that skip gives up is covered without Emacs by
 # test/unit/9_editor_support.c, which compares the mode's word lists against the compiler's.
-test-editors:
+test-editors: $(TARGET)
 	@if command -v $(EMACS) >/dev/null 2>&1; then \
 		$(EMACS) $(EMACS_TEST_FLAGS); \
 	else \

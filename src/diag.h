@@ -14,9 +14,25 @@
 /** @brief Past this many, the file is being reported on rather than read, and the rest is noise. */
 #define DIAG_MAX 50
 
+/**
+ * @brief How bad it is. An error fails the load; a warning is reported and the load goes ahead.
+ */
+typedef enum {
+  DIAG_ERROR,
+  DIAG_WARNING,
+} DiagSeverity;
+
 typedef struct {
   int line;
   int column;
+  /**
+   * @brief Just past the last character the problem covers, so an editor underlines the name and not
+   * one character of it. Zero until diag_fill_spans() has looked at the source; the start again when
+   * there is nothing there to cover.
+   */
+  int end_line;
+  int end_column;
+  DiagSeverity severity;
   /**
    * @brief The numbered check from docs/design.md this comes from, or 0 for a syntax error.
    *
@@ -55,6 +71,31 @@ void diag_free(DiagList *list);
  */
 void diag_add(DiagList *list, int line, int column, int check, const char *fmt, ...)
   __attribute__((format(printf, 5, 6)));
+
+/** @brief As diag_add(), for something that is reported but does not fail the load. */
+void diag_warn(DiagList *list, int line, int column, int check, const char *fmt, ...)
+  __attribute__((format(printf, 5, 6)));
+
+/**
+ * @brief How many of the list are errors. What decides whether a load failed: counting everything
+ * would make a warning fatal.
+ */
+size_t diag_error_count(const DiagList *list);
+
+/** @brief Removes every warning, keeping the errors in order. */
+void diag_drop_warnings(DiagList *list);
+
+/**
+ * @brief Gives every diagnostic of this file a span: the token that starts where it does.
+ *
+ * Positions are all a pass has at hand when it reports, and the token there is nearly always the
+ * thing being complained about -- a name, a number, the unexpected token -- so the span is found
+ * afterwards, once, rather than threaded through fifty call sites. Diagnostics attributed to an
+ * imported file are skipped: their positions are in a source this is not.
+ * @param list The list to fill in.
+ * @param source The text the list's positions are in.
+ */
+void diag_fill_spans(DiagList *list, const char *source);
 
 /** @brief Sorted by position, so output reads in file order however the passes found things. */
 void diag_sort(DiagList *list);

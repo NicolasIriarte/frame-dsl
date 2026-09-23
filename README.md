@@ -174,8 +174,34 @@ See [Calibrations](manual/language.md#calibrations) for how a curve is written.
 Exit status is `0` for success, `1` when the definition, the bytes or the field values are wrong, and
 `2` when the invocation is -- including `-d` and `-e` together, which are two questions at once.
 
-Emacs users get syntax highlighting, comments and indentation for `.fdsl` files from
-[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el); [`editors/README.md`](editors/README.md)
+### Checking a file
+
+`--check` loads each file named and prints nothing but its problems, one per line, in the shape every
+editor and build tool already reads:
+
+```sh
+$ frame-dsl examples/*.fdsl broken.fdsl typo.fdsl --check
+broken.fdsl:4:3: error: expected ';', found the name 'data'
+typo.fdsl:7:3: error: 'hdr' uses 'Heder', which is not a block [check 23]
+```
+
+No colour, no summary, and nothing at all for a clean file. A problem inside an imported file names
+that file. The exit status is `0` when nothing is wrong, `1` when something is, and `2` when a file
+could not be read; `--werror` makes a warning count as wrong too, for a CI job that wants none.
+
+A definition named `-` is read from standard input, and `--stdin-name <path>` says which file it is:
+diagnostics are attributed to that path and imports resolve from beside it. That is how an editor
+checks a buffer as it is typed, before it is saved:
+
+```sh
+frame-dsl - --check --stdin-name src/frames/device.fdsl < unsaved-buffer
+```
+
+`make install PREFIX=~/.local` puts `frame-dsl` on the PATH, which is where every editor integration
+looks for it.
+
+Emacs users get syntax highlighting, comments, indentation and errors as they type (through
+Flymake and `--check`) for `.fdsl` files from [`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el); [`editors/README.md`](editors/README.md)
 says how to install it, and [`docs/highlighting.md`](docs/highlighting.md) says why it is a
 hand-written mode rather than a tree-sitter grammar or a language server.
 

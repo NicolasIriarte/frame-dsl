@@ -261,6 +261,24 @@ alternative is finding out on a live link.
     thousands of one-bit fields. Checked before any of them runs, so the packet that would make them
     slow is rejected in the time check 4 already takes.
 
+**Warnings**
+
+These do not fail a load. The file loads, encodes and decodes exactly as it would without them; the
+warning is there for whoever is editing it, and `frame-dsl --check --werror` is how a CI job refuses
+one. They share the numbering because they share the diagnostic, and a test asserts on the number
+the same way.
+
+30. A block, calibration or import declared in a file and used by nothing in it. Only in a file that
+    declares at least one packet: a file of blocks and calibrations alone is a library, and its
+    declarations -- what it imports included, since that is merged into what it offers -- are its
+    exports. Anything declared in the file that names something counts as a use, even if it is itself
+    unused, so of a chain only the outermost is reported. An imported file's own warnings are not
+    repeated in the file importing it.
+31. An attribute setting the value an enclosing *written* attribute already set -- a field's group
+    repeating its packet's, a packet's repeating the file's. Reported at the inner one, which is the
+    one saying nothing new. Only against something written: `@bit_order: msb_first;` at the top of a
+    file restates the language's default, and that is documentation.
+
 ### Deciding distinguishability
 
 Check 12 needs a definition precise enough to implement, and it is worth writing down because the

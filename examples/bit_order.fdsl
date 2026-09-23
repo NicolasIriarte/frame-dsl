@@ -3,9 +3,10 @@
 # Read the settings on `count` and `value` together: they sit next to each other, are the same width,
 # and are laid out differently. That is the whole point of attaching a group to one field.
 #
-# The block is the case that group exists for. A run of fields coming out of a little-endian
-# subsystem is the commonest reason a frame is not laid out uniformly, and repeating the attribute on
-# each of them is how you eventually miss one.
+# The block is the case that group exists for. A run of fields coming out of a subsystem that does not
+# share the frame's conventions -- here, a big-endian one inside a little-endian packet -- is the
+# commonest reason a frame is not laid out uniformly, and repeating the attribute on each of them is
+# how you eventually miss one.
 
 @bit_order:  msb_first;              # file default: applies to every packet below
 @byte_order: big_endian;
@@ -25,8 +26,8 @@ pkt TM_MIXED {
   rest:    4;
 
   [
-    @bit_order:  msb_first;          # every field of the block, and nothing after it
-    @byte_order: little_endian;
+    @bit_order:  lsb_first;          # every field of the block, and nothing after it
+    @byte_order: big_endian;
   ]
   block {
     voltage: 32;
@@ -34,5 +35,5 @@ pkt TM_MIXED {
     temp:    16;
   };
 
-  crc: 16;
+  crc: 16;                           # little_endian and msb_first again, from the packet
 };

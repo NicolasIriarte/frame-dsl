@@ -12,6 +12,20 @@ nothing written under it fails the release rather than publishing an empty page.
 
 ### Added
 
+- **`frame-dsl <file>... --check [--werror]`** prints a definition's problems and nothing else, one per
+  line as `path:line:col: error: message [check N]` -- the shape Flymake, Vim's `errorformat`, ALE and
+  a VS Code problem matcher all read. `-` reads the definition from standard input, and
+  `--stdin-name <path>` checks it as that file, so an editor can check a buffer before it is saved.
+- **Diagnostics have a severity and a span.** `FramedslDiagnostic` gains `severity` (error or
+  warning; a warning does not fail the load) and `end_line`/`end_column`, the end of the token the
+  problem is about. `framedsl_load_source()` loads a string as though it were a named file.
+- **Warnings**, which do not fail a load: a block, calibration or import nothing uses (check 30, only
+  in a file with packets -- a file without is a library), and an attribute repeating what an enclosing
+  written attribute already says (check 31). An imported file's warnings are not repeated in the
+  importer. `examples/bit_order.fdsl` had two, and its block now sets something the packet does not.
+- **Errors as you type in Emacs**: `frame-dsl-mode` checks the buffer through Flymake.
+- `make install PREFIX=...` puts `frame-dsl` on the PATH.
+
 - **The language**, and a compiler for it: lexer, parser, and sixteen load-time semantic checks. A
   definition file declares packets of bit-width fields, with fixed values that identify them, widths
   that depend on another field's value, and ordering attributes at file, packet, block and field

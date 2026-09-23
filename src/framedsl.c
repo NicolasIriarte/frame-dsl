@@ -13,6 +13,7 @@
 #include "definition.h"
 #include "diag.h"
 #include "import.h"
+#include "lint.h"
 #include "parser.h"
 
 struct FramedslResult {
@@ -63,6 +64,9 @@ static bool publish_diagnostics(FramedslResult *result) {
       .line = result->diags.items[i].line,
       .column = result->diags.items[i].column,
       .check = result->diags.items[i].check,
+      .severity = result->diags.items[i].severity == DIAG_WARNING ? FRAMEDSL_SEVERITY_WARNING : FRAMEDSL_SEVERITY_ERROR,
+      .end_line = result->diags.items[i].end_line,
+      .end_column = result->diags.items[i].end_column,
       .message = result->diags.items[i].message,
       .file = result->diags.items[i].file,
     };
@@ -85,6 +89,7 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
   AstFile *ast = parse(source, &result->diags);
   if (ast == NULL) {
     result->status = FRAMEDSL_ERROR_MEMORY;
+    diag_fill_spans(&result->diags, source);
     publish_diagnostics(result);
     return result;
   }
@@ -92,9 +97,13 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
   /* The checks only run on a tree that parsed. Over a partial one they report consequences of the
    * syntax error as though they were separate mistakes. */
   Layout *layout = NULL;
-  if (result->diags.count == 0 && imports_resolve(ast, base_dir, self, &result->diags)
-      && compose_file(ast, &result->diags)) {
-    layout = check_file(ast, &result->diags);
+  if (diag_error_count(&result->diags) == 0 && imports_resolve(ast, base_dir, self, &result->diags)) {
+    /* Before composition, which is the end of anything naming a block. Only the file being loaded is
+     * linted: an imported file's warnings belong to whoever edits it. */
+    lint_unused(ast, &result->diags);
+    if (compose_file(ast, &result->diags)) {
+      layout = check_file(ast, &result->diags);
+    }
   }
 
   /* Codegen runs only on a file that passed every check, so what it can still fail on is an
@@ -125,6 +134,7 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
     result->status = FRAMEDSL_OK;
   }
 
+  diag_fill_spans(&result->diags, source);
   if (!publish_diagnostics(result)) {
     result->status = FRAMEDSL_ERROR_MEMORY;
   }
@@ -166,6 +176,25 @@ static char *read_whole_file(const char *path) {
   return source;
 }
 
+/* Loads `source` as the file at `path` would be: attributed to it, and importing from beside it. */
+static FramedslResult *load_as(const char *source, const char *path) {
+  /* Imports are relative to the file doing the importing, so a tree of definition files moves as a
+   * unit. */
+  char directory[PATH_MAX];
+  const char *slash = strrchr(path, '/');
+  if (slash == NULL) {
+    snprintf(directory, sizeof(directory), ".");
+  } else {
+    snprintf(directory, sizeof(directory), "%.*s", slash == path ? 1 : (int)(slash - path), path);
+  }
+  /* The real path is what an import cycle back to this file is recognised by. A buffer an editor has
+   * not saved yet may have no file behind it at all, and then there is nothing for a cycle to reach. */
+  char self[PATH_MAX];
+  bool resolved = realpath(path, self) != NULL;
+
+  return load(source, path, directory, resolved ? self : NULL);
+}
+
 FramedslResult *framedsl_load_file(const char *path) {
   if (path == NULL) {
     return framedsl_load_string(NULL, NULL);
@@ -183,21 +212,19 @@ FramedslResult *framedsl_load_file(const char *path) {
     return result;
   }
 
-  /* Imports are relative to the file doing the importing, so a tree of definition files moves as a
-   * unit. */
-  char directory[PATH_MAX];
-  const char *slash = strrchr(path, '/');
-  if (slash == NULL) {
-    snprintf(directory, sizeof(directory), ".");
-  } else {
-    snprintf(directory, sizeof(directory), "%.*s", slash == path ? 1 : (int)(slash - path), path);
-  }
-  char self[PATH_MAX];
-  bool resolved = realpath(path, self) != NULL;
-
-  FramedslResult *result = load(source, path, directory, resolved ? self : NULL);
+  FramedslResult *result = load_as(source, path);
   free(source);
   return result;
+}
+
+FramedslResult *framedsl_load_source(const char *source, const char *path) {
+  if (path == NULL) {
+    return framedsl_load_string(source, NULL);
+  }
+  if (source == NULL) {
+    return framedsl_load_string(NULL, path);
+  }
+  return load_as(source, path);
 }
 
 void framedsl_result_free(FramedslResult *result) {

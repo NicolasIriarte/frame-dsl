@@ -52,10 +52,14 @@ after that, rather than a string lookup on every call.
 ```c
 FramedslResult *framedsl_load_file(const char *path);
 FramedslResult *framedsl_load_string(const char *source, const char *name);
+FramedslResult *framedsl_load_source(const char *source, const char *path);
 void framedsl_result_free(FramedslResult *result);
 ```
 
-`name` is what diagnostics are attributed to, and may be `NULL`. The caller owns the result. Freeing
+`name` is what diagnostics are attributed to, and may be `NULL`. `framedsl_load_string()` resolves
+imports from the working directory, since a string has no directory of its own;
+`framedsl_load_source()` loads the string *as the file at `path`* -- attributed to it, importing from
+beside it -- which is what an editor checking an unsaved buffer needs. `path` does not have to exist. The caller owns the result. Freeing
 it invalidates the definition, every diagnostic, and every string reached through either -- so a
 field name that must outlive the result has to be copied.
 
@@ -105,8 +109,18 @@ typedef struct {
   int check;             // the numbered check from docs/design.md, or 0 for a syntax error
   const char *message;
   const char *file;      // the imported file it is in, or NULL for the one that was loaded
+  FramedslSeverity severity;       // FRAMEDSL_SEVERITY_ERROR or FRAMEDSL_SEVERITY_WARNING
+  int end_line, end_column;        // just past the end of what it is about
 } FramedslDiagnostic;
 ```
+
+An **error** fails the load. A **warning** does not: the file loads, and the warning is there to be
+read anyway -- so ask `framedsl_diagnostic_count()` whatever the status, not only after a failure.
+
+Lines and columns count from 1, and a column counts bytes. The span from `line:column` to
+`end_line:end_column` covers the token the problem is about -- a whole name, not its first letter --
+which is what an editor underlines. It is empty (end equals start) when there is nothing there to
+cover, and a problem with no position at all, a file that could not be read, has line 0.
 
 Diagnostics come back in file order -- imported files first, since their problems stop the importing
 file at its top. A problem inside an imported file carries that file's name in `file` and a position

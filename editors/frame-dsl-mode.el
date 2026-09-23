@@ -20,6 +20,8 @@
 
 ;;; Code:
 
+(require 'flymake)
+
 (defgroup frame-dsl nil
   "Major mode for Frame-DSL definition files."
   :group 'languages
@@ -164,6 +166,101 @@ unless it was in the indentation to begin with."
       (goto-char (- (point-max) offset)))))
 
 ;; ---------------------------------------------------------------------------------------------
+;; Checking as you type.  The buffer is piped to `frame-dsl - --check --stdin-name FILE', so what is
+;; checked is what is on screen, imports resolve from beside FILE, and the answer is the compiler's
+;; own -- nothing here knows what a mistake looks like.
+
+(defcustom frame-dsl-program "frame-dsl"
+  "The frame-dsl executable: a name on `exec-path', or an absolute file name.
+`make install PREFIX=~/.local' puts it in ~/.local/bin."
+  :type 'string
+  :group 'frame-dsl)
+
+(defcustom frame-dsl-flymake t
+  "Non-nil turns on `flymake-mode' in Frame-DSL buffers when `frame-dsl-program' is found.
+The backend is registered either way, so `M-x flymake-mode' works when this is nil."
+  :type 'boolean
+  :group 'frame-dsl)
+
+(defvar-local frame-dsl--flymake-process nil
+  "The check in flight for this buffer, so a newer one can replace it.")
+
+(defconst frame-dsl--check-line-regexp
+  "^\\(.+?\\):\\(?:\\([0-9]+\\):\\([0-9]+\\):\\)? \\(error\\|warning\\): \\(.*\\)$"
+  "One line of `frame-dsl --check' output: file, optional line and column, severity, message.")
+
+(defun frame-dsl--import-line (source name file)
+  "The line in SOURCE whose `import' brought in FILE, or 1 when none did directly.
+NAME is the file SOURCE is checked as; imports are written relative to it."
+  (let ((relative (file-relative-name file (file-name-directory name))))
+    (with-current-buffer source
+      (save-excursion
+        (save-restriction
+          (widen)
+          (goto-char (point-min))
+          (if (re-search-forward (concat "^[ \t]*import[ \t]+\"" (regexp-quote relative) "\"")
+                                 nil t)
+              (line-number-at-pos (match-beginning 0))
+            1))))))
+
+(defun frame-dsl--flymake-parse (source name)
+  "Turn the current buffer's `--check' output into Flymake diagnostics for SOURCE.
+NAME is the file SOURCE was checked as.  A problem in an imported file is shown
+on the `import' that brought it in, since that file is not the one on screen."
+  (let (diagnostics)
+    (goto-char (point-min))
+    (while (re-search-forward frame-dsl--check-line-regexp nil t)
+      (let* ((file (match-string 1))
+             (line (and (match-string 2) (string-to-number (match-string 2))))
+             (column (and (match-string 3) (string-to-number (match-string 3))))
+             (type (if (equal (match-string 4) "warning") :warning :error))
+             (message (match-string 5))
+             (here (string= (expand-file-name file) (expand-file-name name)))
+             (region (if here
+                         (flymake-diag-region source (or line 1) column)
+                       (flymake-diag-region source (frame-dsl--import-line source name file)))))
+        (unless here
+          (setq message (format "in %s%s: %s" (file-relative-name file (file-name-directory name))
+                                (if line (format ":%d:%d" line column) "") message)))
+        (when region
+          (push (flymake-make-diagnostic source (car region) (cdr region) type message)
+                diagnostics))))
+    (nreverse diagnostics)))
+
+(defun frame-dsl-flymake (report-fn &rest _args)
+  "Flymake backend: check the buffer with `frame-dsl-program', reporting to REPORT-FN."
+  (unless (executable-find frame-dsl-program)
+    (error "Cannot find `%s'; see `frame-dsl-program'" frame-dsl-program))
+  (when (process-live-p frame-dsl--flymake-process)
+    (kill-process frame-dsl--flymake-process))
+  (let ((source (current-buffer))
+        (name (or buffer-file-name (expand-file-name (buffer-name)))))
+    (save-restriction
+      (widen)
+      (setq frame-dsl--flymake-process
+            (make-process
+             :name "frame-dsl-flymake"
+             :noquery t
+             :connection-type 'pipe
+             :buffer (generate-new-buffer " *frame-dsl-flymake*")
+             :command (list frame-dsl-program "-" "--check" "--stdin-name" name)
+             :sentinel
+             (lambda (process _event)
+               (when (memq (process-status process) '(exit signal))
+                 (unwind-protect
+                     (if (not (with-current-buffer source (eq process frame-dsl--flymake-process)))
+                         (flymake-log :warning "Cancelling obsolete check %s" process)
+                       (with-current-buffer (process-buffer process)
+                         (let ((diagnostics (frame-dsl--flymake-parse source name)))
+                           ;; Status 2 with nothing parseable is the tool failing, not the file.
+                           (if (and (null diagnostics) (eq (process-exit-status process) 2))
+                               (funcall report-fn :panic :explanation (buffer-string))
+                             (funcall report-fn diagnostics)))))
+                   (kill-buffer (process-buffer process)))))))
+      (process-send-region frame-dsl--flymake-process (point-min) (point-max))
+      (process-send-eof frame-dsl--flymake-process))))
+
+;; ---------------------------------------------------------------------------------------------
 
 ;;;###autoload
 (define-derived-mode frame-dsl-mode prog-mode "Frame-DSL"
@@ -180,7 +277,10 @@ unless it was in the indentation to begin with."
   (setq-local electric-indent-chars (append "}])" electric-indent-chars))
   ;; A definition file is a column-aligned thing; tabs in one are a nuisance to everybody reading it
   ;; at a different tab width.
-  (setq-local indent-tabs-mode nil))
+  (setq-local indent-tabs-mode nil)
+  (add-hook 'flymake-diagnostic-functions #'frame-dsl-flymake nil t)
+  (when (and frame-dsl-flymake (executable-find frame-dsl-program))
+    (flymake-mode 1)))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.fdsl\\'" . frame-dsl-mode))

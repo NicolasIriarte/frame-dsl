@@ -269,6 +269,14 @@ Blocks nest, and the innermost wins.
 An anonymous block inside a packet has no name. A block with a name is a different thing, declared
 at file level to be reused -- see [Reusing a group of fields](#reusing-a-group-of-fields).
 
+### An attribute that changes nothing
+
+Writing an attribute that an enclosing scope already set -- a field's `[ @byte_order: little_endian; ]`
+inside a packet that already says `little_endian` -- is a **warning** (check 31): the file loads, but
+the attribute says nothing, and usually means the author thought the packet said something else.
+Writing the language's own default at the top of a file is not a repeat of anything written, and is
+silent.
+
 ### Where `byte_order` does not apply
 
 `byte_order` only means something for a field that is byte-aligned and a whole number of bytes wide.
@@ -403,6 +411,13 @@ pkt TM_TEMPERATURE {
 
 `import` and `as` mean something only where an import is written, so neither is reserved. Checks 26
 to 28 in [`docs/design.md`](../docs/design.md) cover a file that cannot be read, a cycle, and a clash.
+
+### Declarations nothing uses
+
+A block, calibration or import that nothing in the file uses is a **warning** (check 30) -- in a file
+with at least one packet. A file with no packets is a library, and everything in it is there for
+somebody else to use. Something used only by an unused block does not warn: the unused block does,
+and removing it is what brings the next one up.
 
 ## Calibrations
 

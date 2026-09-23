@@ -69,6 +69,9 @@ typedef struct {
   const char *name;
   int line;
   int column;
+  /** @brief Where the name is, as opposed to the `cal` in front of it. */
+  int name_line;
+  int name_column;
 
   const char *param;
   CalExpr *body;
@@ -90,6 +93,13 @@ typedef struct AstImport {
   const char *alias;
   int line;
   int column;
+  /**
+   * @brief Every name this import made available, as the file sees it -- `ns.Header` for an `as`
+   * import. Filled by imports_resolve(), in the file's region, so the unused-import warning can ask
+   * whether any of them is used without working the prefixing out again.
+   */
+  const char **brought;
+  size_t brought_count;
   struct AstImport *next;
 } AstImport;
 
@@ -161,6 +171,9 @@ typedef struct {
   const char *name;
   int line;
   int column;
+  /** @brief Where the name is, as opposed to the `pkt` or `block` in front of it. */
+  int name_line;
+  int name_column;
 
   AstField *fields;
   size_t field_count;

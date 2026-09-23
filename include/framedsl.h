@@ -89,7 +89,20 @@ typedef enum {
   FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN,
 } FramedslByteOrder;
 
-/** @brief One problem with a definition. */
+/** @brief How bad a diagnostic is. */
+typedef enum {
+  /** @brief The definition is wrong, and the load failed because of it. */
+  FRAMEDSL_SEVERITY_ERROR,
+  /** @brief The definition loads, but probably does not say what was meant. */
+  FRAMEDSL_SEVERITY_WARNING,
+} FramedslSeverity;
+
+/**
+ * @brief One problem with a definition.
+ *
+ * Lines and columns count from 1, and a column counts bytes. A diagnostic with no position in the
+ * file -- one that could not be read -- has line 0.
+ */
 typedef struct {
   int line;
   int column;
@@ -104,6 +117,13 @@ typedef struct {
    * framedsl_source_name() names that one.
    */
   const char *file;
+  FramedslSeverity severity;
+  /**
+   * @brief Just past the end of what the problem covers: the name or token at `line`:`column`, so an
+   * editor can underline all of it. Equal to the start when there is nothing there to cover.
+   */
+  int end_line;
+  int end_column;
 } FramedslDiagnostic;
 
 typedef struct {
@@ -211,6 +231,21 @@ FramedslResult *framedsl_load_file(const char *path);
  */
 FramedslResult *framedsl_load_string(const char *source, const char *name);
 
+/**
+ * @brief Load a definition from a string, as though it were the file at `path`.
+ *
+ * Diagnostics are attributed to `path` and imports resolve from its directory, as
+ * framedsl_load_file() would do -- but the text is `source`, not what is on disk. This is what an
+ * editor needs: the buffer as typed, checked where it will be saved. `path` need not exist.
+ *
+ * The caller owns the result and must free it with framedsl_result_free().
+ *
+ * @param source The `.fdsl` source text.
+ * @param path Where the text belongs; it is copied. NULL behaves as framedsl_load_string().
+ * @return The load's outcome. See FramedslResult.
+ */
+FramedslResult *framedsl_load_source(const char *source, const char *path);
+
 void framedsl_result_free(FramedslResult *result);
 
 FramedslStatus framedsl_status(const FramedslResult *result);
@@ -224,8 +259,11 @@ bool framedsl_ok(const FramedslResult *result);
 const char *framedsl_source_name(const FramedslResult *result);
 
 /**
- * @brief Number of problems found in a failed load. Every problem found, not only the first: a file
- * with four mistakes should take one run to fix.
+ * @brief Number of problems found. Every problem found, not only the first: a file with four
+ * mistakes should take one run to fix.
+ *
+ * A failed load has at least one error. A successful one may still have warnings, so a caller that
+ * wants to show them asks here whatever the status.
  * @param result A result from framedsl_load_file() or framedsl_load_string().
  * @return How many diagnostics framedsl_diagnostic() can be asked for.
  */

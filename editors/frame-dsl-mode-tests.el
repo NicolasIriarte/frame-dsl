@@ -168,6 +168,79 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
                   (should (string= before (buffer-string)))))
             (kill-buffer buffer)))))))
 
+;; ---------------------------------------------------------------------------------------------
+;; Flymake.  These run the real `frame-dsl', which `make test-editors' points `frame-dsl-program' at;
+;; by hand without it on the PATH they skip rather than fail.
+
+(defun frame-dsl-tests--flymake (directory file text)
+  "Check TEXT as FILE inside DIRECTORY with the Flymake backend; return its diagnostics."
+  (let ((buffer (generate-new-buffer " *frame-dsl-flymake-test*"))
+        (reported 'none))
+    (unwind-protect
+        (with-current-buffer buffer
+          (insert text)
+          (setq buffer-file-name (expand-file-name file directory))
+          (let ((frame-dsl-flymake nil))
+            (frame-dsl-mode))
+          (frame-dsl-flymake (lambda (diagnostics &rest _) (setq reported diagnostics)))
+          (with-timeout (10 (error "No report from frame-dsl-flymake"))
+            (while (eq reported 'none)
+              (accept-process-output nil 0.05)))
+          (mapcar (lambda (diagnostic)
+                    (list (line-number-at-pos (flymake-diagnostic-beg diagnostic))
+                          (buffer-substring (flymake-diagnostic-beg diagnostic)
+                                            (flymake-diagnostic-end diagnostic))
+                          (flymake-diagnostic-type diagnostic)
+                          (flymake-diagnostic-text diagnostic)))
+                  reported))
+      (with-current-buffer buffer (set-buffer-modified-p nil) (setq buffer-file-name nil))
+      (kill-buffer buffer))))
+
+(ert-deftest frame-dsl-tests-flymake-reports-an-unsaved-error ()
+  "The buffer as typed is checked, not the file on disk, which need not exist."
+  (skip-unless (executable-find frame-dsl-program))
+  (let* ((directory (make-temp-file "frame-dsl-flymake" t))
+         (diagnostics (frame-dsl-tests--flymake
+                       directory "unsaved.fdsl"
+                       "pkt TM {\n  id: 8 = 1;\n  h: Heder;\n};\n")))
+    (unwind-protect
+        (progn
+          (should (= 1 (length diagnostics)))
+          (should (equal 3 (nth 0 (car diagnostics))))
+          (should (equal "h" (nth 1 (car diagnostics))))
+          (should (eq :error (nth 2 (car diagnostics))))
+          (should (string-match-p "Heder.*\\[check 23\\]" (nth 3 (car diagnostics)))))
+      (delete-directory directory t))))
+
+(ert-deftest frame-dsl-tests-flymake-is-quiet-on-a-clean-buffer ()
+  "Every example checks clean."
+  (skip-unless (executable-find frame-dsl-program))
+  (let ((examples (expand-file-name "../examples" frame-dsl-tests-directory)))
+    (dolist (file (directory-files examples t "\\.fdsl\\'"))
+      (should (equal (list file nil)
+                     (list file (frame-dsl-tests--flymake
+                                 examples (file-name-nondirectory file)
+                                 (with-temp-buffer
+                                   (insert-file-contents file)
+                                   (buffer-string)))))))))
+
+(ert-deftest frame-dsl-tests-flymake-puts-an-imported-error-on-its-import ()
+  "A mistake in another file is shown on the line that imports it, naming where it is."
+  (skip-unless (executable-find frame-dsl-program))
+  (let ((directory (make-temp-file "frame-dsl-flymake" t)))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "lib" directory))
+          (with-temp-file (expand-file-name "lib/link.fdsl" directory)
+            (insert "block Header {\n  id: 8 = 1\n};\n"))
+          (let ((diagnostics (frame-dsl-tests--flymake
+                              directory "top.fdsl"
+                              "# header\nimport \"lib/link.fdsl\";\npkt TM {\n  h: Header;\n};\n")))
+            (should (= 1 (length diagnostics)))
+            (should (equal 2 (nth 0 (car diagnostics))))
+            (should (string-prefix-p "in lib/link.fdsl:3:1: " (nth 3 (car diagnostics))))))
+      (delete-directory directory t))))
+
 (provide 'frame-dsl-mode-tests)
 
 ;;; frame-dsl-mode-tests.el ends here
