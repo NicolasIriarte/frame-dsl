@@ -386,6 +386,49 @@ static void group(Formatter *f, int depth) {
 
 static void body(Formatter *f, int depth);
 
+/* ` { a = 1; b.c = 2; }` after a block's name in a use, when there is one. */
+static void overrides(Formatter *f) {
+  if (peek(f)->kind != TOK_LBRACE) {
+    return;
+  }
+  take(f, true);
+  while (peek(f)->kind == TOK_IDENT) {
+    dotted(f, true);
+    take(f, true); /* = */
+    take(f, true); /* value */
+    take(f, false); /* ; */
+  }
+  take(f, true); /* } */
+}
+
+/* Whether the declaration ahead is a block pasted in without an instance name, `Block [{ ... }];`: a
+ * name, dotted or not, followed by `{` or `;` where a field would have `:` or `[`. */
+static bool at_anonymous_use(const Formatter *f) {
+  size_t at = f->pos;
+  bool expect_name = true;
+  for (; at < f->count; ++at) {
+    TokenKind kind = f->tokens[at].kind;
+    if (kind == TOK_COMMENT) {
+      continue;
+    }
+    if (expect_name ? kind != TOK_IDENT : kind != TOK_DOT) {
+      break;
+    }
+    expect_name = !expect_name;
+  }
+  return !expect_name && at < f->count && (f->tokens[at].kind == TOK_LBRACE || f->tokens[at].kind == TOK_SEMICOLON);
+}
+
+/* `Block [{ overrides }];` on one plain line: it has no `name:` to align on, and does not break the run
+ * of fields around it, which still align with each other across it. */
+static void anonymous_use(Formatter *f, int depth) {
+  begin(f, LINE_PLAIN, depth);
+  dotted(f, false);
+  overrides(f);
+  take(f, false); /* ; */
+  end(f);
+}
+
 /* `name: width [= value];`, `name[bytes]: width;` or `name: Block [{ overrides }];` */
 static void field(Formatter *f, int depth) {
   begin(f, LINE_ALIGNED, depth);
@@ -400,16 +443,7 @@ static void field(Formatter *f, int depth) {
 
   if (peek(f)->kind == TOK_IDENT) {
     dotted(f, true);
-    if (peek(f)->kind == TOK_LBRACE) {
-      take(f, true);
-      while (peek(f)->kind == TOK_IDENT) {
-        dotted(f, true);
-        take(f, true); /* = */
-        take(f, true); /* value */
-        take(f, false); /* ; */
-      }
-      take(f, true); /* } */
-    }
+    overrides(f);
   } else {
     expression(f, TOK_EQUALS, TOK_SEMICOLON, true);
     if (peek(f)->kind == TOK_EQUALS) {
@@ -455,6 +489,8 @@ static void body(Formatter *f, int depth) {
       braced(f, depth);
       /* A nested block ends the run it interrupted: what follows aligns on its own. */
       new_run(f);
+    } else if (at_anonymous_use(f)) {
+      anonymous_use(f, depth);
     } else {
       field(f, depth);
     }

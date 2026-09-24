@@ -85,6 +85,16 @@ function! s:TestSyntax() abort
   bwipeout!
 endfunction
 
+" A block pasted in without an instance name is a block, whether or not it has overrides; the `block {'
+" of an attribute scope, the same shape, is still a keyword.
+function! s:TestPastedSyntax() abort
+  call s:Open(['pkt TM {', '  Header { id = 1; };', '  ns.Stamp;', '  block {', '    x: 8;', '  };', '};'])
+  call assert_equal('fdslTypeName', s:GroupAt(2, 3), 'a pasted block')
+  call assert_equal('fdslTypeName', s:GroupAt(3, 6), 'a pasted block through a namespace')
+  call assert_equal('fdslKeyword', s:GroupAt(4, 3), 'an attribute scope')
+  bwipeout!
+endfunction
+
 " Reindenting every example changes nothing: the examples are what the formatter writes, so this says
 " the indent file and the formatter agree about the layout.
 function! s:TestIndent() abort
@@ -160,6 +170,7 @@ let s:skipped = []
 
 call s:TestFiletype()
 call s:TestSyntax()
+call s:TestPastedSyntax()
 call s:TestIndent()
 call s:TestQuickfix()
 call s:TestNeovimLsp()

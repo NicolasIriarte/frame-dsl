@@ -94,6 +94,20 @@ each call would otherwise land in the middle of `make test' once per example fil
     ;; The reservation is not part of the name: it is the one number written in bytes.
     (should (eq (frame-dsl-tests--face-of sample "[128]") 'font-lock-preprocessor-face))))
 
+(ert-deftest frame-dsl-tests-a-pasted-block-looks-like-a-block ()
+  "A block pasted in without an instance name is coloured as the block it is."
+  (let ((sample (concat "pkt TM_ACK {\n"
+                        "  Header { id = 0x82; };\n"
+                        "  vendor.Stamp;\n"
+                        "  block {\n"
+                        "    x: 8;\n"
+                        "  };\n"
+                        "};\n")))
+    (should (eq (frame-dsl-tests--face-of sample "Header") 'font-lock-type-face))
+    (should (eq (frame-dsl-tests--face-of sample "vendor.Stamp") 'font-lock-type-face))
+    ;; The attribute scope stays a keyword: it is followed by `{' too.
+    (should (eq (frame-dsl-tests--face-of sample "block") 'font-lock-keyword-face))))
+
 (ert-deftest frame-dsl-tests-an-unknown-attribute-looks-wrong ()
   "A typo in an attribute name is visible before the file is compiled."
   (should (eq (frame-dsl-tests--face-of "@byte_ordre: big_endian;\n" "byte_ordre")

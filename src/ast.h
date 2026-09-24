@@ -126,6 +126,12 @@ typedef struct {
    */
   const char *block;
   AstOverride *overrides;
+  /**
+   * @brief A use written without an instance name, `Header { ... };`: the block's fields are pasted
+   * in under their own names rather than under `name.`. `name` is then the block's name as written,
+   * which is only ever used to say which use a message is about.
+   */
+  bool anonymous;
 
   Expr *width;
 

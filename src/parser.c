@@ -439,8 +439,12 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
 /* field = identifier [ "[" expression "]" ] ":" width [ "=" integer ] ";" */
 /* ---- Using a named block ---------------------------------------------------------------------
  *
- * use      = identifier ":" identifier [ "{" { override } "}" ] ";"
+ * use      = identifier ":" block_ref [ "{" { override } "}" ] ";"
+ *          | block_ref [ "{" { override } "}" ] ";"
+ * block_ref = identifier { "." identifier }
  * override = identifier { "." identifier } "=" integer ";"
+ *
+ * The second form is anonymous: the block's fields are pasted in under their own names.
  *
  * Only recorded here. compose_file() does the work once every block has been read, since a use and the
  * declaration it names are checked against each other there (checks 23 to 25). */
@@ -506,39 +510,8 @@ static bool parse_override(Parser *parser, AstField *field) {
   return expect(parser, TOK_SEMICOLON);
 }
 
-static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
-  /* A block's layout is settled where it is declared, so the same block reads the same everywhere.
-   * A group here would have to reach inside and change that. */
-  if (attrs.bit_written || attrs.byte_written || attrs.cal != NULL) {
-    int line = attrs.bit_written ? attrs.bit_line : attrs.byte_written ? attrs.byte_line : attrs.cal_line;
-    int column = attrs.bit_written ? attrs.bit_column : attrs.byte_written ? attrs.byte_column : attrs.cal_column;
-    diag_add(
-      parser->diags,
-      line,
-      column,
-      0,
-      "'%s' uses a block, whose layout is fixed where the block is declared; put the attribute there",
-      field->name
-    );
-  }
-  if (field->reserve != NULL) {
-    diag_add(
-      parser->diags,
-      field->reserve_line,
-      field->reserve_column,
-      0,
-      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
-      field->name
-    );
-  }
-
-  Token first = parser->current;
-  advance(parser);
-  field->block = dotted_name(parser, first.text, first.length);
-  if (field->block == NULL) {
-    return;
-  }
-
+/* What follows the block's name in a use, named or not: the overrides, if any, and the `;`. */
+static void parse_use_rest(Parser *parser, AstField *field) {
   if (match(parser, TOK_LBRACE)) {
     while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID)) {
       if (!parse_override(parser, field)) {
@@ -570,6 +543,57 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
   }
 }
 
+/* A group in front of a use would have to reach inside the block and change its layout, which is
+ * settled where the block is declared so that the same block reads the same everywhere. */
+static void refuse_attributes_on_use(Parser *parser, const AstField *field, Attributes attrs) {
+  if (attrs.bit_written || attrs.byte_written || attrs.cal != NULL) {
+    int line = attrs.bit_written ? attrs.bit_line : attrs.byte_written ? attrs.byte_line : attrs.cal_line;
+    int column = attrs.bit_written ? attrs.bit_column : attrs.byte_written ? attrs.byte_column : attrs.cal_column;
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "'%s' uses a block, whose layout is fixed where the block is declared; put the attribute there",
+      field->name
+    );
+  }
+}
+
+static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
+  refuse_attributes_on_use(parser, field, attrs);
+  if (field->reserve != NULL) {
+    diag_add(
+      parser->diags,
+      field->reserve_line,
+      field->reserve_column,
+      0,
+      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
+      field->name
+    );
+  }
+
+  Token first = parser->current;
+  advance(parser);
+  field->block = dotted_name(parser, first.text, first.length);
+  if (field->block == NULL) {
+    return;
+  }
+  parse_use_rest(parser, field);
+}
+
+/* `Header { ... };` or `Header;`: the name just read, `first`, was a block's and not a field's. */
+static void parse_anonymous_use(Parser *parser, AstField *field, Token first, Attributes attrs) {
+  field->anonymous = true;
+  field->block = dotted_name(parser, first.text, first.length);
+  if (field->block == NULL) {
+    return;
+  }
+  field->name = field->block;
+  refuse_attributes_on_use(parser, field, attrs);
+  parse_use_rest(parser, field);
+}
+
 static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   AstField *field = ast_add_field(packet);
   if (field == NULL) {
@@ -597,12 +621,20 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
     packet->field_count -= 1;
     return;
   }
+  Token first = parser->current;
   field->name = region_strndup(parser->file->region, parser->current.text, parser->current.length);
   if (field->name == NULL) {
     parser->out_of_memory = true;
     return;
   }
   advance(parser);
+
+  /* A field's name is followed by `:` or `[`; a block's, used without naming the instance, by `{`, `;`
+   * or the `.` of an imported namespace. One token decides. */
+  if (check(parser, TOK_LBRACE) || check(parser, TOK_SEMICOLON) || check(parser, TOK_DOT)) {
+    parse_anonymous_use(parser, field, first, attrs);
+    return;
+  }
 
   /* The reservation binds to the name, not to the width: it says how big this field's arena slot is,
    * which is a property of the field rather than of the expression that sizes it per frame. */
@@ -671,8 +703,10 @@ static void parse_block(Parser *parser, AstPacket *packet, Attributes attrs) {
       line,
       column,
       0,
-      "a named block is declared at file level and used as a field, 'name: %.*s;'; inside a packet, "
-      "'block { ... };' is an attribute scope and has no name",
+      "a named block is declared at file level and used as a field, 'name: %.*s;', or pasted in, '%.*s;'; "
+      "inside a packet, 'block { ... };' is an attribute scope and has no name",
+      (int)parser->current.length,
+      parser->current.text,
       (int)parser->current.length,
       parser->current.text
     );

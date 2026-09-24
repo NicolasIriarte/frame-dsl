@@ -13,6 +13,7 @@
     { "include": "#packet-block-name" },
     { "include": "#field-name" },
     { "include": "#type-name" },
+    { "include": "#pasted-block-name" },
     { "include": "#valof-target" },
     { "include": "#inverse" },
     { "include": "#keywords" },
@@ -90,6 +91,11 @@
     "type-name": {
       "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*[;{])",
       "name": "entity.name.type.fdsl"
+    },
+    "pasted-block-name": {
+      "_comment": "A block pasted in without an instance name, alone on its line: 'Header { ... };' or 'Header;'. Not 'block {', an attribute scope of the same shape.",
+      "match": "^\\s*(?!block\\b)([A-Za-z_]\\w*(?:\\.\\w+)*)(?=\\s*[;{])",
+      "captures": { "1": { "name": "entity.name.type.fdsl" } }
     },
     "valof-target": {
       "match": "(?<=\\bvalof\\s{0,4}\\(\\s{0,4})\\w+",

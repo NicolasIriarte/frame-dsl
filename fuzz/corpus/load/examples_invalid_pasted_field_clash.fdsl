@@ -1,0 +1,15 @@
+# REJECTED: check 2 -- a block pasted in without an instance name brings its fields in under their own
+# names, and one of them is already a field of the packet.
+#
+# `Header;` pastes in `id` and `sequence`, and the packet declares its own `sequence` below it. Naming
+# the use, `hdr: Header;`, would keep the two apart as `hdr.sequence` and `sequence`.
+
+block Header {
+  id:       8;
+  sequence: 16;
+};
+
+pkt TM_COUNTER {
+  Header { id = 0x90; };
+  sequence: 32;
+};

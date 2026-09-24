@@ -153,6 +153,67 @@ static void apply_overrides(
  * never rejects anything the checker would not have. */
 #define COMPOSE_DECLARED_FIELD_CEILING 4096
 
+/* Check 2, for an anonymous use: each field it pasted in, `out[starts[use]..]`, against every other
+ * field of the container it was pasted into -- those before it, already in `out`, and the ordinary
+ * fields after it, not expanded yet. A clash with something pasted in later is found when that is
+ * pasted. Reported at the use, since that is the line to change; the block is fine on its own.
+ *
+ * `starts[k]` is where the container's k-th declaration began in `out`, for every k up to `use`, so
+ * that a clash with an earlier use names the line of that use rather than of the block's declaration.
+ *
+ * Quadratic in the container's fields, so skipped once they pass check 29's ceiling: the checker
+ * rejects a packet that large anyway, before its own quadratic duplicate scan. */
+static void check_pasted(
+  Composer *composer,
+  const AstPacket *container,
+  size_t use,
+  const FieldList *out,
+  const size_t *starts
+) {
+  const size_t first = starts[0];
+  const size_t start = starts[use];
+  if (out->count - first > COMPOSE_DECLARED_FIELD_CEILING) {
+    return;
+  }
+  const AstField *pasting = &container->fields[use];
+
+  for (size_t i = start; i < out->count; ++i) {
+    const char *name = out->items[i].name;
+    const AstField *clash = NULL;
+
+    for (size_t k = 0; k < use && clash == NULL; ++k) {
+      for (size_t j = starts[k]; j < starts[k + 1]; ++j) {
+        if (strcmp(out->items[j].name, name) == 0) {
+          clash = &container->fields[k];
+          break;
+        }
+      }
+    }
+    for (size_t later = use + 1; later < container->field_count && clash == NULL; ++later) {
+      const AstField *sibling = &container->fields[later];
+      if (sibling->block == NULL && strcmp(sibling->name, name) == 0) {
+        clash = sibling;
+      }
+    }
+    if (clash == NULL) {
+      continue;
+    }
+
+    char message[512];
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' pastes in '%s', but '%s' already has a field called '%s', from line %d",
+      pasting->block,
+      name,
+      container->name,
+      name,
+      clash->line
+    );
+    fail(composer, pasting->line, pasting->column, 2, message);
+  }
+}
+
 static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out) {
   if (container->field_count > COMPOSE_DECLARED_FIELD_CEILING) {
     char message[256];
@@ -163,8 +224,16 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     return;
   }
 
+  /* Where each declaration's fields begin in `out`, for check_pasted(). */
+  size_t *starts = malloc((container->field_count + 1) * sizeof(*starts));
+  if (starts == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return;
+  }
+
   for (size_t f = 0; f < container->field_count; ++f) {
     const AstField *field = &container->fields[f];
+    starts[f] = out->count;
 
     if (field->block == NULL) {
       AstField copy = *field;
@@ -179,19 +248,28 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     const AstPacket *block = find_block(composer->file, field->block);
 
     /* Check 2, for the one case the checker cannot see after expansion: an instance sharing its name
-     * with another field, whose expanded names (`hdr.id` beside `hdr`) no longer collide. */
-    for (size_t other = 0; other < container->field_count; ++other) {
-      if (other != f && strcmp(container->fields[other].name, field->name) == 0
-          && (other < f || container->fields[other].block == NULL)) {
+     * with another field, whose expanded names (`hdr.id` beside `hdr`) no longer collide. An anonymous
+     * use has no name of its own to collide; what it pastes in is compared in check_pasted(). */
+    for (size_t other = 0; other < container->field_count && !field->anonymous; ++other) {
+      const AstField *sibling = &container->fields[other];
+      if (other != f && !sibling->anonymous && strcmp(sibling->name, field->name) == 0
+          && (other < f || sibling->block == NULL)) {
         snprintf(message, sizeof(message), "'%s' already has a field called '%s'", container->name, field->name);
         fail(composer, field->line, field->column, 2, message);
         break;
       }
     }
 
-    /* Check 23. */
+    /* Check 23. Written without a width, a field and an anonymous use look alike, so the message for
+     * one says what the other would have needed. */
     if (block == NULL) {
-      snprintf(message, sizeof(message), "'%s' uses '%s', which is not a block", field->name, field->block);
+      if (field->anonymous) {
+        snprintf(
+          message, sizeof(message), "'%s' is not a block; a field needs a width, '%s: 8;'", field->block, field->block
+        );
+      } else {
+        snprintf(message, sizeof(message), "'%s' uses '%s', which is not a block", field->name, field->block);
+      }
       fail(composer, field->line, field->column, 23, message);
       continue;
     }
@@ -213,12 +291,16 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
       continue;
     }
 
-    const char *instance = join(composer, prefix, field->name);
-    const char *inner = join(composer, instance, ".");
+    /* Anonymous, the block's fields land under whatever prefix the use itself sits under. */
+    const char *inner = field->anonymous ? prefix : join(composer, join(composer, prefix, field->name), ".");
     size_t start = out->count;
     expand(composer, block, inner, out);
     apply_overrides(composer, field, block, inner, out, start);
+    if (field->anonymous) {
+      check_pasted(composer, container, f, out, starts);
+    }
   }
+  free(starts);
 }
 
 bool compose_file(AstFile *file, DiagList *diags) {

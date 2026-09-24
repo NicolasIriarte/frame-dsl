@@ -12,6 +12,12 @@ nothing written under it fails the release rather than publishing an empty page.
 
 ### Added
 
+- **A block can be pasted in without naming the instance**: `Header { id = 0x82; };` or `Header;`
+  inside a packet or a block brings the block's fields in under their own names -- `TM_ACK2.sequence`
+  rather than `TM_ACK2.hdr.sequence` -- as if they had been written out. The named form is unchanged,
+  and each form's names are found only in that form. A pasted field that shares a name with another
+  field of the packet is check 2, reported at the use. The formatter, the language server's
+  highlighting, the unused-block lint and the Emacs, Vim and VS Code grammars all know the new form.
 - **`frame-dsl --help`** (and `-h`) prints every mode and option, what each argument takes, the exit
   statuses and examples, as plain text on stdout, from wherever it appears on the command line.
   **`frame-dsl --version`** prints the `git describe` of the checkout it was built from. A usage

@@ -5,6 +5,10 @@
 # is also how the C API, `frame-dsl -e` and `-d` address them. `{ id = 0x02; }` fixes a field for this
 # use only, which is how a shared header becomes each packet's discriminator.
 #
+# Written without an instance name, `Header { id = 0x85; };` pastes the block's fields in under their
+# own names instead -- `TM_STATUS.sequence`, not `TM_STATUS.hdr.sequence` -- for a header shared only to
+# save writing it out. A pasted field may not share a name with another field of the packet.
+#
 # A block must be declared above anything that uses it. Its layout -- widths, bit and byte order --
 # is decided here, where it is declared, and is the same in every packet.
 
@@ -51,4 +55,9 @@ pkt TM_IMU {
 pkt TM_SAMPLE {
   hdr:    Header { id = 0x84; version = 0x2; };
   sample: Sample { axes.z = 0; };
+};
+
+pkt TM_STATUS {
+  Header { id = 0x85; };  # pasted: its fields are TM_STATUS.id, TM_STATUS.sequence, ...
+  mode: 8;
 };

@@ -43,6 +43,9 @@ syntax match fdslCalDecl "\%(^\s*cal\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(\<\%(pkt\|block\)\>\s\+\)\@<=\a\w*"
 syntax match fdslFieldName "^\s*\zs\w\+\ze\s*\%(\[[^]]*\]\)\?\s*:"
 syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*[;{]"
+" A block pasted in without an instance name, `Header { ... };` or `Header;`, alone on its line. The
+" `block {' of an attribute scope has the same shape, and stays a keyword: a keyword always wins.
+syntax match fdslTypeName "^\s*\zs\a\w*\%(\.\w\+\)*\ze\s*[;{]"
 syntax match fdslValofTarget "\%(\<valof\s*(\s*\)\@<=\w\+"
 syntax match fdslNamespace "\%(\<as\s\+\)\@<=\a\w*"
 

@@ -331,6 +331,33 @@ pkt TM_IMU {
 `TC_SET_LIMIT.hdr.sequence`, `TM_IMU.gyro.z`. That is the name the C API's `framedsl_find()`, `-e`
 and `-d` all use. It is also why the same block can appear twice in one packet.
 
+**Pasting a block in.** Written without an instance name, a use pastes the block's fields in under
+their own names, as if they had been written out where the use is:
+
+```
+pkt TM_ACK1 {
+  header: Header { id = 0x81; };    # TM_ACK1.header.sequence
+  result: 8;
+};
+
+pkt TM_ACK2 {
+  Header { id = 0x82; };            # TM_ACK2.sequence
+  result: 8;
+};
+
+pkt TM_TIMED {
+  Header { id = 0x83; };
+  Timestamp;                        # no overrides: no braces needed either
+};
+```
+
+Each form has its own names and only those: `TM_ACK1.sequence` and `TM_ACK2.header.sequence` find
+nothing. Use a name when a block appears more than once in a packet, or when its fields would clash
+with the packet's own; paste it when it is a shared header and the prefix would only be noise. A
+pasted field may not share a name with another field of the packet (check 2) -- the error is reported
+at the use, which is the line to change. A block may be pasted into another block's declaration too,
+and then its fields are that block's own fields wherever it is used.
+
 **Overrides.** `{ id = 0x02; }` fixes a field for this use only -- which is how one shared header
 becomes each packet's discriminator. It may replace a value the block fixed, and reaches into a
 nested instance by its path, `{ inner.id = 3; }`. An override fixes a value and nothing else: a

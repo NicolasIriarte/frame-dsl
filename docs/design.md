@@ -243,7 +243,9 @@ alternative is finding out on a live link.
     block containing itself, directly or through another, impossible to write.
 25. An override must name a field of the block it is used with, and name it once. An instance's name
     is subject to check 2 like any field's, so `hdr: 8;` beside `hdr: Header;` is a duplicate even
-    though `hdr` and `hdr.id` would not collide.
+    though `hdr` and `hdr.id` would not collide. A use with no instance name, `Header;`, pastes the
+    block's fields in under their own names, and each is subject to check 2 in the packet or block it
+    lands in -- reported at the use, naming the line of the field it clashes with.
 
 **Imports**
 

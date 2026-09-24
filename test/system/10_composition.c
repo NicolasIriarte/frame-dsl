@@ -180,6 +180,87 @@ static int us10_tc04_the_tool_takes_and_shows_dotted_names(const TestArguments *
   return 0;
 }
 
+/* #86: the named form keeps its instance in the name, the anonymous form does not have one -- and
+ * each name is found only in the form it belongs to. The bytes are the same either way. */
+static const char *const PASTED =
+  "block Header { id: 8; sequence: 16; };\n"
+  "pkt TM_ACK1 { header: Header { id = 0x81; }; result: 8; };\n"
+  "pkt TM_ACK2 { Header { id = 0x82; }; result: 8; };\n";
+
+static int us10_tc05_a_pasted_block_is_addressed_without_an_instance(const TestArguments *args) {
+  (void)args;
+  FramedslResult *result = framedsl_load_string(PASTED, "pasted.fdsl");
+  const FramedslDefinition *definition = framedsl_definition(result);
+  FramedslFieldId id;
+  int failure = 0;
+
+  if (!framedsl_ok(result)) {
+    failure = __LINE__;
+  } else if (!framedsl_find(definition, "TM_ACK1.header.sequence", &id)
+             || framedsl_find(definition, "TM_ACK1.sequence", &id)) {
+    failure = __LINE__;
+  } else if (!framedsl_find(definition, "TM_ACK2.sequence", &id)
+             || framedsl_find(definition, "TM_ACK2.header.sequence", &id)) {
+    failure = __LINE__;
+  }
+
+  /* Decoding a TM_ACK2 reply, and reading it by the pasted name. */
+  FramedslFrame *frame = failure == 0 ? framedsl_frame_new(definition) : NULL;
+  const uint8_t reply[] = { 0x82, 0x00, 0x07, 0x01 };
+  const char *name = frame == NULL ? NULL : framedsl_decode(frame, reply, sizeof(reply), NULL, NULL);
+  uint64_t sequence = 0;
+  if (
+    failure == 0
+    && (name == NULL || strcmp(name, "TM_ACK2") != 0 || !framedsl_find(definition, "TM_ACK2.sequence", &id) || framedsl_get_u64(frame, id, &sequence) != FRAMEDSL_OK || sequence != 7)) {
+    failure = __LINE__;
+  }
+
+  framedsl_frame_free(frame);
+  framedsl_result_free(result);
+  return failure;
+}
+
+static bool write_file(const TestArguments *args, const char *name, const char *content) {
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/%s", args->tmp_dir, name);
+  FILE *handle = fopen(path, "w");
+  if (handle == NULL) {
+    return false;
+  }
+  fputs(content, handle);
+  fclose(handle);
+  return true;
+}
+
+/* An imported block pastes in like a local one, through a flat import and through `as`. */
+static int us10_tc06_an_imported_block_can_be_pasted(const TestArguments *args) {
+  if (!write_file(args, "link.fdsl", "block Header { id: 8; sequence: 16; };\n")
+      || !write_file(
+        args,
+        "device.fdsl",
+        "import \"link.fdsl\";\n"
+        "import \"link.fdsl\" as link;\n"
+        "pkt TM_A { Header { id = 0x01; }; tail: 8; };\n"
+        "pkt TM_B { link.Header { id = 0x02; }; };\n"
+      )) {
+    FORCE_FAILURE();
+  }
+
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/device.fdsl", args->tmp_dir);
+  FramedslResult *result = framedsl_load_file(path);
+  const FramedslDefinition *definition = framedsl_definition(result);
+  FramedslFieldId id;
+  int failure = 0;
+  if (!framedsl_ok(result) || !framedsl_find(definition, "TM_A.sequence", &id)
+      || !framedsl_find(definition, "TM_A.tail", &id) || !framedsl_find(definition, "TM_B.sequence", &id)
+      || framedsl_find(definition, "TM_B.link.sequence", &id)) {
+    failure = __LINE__;
+  }
+  framedsl_result_free(result);
+  return failure;
+}
+
 void register_user_story10(void) {
   START_REGISTERING();
   ADD_TEST_CASE(
@@ -192,4 +273,10 @@ void register_user_story10(void) {
     us10_tc03_introspection_shows_the_expanded_fields, "introspection shows expanded names and fixed values", false
   );
   ADD_TEST_CASE(us10_tc04_the_tool_takes_and_shows_dotted_names, "-e and -d take and show dotted names", false);
+  ADD_TEST_CASE(
+    us10_tc05_a_pasted_block_is_addressed_without_an_instance,
+    "a pasted block's fields have no instance in their names",
+    false
+  );
+  ADD_TEST_CASE(us10_tc06_an_imported_block_can_be_pasted, "an imported block pastes in, flat or through 'as'", false);
 }

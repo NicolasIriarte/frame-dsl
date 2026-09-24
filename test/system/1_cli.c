@@ -113,6 +113,7 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
     { "invalid/import_cycle.fdsl",               27 },
     { "invalid/import_cycle_back.fdsl",          27 },
     { "invalid/import_clash.fdsl",               28 },
+    { "invalid/pasted_field_clash.fdsl",         2  },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {

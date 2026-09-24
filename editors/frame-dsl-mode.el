@@ -118,6 +118,11 @@ something, which is why the patterns below anchor on the `@'.")
       ;; The reserved words.
       (,(concat "\\_<" (regexp-opt frame-dsl-keywords) "\\_>") . font-lock-keyword-face)
 
+      ;; `NAME { ... };' or `NAME;' on a line of its own -- a block pasted in without an instance
+      ;; name.  After the keywords, so that `block {' keeps its keyword face: a highlight here only
+      ;; lands on characters nothing above has claimed.
+      (,(concat "^[ \t]*\\(" name "\\(?:\\." name "\\)*\\)[ \t]*[{;]") 1 font-lock-type-face)
+
       ;; `valof(len)' -- the field whose value gives this one its width.
       (,(concat "\\_<valof\\_>[ \t]*([ \t]*\\(" name "\\)") 1 font-lock-variable-name-face)
 

@@ -230,6 +230,13 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
       } else if (is(next, TOK_COLON) || is(next, TOK_LBRACKET)) {
         type = SEM_PROPERTY;
         declaration = true;
+      } else if ((previous == NULL || is(previous, TOK_SEMICOLON) || is(previous, TOK_LBRACE)
+                  || is(previous, TOK_RBRACKET))
+                 && (is(next, TOK_LBRACE) || is(next, TOK_SEMICOLON) || is(next, TOK_DOT))) {
+        /* A block pasted in without an instance name, `Header { ... };`: read from here on as the
+         * width part of a named use would be, so its overrides and a `ns.` prefix classify the same. */
+        in_width = true;
+        type = is(next, TOK_DOT) ? SEM_NAMESPACE : SEM_STRUCT;
       }
       break;
     }

@@ -70,13 +70,18 @@ block              = "block" , "{" , declaration , { declaration } , "}" , ";" ;
  * use's width is a name and a field's never is, so one token after ":" tells them apart. A named
  * block must be declared above every use (check 24); an attribute group in front of a use is an
  * error, because a block's layout is decided where it is declared.
+ *
+ * A use without an instance name pastes the block's fields in under their own names (`id`), in a
+ * packet or in another block. A field's name is followed by ":" or "[", a block's by "{", ";" or the
+ * "." of a namespace, so one token after the first name tells them apart. A pasted field may not
+ * share a name with another field of the same packet or block (check 2).
  *)
 
 named_block        = [ attribute_group ] , "block" , identifier , "{" ,
                        declaration , { declaration } ,
                      "}" , ";" ;
 
-use                = identifier , ":" , dotted_name , [ "{" , { override } , "}" ] , ";" ;
+use                = [ identifier , ":" ] , dotted_name , [ "{" , { override } , "}" ] , ";" ;
 override           = identifier , { "." , identifier } , "=" , integer , ";" ;
 
 (* --- Fields ---------------------------------------------------------------------------------
