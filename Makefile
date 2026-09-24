@@ -209,7 +209,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 # the person running this has in their own configuration cannot make an editor look like it works.
 EDITORS := editors
 EMACS ?= emacs
-EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS) -l $(EDITORS)/frame-dsl-mode-tests.el \
+EMACS_TEST_FLAGS := -Q --batch -L $(EDITORS)/emacs -l $(EDITORS)/emacs/frame-dsl-mode-tests.el \
 	--eval '(setq frame-dsl-program "$(abspath $(TARGET))")' -f ert-run-tests-batch-and-exit
 
 VIM ?= vim
@@ -498,7 +498,7 @@ test-editors: $(TARGET)
 	@if command -v $(EMACS) >/dev/null 2>&1; then \
 		$(EMACS) $(EMACS_TEST_FLAGS); \
 	else \
-		echo "test-editors: no $(EMACS) on PATH, skipping editors/frame-dsl-mode.el tests"; \
+		echo "test-editors: no $(EMACS) on PATH, skipping editors/emacs/frame-dsl-mode.el tests"; \
 	fi
 	@if command -v $(VIM) >/dev/null 2>&1; then \
 		$(call VIM_TEST_CMD,$(VIM)); \

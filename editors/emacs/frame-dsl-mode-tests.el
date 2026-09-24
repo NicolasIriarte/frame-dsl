@@ -8,7 +8,7 @@
 ;;
 ;; or by hand:
 ;;
-;;     emacs -Q --batch -L editors -l editors/frame-dsl-mode-tests.el \
+;;     emacs -Q --batch -L editors/emacs -l editors/emacs/frame-dsl-mode-tests.el \
 ;;           -f ert-run-tests-batch-and-exit
 ;;
 ;; These need Emacs; `make test-editors' says so and passes when it is not installed, because a
@@ -172,7 +172,7 @@ each call would otherwise land in the middle of `make test' once per example fil
 The point is not the colours, it is that nothing here errors on real input -- a
 regular expression that backtracks forever or a syntax table that unbalances a
 file is the way this mode breaks, and it breaks on somebody's buffer."
-  (let ((examples (expand-file-name "../examples" frame-dsl-tests-directory)))
+  (let ((examples (expand-file-name "../../examples" frame-dsl-tests-directory)))
     (should (file-directory-p examples))
     (let ((files (directory-files-recursively examples "\\.fdsl\\'")))
       (should (> (length files) 4))
@@ -237,7 +237,7 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
 (ert-deftest frame-dsl-tests-flymake-is-quiet-on-a-clean-buffer ()
   "Every example checks clean."
   (skip-unless (executable-find frame-dsl-program))
-  (let ((examples (expand-file-name "../examples" frame-dsl-tests-directory)))
+  (let ((examples (expand-file-name "../../examples" frame-dsl-tests-directory)))
     (dolist (file (directory-files examples t "\\.fdsl\\'"))
       (should (equal (list file nil)
                      (list file (frame-dsl-tests--flymake

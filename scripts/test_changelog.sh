@@ -322,7 +322,7 @@ required() {
 # What a user would notice, changed without a word.
 required "the library" owed src/parser.c
 required "the public header" owed include/framedsl.h
-required "the editor support" owed editors/frame-dsl-mode.el
+required "the editor support" owed editors/emacs/frame-dsl-mode.el
 required "a source file among others" owed README.md test/unit/2_parser.c src/lsp.c
 
 # The same, with a fragment of its own.

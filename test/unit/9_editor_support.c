@@ -1,6 +1,6 @@
 /* Story 9: the editor support and the compiler agree about what the language is.
  *
- * editors/frame-dsl-mode.el colours a buffer with regular expressions, so it carries its own copy of
+ * editors/emacs/frame-dsl-mode.el colours a buffer with regular expressions, so it carries its own copy of
  * every word the language reserves or recognises. That copy is the whole risk of the approach: the
  * compiler grows a keyword, the mode does not, and the file somebody is looking at quietly stops
  * being the file the compiler reads. Nothing fails, nothing warns, and the first symptom is an hour
@@ -18,7 +18,7 @@
  *
  * This is a unit test rather than a system one because it reaches into src/, and because it needs no
  * editor: the half of the mode that needs Emacs to check is checked by
- * editors/frame-dsl-mode-tests.el, under `make test-editors`, which a machine without Emacs skips.
+ * editors/emacs/frame-dsl-mode-tests.el, under `make test-editors`, which a machine without Emacs skips.
  * This half runs everywhere, including in CI. */
 #include <stdio.h>
 #include <string.h>
@@ -245,7 +245,7 @@ static bool loads(const char *source) {
 static int us9_tc01_every_word_the_mode_reserves_is_reserved(const TestArguments *args) {
   (void)args;
 
-  const char *mode = slurp(EDITORS_DIR, "frame-dsl-mode.el");
+  const char *mode = slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el");
   if (mode == NULL) {
     FORCE_FAILURE();
   }
@@ -276,7 +276,7 @@ static int us9_tc01_every_word_the_mode_reserves_is_reserved(const TestArguments
 static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArguments *args) {
   (void)args;
 
-  const char *mode = slurp(EDITORS_DIR, "frame-dsl-mode.el");
+  const char *mode = slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el");
   if (mode == NULL) {
     FORCE_FAILURE();
   }
@@ -288,7 +288,7 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
   }
   /* Collected from the file a second time, because the first call left its words in the shared
    * buffer this one is about to overwrite. */
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+  if (slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el") == NULL
       || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &values)) {
     FORCE_FAILURE();
   }
@@ -342,7 +342,7 @@ static int us9_tc03_every_keyword_the_lexer_has_is_in_the_mode(const TestArgumen
   }
 
   WordList mode;
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+  if (slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el") == NULL
       || !collect_elisp_list(source_buffer, "frame-dsl-keywords", &mode)) {
     FORCE_FAILURE();
   }
@@ -372,11 +372,11 @@ static int us9_tc04_every_attribute_the_parser_has_is_in_the_mode(const TestArgu
 
   WordList mode_names;
   WordList mode_values;
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+  if (slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el") == NULL
       || !collect_elisp_list(source_buffer, "frame-dsl-attribute-names", &mode_names)) {
     FORCE_FAILURE();
   }
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+  if (slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el") == NULL
       || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &mode_values)) {
     FORCE_FAILURE();
   }
@@ -412,7 +412,7 @@ static int us9_tc05_the_word_lists_are_actually_found(const TestArguments *args)
     return __LINE__;
   }
 
-  if (slurp(EDITORS_DIR, "frame-dsl-mode.el") == NULL
+  if (slurp(EDITORS_DIR, "emacs/frame-dsl-mode.el") == NULL
       || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &list)) {
     return __LINE__;
   }

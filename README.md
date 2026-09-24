@@ -210,7 +210,7 @@ definition and completion -- hovering a field says where it lands in the packet 
 the mistakes with one obvious repair: a misspelt name, a missing `;`, an unused declaration. Emacs, Vim, Neovim
 and VS Code each get highlighting, comments and indentation on their own, and a client for the server
 on top -- Emacs needs nothing configured beyond loading
-[`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el), Neovim 0.11+ beyond
+[`editors/emacs/frame-dsl-mode.el`](editors/emacs/frame-dsl-mode.el), Neovim 0.11+ beyond
 `vim.lsp.enable('frame_dsl')` once `editors/vim` is on the runtime path.
 [`manual/editors.md`](manual/editors.md) says what the server does,
 [`editors/README.md`](editors/README.md) how to set each editor up, and

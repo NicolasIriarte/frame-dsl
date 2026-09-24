@@ -151,7 +151,7 @@ function! s:TestNeovimLsp() abort
   let l:client = luaeval('vim.lsp.start(_A, {bufnr = 0})', l:config)
   call assert_notequal(v:null, l:client, "lsp/frame_dsl.lua's config starts a client")
 
-  " 20s, not 5: the Emacs equivalent (editors/frame-dsl-mode-tests.el) gives the same
+  " 20s, not 5: the Emacs equivalent (editors/emacs/frame-dsl-mode-tests.el) gives the same
   " spawn-a-server-and-wait-for-a-diagnostic case 20s, and a loaded CI runner can take
   " noticeably longer than a local machine to start the subprocess and get a report back.
   let l:got = luaeval('vim.wait(20000, function() return #vim.diagnostic.get(0) > 0 end, 50)')

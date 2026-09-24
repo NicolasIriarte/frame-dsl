@@ -110,13 +110,13 @@ thing to test about it is that each kind of name is classified as what it is -- 
 
 The half that needs an actual editor -- faces, comment commands, indentation, and a round trip
 against the real server -- is per editor: `make test-editors` runs
-[`editors/frame-dsl-mode-tests.el`](../editors/frame-dsl-mode-tests.el) under Emacs and
+[`editors/emacs/frame-dsl-mode-tests.el`](../editors/emacs/frame-dsl-mode-tests.el) under Emacs and
 [`editors/vim/frame-dsl-tests.vim`](../editors/vim/frame-dsl-tests.vim) under both Vim and Neovim,
 Neovim's run additionally starting `frame-dsl --lsp` through
 [`editors/vim/lsp/frame_dsl.lua`](../editors/vim/lsp/frame_dsl.lua) and checking a diagnostic comes
 back -- the same thing the Emacs run checks through eglot. Each **skips**, loudly, on a machine
 without that editor. VS Code has no headless batch mode to script this way, so it is checked by hand
-instead, each time #39 or a later editor issue changes it; see `editors/README.md`.
+instead, each time #39 or a later editor issue changes it; see `editors/vscode/README.md`.
 
 One of the Emacs and Vim cases is worth naming, because it does more than it looks like: reindenting
 every file under `examples/` must change nothing. The examples are written by the formatter, so that
