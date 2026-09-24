@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    # A tag publishes a release (#90): `release` at the bottom waits for `test` to pass on it first.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -11,6 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # First, since it needs nothing installed. A marker in a C file breaks the build loudly; one in
+      # Markdown, JSON or a definition file's comment is silent until somebody reads it -- and before
+      # #90, CHANGELOG.md was hand-merged on nearly every pull request. Over every tracked file, on
+      # every run, so one that arrived by any route is caught.
+      - name: No unresolved conflict markers
+        run: scripts/check_conflict_markers.sh
 
       # Everything the build needs is in the checkout: the CLibs tarballs are committed under
       # third_party/clibs/ and unpacked locally. Nothing here reaches the network, and nothing here
@@ -94,3 +103,80 @@ jobs:
           fi
 
           make fuzz FUZZ_CC=clang FUZZ_FLAGS="$flags" FUZZ_SECONDS=30
+
+  # Whether this pull request owes the changelog an entry (#90). Its own job because it needs nothing
+  # installed and answers in seconds, rather than behind the build. Pull requests only: a push to main is
+  # the merge of one that already answered this.
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A shallow clone has no base commit, and a diff against one that is not there reports every
+          # file as changed.
+          fetch-depth: 0
+
+      - name: A changelog fragment, if one is owed
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          # With no usable base there is no reliable list of changed paths, and failing a pull request
+          # because CI could not work out what it changed is a red check nobody can act on.
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "::warning::No usable base commit to compare against -- not asking for a changelog entry."
+            exit 0
+          fi
+          # The decision lives in scripts/changelog_required.sh, tested by scripts/test_changelog.sh
+          # without opening a pull request. Three dots: what this branch changed since it left the base,
+          # not what the base has gained since.
+          if git diff --name-only "$base...$head" | scripts/changelog_required.sh; then
+            echo "::error::This change has no changelog fragment. See changelog.d/README.md."
+            exit 1
+          fi
+
+  # Publishes the release a `v*` tag names: the version's section of CHANGELOG.md as its notes, and the
+  # VS Code extension attached (#90). After `test`, since a tag is what somebody installs without
+  # building it themselves.
+  release:
+    needs: [test]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Before anything else: a tag whose version was never written down fails here, rather than
+      # publishing a release with an empty page nobody goes back to fill in. `make changelog
+      # VERSION=<tag>` is what writes the section; see .forgejo/issue_template/tag.md.
+      - name: The changelog has something to say about this version
+        run: scripts/changelog_section.sh "${{ github.ref_name }}" > /tmp/release-notes.md
+
+      - name: Build the VS Code extension
+        run: |
+          scripts/ci_apt_get.sh update -qq
+          scripts/ci_apt_get.sh install -y -qq --no-install-recommends jq zip unzip
+          make vsix
+
+      - name: Publish the release
+        env:
+          # The workflow's own token, unless it may not create releases on this instance -- then set
+          # FRAMEDSL_RELEASE_TOKEN in the repository's Actions secrets, which only the owner can do.
+          TOKEN: ${{ secrets.FRAMEDSL_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          api="${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
+          # JSON-encoded by python rather than by hand: release notes are prose full of quotes,
+          # backticks and newlines, and a hand-rolled escape gets that wrong exactly once, in public.
+          body="$(python3 -c 'import json, sys; print(json.dumps({"tag_name": sys.argv[1], "name": sys.argv[1], "body": open("/tmp/release-notes.md").read()}))' "$TAG")"
+          id="$(printf '%s' "$body" \
+            | curl -sSf -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+                --data @- "$api/releases" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
+          echo "Created release $TAG (id $id)."
+          for file in build/*.vsix; do
+            echo "Attaching $(basename "$file")"
+            curl -sSf -X POST -H "Authorization: token $TOKEN" -F "attachment=@${file}" \
+              "$api/releases/${id}/assets?name=$(basename "$file")" > /dev/null
+          done

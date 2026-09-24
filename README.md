@@ -303,4 +303,7 @@ Read [`GUIDELINES.md`](GUIDELINES.md) first. It is short, and it is binding rath
 covers branch and PR naming, the requirement that every PR reference an issue, the `state/*` labels
 that gate who may act on an issue, and the rule against self-attribution anywhere in the repository.
 
-[`CHANGELOG.md`](CHANGELOG.md) records what has landed. Releases draw their notes from it.
+[`CHANGELOG.md`](CHANGELOG.md) records what has been released, and a tag's release notes are its
+section. A change on its way in writes its entry as a file of its own under
+[`changelog.d/`](changelog.d/README.md), so two pull requests never edit the same lines; the entries are
+folded into `CHANGELOG.md` when a version is cut.

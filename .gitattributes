@@ -1,0 +1,6 @@
+# Not what keeps CHANGELOG.md from colliding -- changelog.d/ is (#90): entries are written one per file,
+# and the file is assembled when a version is cut. This stays because it still helps a merge made in a
+# working tree, `nightly`'s in particular. It cannot help Forgejo's merge button: git applies a merge
+# driver only when .gitattributes is a real file in the tree doing the merge, and Forgejo merges without
+# one -- while `git check-attr merge CHANGELOG.md` says `union` either way, since it reads the index.
+/CHANGELOG.md merge=union

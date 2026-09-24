@@ -4,9 +4,11 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Cutting a release closes out `[Unreleased]` and opens a fresh one above it; a tag whose version has
-nothing written under it fails the release rather than publishing an empty page. See
-`.forgejo/issue_template/tag.md`.
+New entries are not written here: each is a file of its own under `changelog.d/`, so that two pull
+requests never edit the same lines (see `changelog.d/README.md`). Cutting a release folds them, and
+anything still under `[Unreleased]`, into the version's section with `make changelog VERSION=vX.Y.Z`,
+and opens a fresh `[Unreleased]` above it. A tag whose version has nothing written under it fails the
+release rather than publishing an empty page. See `.forgejo/issue_template/tag.md`.
 
 ## [Unreleased]
 

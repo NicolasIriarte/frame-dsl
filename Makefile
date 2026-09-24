@@ -146,7 +146,8 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
 .PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean bench fuzz test-fuzz-replay vsix FORCE
+	format-tool hooks clean bench fuzz test-fuzz-replay vsix test-changelog changelog changelog-preview \
+	conflicts FORCE
 
 # Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
 # the person running this has in their own configuration cannot make an editor look like it works.
@@ -346,7 +347,7 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system test-editors test-fuzz-replay
+test: test-unit test-system test-editors test-fuzz-replay test-changelog
 
 test-unit: $(UNIT_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)
@@ -375,6 +376,28 @@ test-editors: $(TARGET)
 	else \
 		echo "test-editors: no $(NVIM) on PATH, skipping editors/vim tests under Neovim"; \
 	fi
+
+# The changelog is written as one fragment per entry under changelog.d/ and assembled when a version is
+# cut (#90); see changelog.d/README.md. These check the scripts that do that, and the conflict-marker
+# guard CI runs, in throwaway directories -- nothing here touches the real CHANGELOG.md.
+test-changelog:
+	@scripts/test_changelog.sh
+	@scripts/test_conflict_markers.sh
+
+# What the next release's section would read like, from changelog.d/ and whatever is still under
+# [Unreleased]. Changes nothing.
+changelog-preview:
+	@scripts/changelog_assemble.sh $(or $(VERSION),vNEXT) --preview
+
+# Folds changelog.d/ into CHANGELOG.md as VERSION's section and removes the fragments it used: the first
+# task of the release tag issue (.forgejo/issue_template/tag.md).
+changelog:
+	@test -n "$(VERSION)" || { echo "usage: make changelog VERSION=vX.Y.Z" >&2; exit 1; }
+	scripts/changelog_assemble.sh $(VERSION)
+
+# Fails if any tracked file still holds a merge conflict marker. CI runs it on every push.
+conflicts:
+	@scripts/check_conflict_markers.sh
 
 # Checked once, before either recipe below runs, so that "your clang-format is too old" is said once
 # and in those words -- instead of the same unknown-key complaint about .clang-format repeated for
