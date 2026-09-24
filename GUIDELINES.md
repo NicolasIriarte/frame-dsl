@@ -27,6 +27,7 @@ MUST NOT is not negotiable, SHOULD / SHOULD NOT is a default that a stated reaso
    number that could mean either is ambiguous, and rule 4 guarantees every pull request has an issue
    number to be cited by.
 8. Tags MUST follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
+9. An AI model MUST NOT edit the `GUIDELINEs.md` file (This file) by any circumstance.
 
 ## Issues
 
@@ -34,8 +35,7 @@ MUST NOT is not negotiable, SHOULD / SHOULD NOT is a default that a stated reaso
    may act on them.
 2. An AI model MUST NOT move an issue to `state/prepared` or `state/ready` unless explicitly told
    to, for that issue, in that moment. Being told once does not carry forward to future issues.
-3. An AI model MUST NOT implement an issue, or open a PR against it, unless it is `state/ready` --
-   except an issue the model created itself, which it may complete directly.
+3. An AI model MUST NOT implement an issue, or open a PR against it, unless it is `state/ready`.
 4. An AI model MUST NOT merge a PR unless explicitly told to, for that PR, in that moment. Being
    told once does not carry forward to future PRs.
 5. Issues MUST follow the template provided under `.forgejo/issue_template/`. Pull requests have a

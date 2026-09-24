@@ -14,10 +14,10 @@ Three editors, three sections below: [Emacs](#emacs), [Vim and Neovim](#vim-and-
 
 ## Emacs
 
-| File | |
-| --- | --- |
-| [`frame-dsl-mode.el`](frame-dsl-mode.el) | the major mode: font lock, comments, indentation, Flymake |
-| [`frame-dsl-mode-tests.el`](frame-dsl-mode-tests.el) | its tests, run by `make test-editors` |
+| File                                                 |                                                           |
+|------------------------------------------------------|-----------------------------------------------------------|
+| [`frame-dsl-mode.el`](frame-dsl-mode.el)             | the major mode: font lock, comments, indentation, Flymake |
+| [`frame-dsl-mode-tests.el`](frame-dsl-mode-tests.el) | its tests, run by `make test-editors`                     |
 
 ### Installing
 
