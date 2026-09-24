@@ -86,10 +86,10 @@ static int us17_tc02_help_wins_wherever_it_appears(const TestArguments *args) {
   (void)args;
 
   char arguments[512];
-  snprintf(arguments, sizeof(arguments), "%s/uart_device.fdsl -e TC_WRITE size=2 data=AABB --help", EXAMPLES_DIR);
+  snprintf(arguments, sizeof(arguments), "%s/uart_device.fdsl -d '81 00 07 01' --help", EXAMPLES_DIR);
   Run run = run_with(arguments);
-  /* The help, and no frame: TC_WRITE would have started "03 02". */
-  if (!is_help(&run) || strstr(run.out, "03 02") != NULL) {
+  /* The help, and no decode: the frame would have printed as a TM_ACK. */
+  if (!is_help(&run) || strstr(run.out, "TM_ACK") != NULL) {
     return __LINE__;
   }
 
@@ -119,25 +119,8 @@ static int us17_tc03_version_names_the_build(const TestArguments *args) {
 /* The flags the tool has. Adding one to the tool without adding it here fails tc05 below, because
  * --help then lists a flag this story has not heard of. */
 static const char *const KNOWN_FLAGS[] = {
-  "-d",
-  "--decode",
-  "-e",
-  "--encode",
-  "-r",
-  "--report",
-  "-q",
-  "--quiet",
-  "--emit-c",
-  "--check",
-  "--werror",
-  "--format",
-  "--stdin-name",
-  "--lsp",
-  "--list-packets",
-  "--list-fields",
-  "-h",
-  "--help",
-  "--version",
+  "-d",           "--decode", "--emit-c",       "--check", "--werror", "--format",
+  "--stdin-name", "--lsp",    "--list-packets", "-h",      "--help",   "--version",
 };
 
 #define KNOWN_FLAG_COUNT (sizeof(KNOWN_FLAGS) / sizeof(*KNOWN_FLAGS))

@@ -386,98 +386,20 @@ static int us1_tc13_the_flag_needs_an_argument_and_the_old_shape_still_works(con
  * The other direction: a packet name and some field values in, the frame's bytes out, to paste into a
  * simulator or push onto a bus by hand. */
 
-static Run encode_example(const char *example, const char *arguments) {
-  char line[1024];
-  snprintf(line, sizeof(line), "%s/%s %s", EXAMPLES_DIR, example, arguments);
-  return run_with(line);
-}
-
-static int us1_tc14_encodes_a_frame_that_decodes_back(const TestArguments *args) {
-  (void)args;
-
-  /* Both spellings, and fields left out encoding as zero: `seq` is never named here. -q, so that the
-   * output is the frame and nothing else. */
-  const char *flags[] = { "-e", "--encode" };
-  for (size_t f = 0; f < sizeof(flags) / sizeof(*flags); ++f) {
-    char arguments[128];
-    snprintf(arguments, sizeof(arguments), "%s TC_SET_MODE mode=0x09 -q", flags[f]);
-    Run run = encode_example("packet_family.fdsl", arguments);
-    if (run.status != 0 || strcmp(run.output, "02 00 00 09\n") != 0) {
-      return __LINE__;
-    }
-  }
-
-  /* Without -q, the field left at zero is named -- and only that one: not `mode`, which was given,
-   * and not `type`, which the definition fixes. */
-  Run said = encode_example("packet_family.fdsl", "-e TC_SET_MODE mode=0x09");
-  if (said.status != 0 || strstr(said.output, "TC_SET_MODE.seq not given") == NULL
-      || strstr(said.output, ".mode not given") != NULL || strstr(said.output, ".type not given") != NULL) {
-    return __LINE__;
-  }
-
-  /* A valof() packet, with its bit string written as hex. Only the hex reaches stdout, report and
-   * all, so it can be piped: stderr is dropped here and stdout must be the frame and nothing else. */
-  Run run = encode_example("packet_family.fdsl", "-e TC_PAYLOAD seq=2 len=2 body=AABB -r 2>/dev/null | cat");
-  if (strcmp(run.output, "03 00 02 00 02 AA BB\n") != 0) {
-    return __LINE__;
-  }
-
-  /* The report is of the frame read back, fixed values included. */
-  run = encode_example("packet_family.fdsl", "-e TC_PAYLOAD seq=2 len=2 body=AABB --report");
-  if (run.status != 0 || strstr(run.output, "pkt TC_PAYLOAD") == NULL
-      || strstr(run.output, "[2 bytes] AA BB") == NULL) {
-    return __LINE__;
-  }
-
-  /* And what it printed is what -d reads back: the round trip is the whole claim. */
-  run = decode_example("packet_family.fdsl", "-d", "03 00 02 00 02 AA BB");
-  if (run.status != 0 || strstr(run.output, "TC_PAYLOAD") == NULL || strstr(run.output, "AA BB") == NULL) {
-    return __LINE__;
-  }
-  return 0;
-}
-
-/* Each refusal is a different mistake, and the message is what tells somebody which one they made. */
-static int us1_tc15_refuses_what_the_packet_cannot_carry(const TestArguments *args) {
-  (void)args;
-
-  const struct {
-    const char *arguments;
-    int status;
-    const char *expected;
-  } cases[] = {
-    { "-e TC_PING nope=1",       1, "has no field 'nope'"       },
-    { "-e TC_PING seq=65536",    1, "too wide for its 16 bits"  },
-    { "-e TC_NOPE seq=1",        1, "no packet named 'TC_NOPE'" },
-    { "-e TC_PING type=7",       1, "fixed at 0x1"              },
-    { "-e TC_PING seq=abc",      2, "not a number"              },
-    { "-e TC_PAYLOAD body=AABB", 1, "set that field as well"    },
-    { "-e TC_PAYLOAD len=2",     1, "must be zero"              },
-  };
-
-  for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
-    Run run = encode_example("packet_family.fdsl", cases[i].arguments);
-    if (run.status != cases[i].status || strstr(run.output, cases[i].expected) == NULL) {
-      return __LINE__;
-    }
-  }
-  return 0;
-}
-
-static int us1_tc16_encode_arguments_that_would_need_a_guess_are_usage_errors(const TestArguments *args) {
+/* Encoding left the command line in #97: a script does it better, through the library. Each flag it
+ * took is now as unknown as a typo -- a usage error pointing at --help -- and so is a `field=value`,
+ * rather than being read as the name of a file. */
+static int us1_tc14_encoding_is_not_on_the_command_line(const TestArguments *args) {
   (void)args;
 
   const char *cases[] = {
-    "-e TC_PING -d 010009", /* two questions at once */
-    "-e", /* no packet */
-    "seq=1", /* a value with nothing to put it in */
-    "-q", /* nothing to be quiet about */
-    "-e TC_PING seq=1 seq=2" /* which one? */
+    "-e TC_PING", "--encode TC_PING", "-r", "--report", "-q", "--quiet", "--list-fields TC_PING", "seq=1",
   };
-
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
-    Run run = encode_example("packet_family.fdsl", cases[i]);
-    if (run.status != 2) {
+    char line[1024];
+    snprintf(line, sizeof(line), "%s/packet_family.fdsl %s", EXAMPLES_DIR, cases[i]);
+    Run run = run_with(line);
+    if (run.status != 2 || strstr(run.output, "unexpected argument") == NULL || strstr(run.output, "--help") == NULL) {
       return __LINE__;
     }
   }
@@ -521,13 +443,7 @@ void register_user_story1(void) {
     "-d needs hex, takes either position, and describing still works",
     false
   );
-  ADD_TEST_CASE(us1_tc14_encodes_a_frame_that_decodes_back, "-e prints a frame as hex that -d reads back", false);
   ADD_TEST_CASE(
-    us1_tc15_refuses_what_the_packet_cannot_carry, "-e refuses each kind of bad field with its own message", false
-  );
-  ADD_TEST_CASE(
-    us1_tc16_encode_arguments_that_would_need_a_guess_are_usage_errors,
-    "-e with -d, without a packet, or with a field twice is a usage error",
-    false
+    us1_tc14_encoding_is_not_on_the_command_line, "-e, -r, -q, --list-fields and field=value are refused", false
   );
 }

@@ -231,13 +231,8 @@ static int us13_tc07_check_does_not_combine_with_the_other_modes(const TestArgum
     return __LINE__;
   }
   const char *combinations[] = {
-    "%s --check -d 01",
-    "%s --check -e TM",
-    "%s --check --emit-c",
-    "%s --werror",
-    "%s %s",
-    "- - --check",
-    "%s --stdin-name x.fdsl --check",
+    "%s --check -d 01", "%s --check --list-packets",      "%s --check --emit-c", "%s --werror", "%s %s",
+    "- - --check",      "%s --stdin-name x.fdsl --check",
   };
   for (size_t i = 0; i < sizeof(combinations) / sizeof(*combinations); ++i) {
     char arguments[2600];

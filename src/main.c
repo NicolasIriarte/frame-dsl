@@ -1,5 +1,6 @@
-/* frame-dsl: validate a definition file, describe what is in it, decode or encode bytes against it,
- * and write its calibrations out as C.
+/* frame-dsl: validate a definition file, describe what is in it, decode bytes against it, and write its
+ * calibrations out as C. Encoding left the command line in #97: a script does it better, through the
+ * library.
  *
  * Written against the public header alone, with nothing internal included. That is deliberate: if
  * the tool shipped with the project needs to reach inside, the interface is not finished. Decoding a
@@ -338,33 +339,22 @@ static void describe(const FramedslDefinition *definition) {
   }
 }
 
-/* --list-packets, and --list-fields <packet>: names, one per line, for a completion script (#85) or any
- * other program to read. Nothing else on stdout or stderr -- a completion that printed a diagnostic
- * would print it into the middle of somebody's command line -- so a file that does not load, or a
- * packet it does not have, is only an exit status of 1. The fields are the ones -e takes: a fixed one
- * cannot be given, so it is not offered. */
-static int list_names(const char *path, const char *stdin_name, const char *packet) {
+/* --list-packets: the packet names, one per line, for a completion script (#85) or any other program
+ * to read. Nothing else on stdout or stderr -- a completion that printed a diagnostic would print it
+ * into the middle of somebody's command line -- so a file that does not load is only an exit status
+ * of 1. */
+static int list_packets_of(const char *path, const char *stdin_name) {
   FramedslResult *result = load_path(path, stdin_name);
   if (result == NULL) {
     return 2;
   }
   const FramedslDefinition *definition = framedsl_definition(result);
   int status = 0;
-  size_t index = 0;
   if (!framedsl_ok(result) || definition == NULL) {
     status = 1;
-  } else if (packet == NULL) {
+  } else {
     for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
       printf("%s\n", framedsl_packet_name(definition, p));
-    }
-  } else if (!framedsl_find_packet(definition, packet, &index)) {
-    status = 1;
-  } else {
-    for (size_t f = 0; f < framedsl_field_count(definition, index); ++f) {
-      FramedslField field;
-      if (framedsl_field(definition, index, f, &field) && !field.has_fixed) {
-        printf("%s\n", field.name);
-      }
     }
   }
   framedsl_result_free(result);
@@ -465,9 +455,6 @@ static void format_bytes(const uint8_t *bytes, size_t length, char *out, size_t 
   }
 }
 
-/* Prints every field of the packet that was decoded, to `out`: stdout when decoding, where the report
- * is the answer, and stderr when encoding, where the answer is the hex and the report must not end up
- * in whatever it is piped into. */
 /* One field's value, as report_frame() prints it: a number (and its engineering value), or bytes. */
 static void print_value(
   FILE *out,
@@ -513,6 +500,7 @@ static void print_value(
   }
 }
 
+/* Prints every field of the packet that was decoded, to `out`. */
 static void report_frame(
   FILE *out,
   const FramedslDefinition *definition,
@@ -539,7 +527,7 @@ static void report_frame(
       continue;
     }
 
-    /* A repetition (#55): each element's fields, by the name -e and framedsl_find() take. */
+    /* A repetition (#55): each element's fields, by the name framedsl_find() takes. */
     size_t count = 0;
     if (framedsl_count(frame, id, &count) != FRAMEDSL_OK) {
       continue;
@@ -617,328 +605,6 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   return status;
 }
 
-/* ---- Encoding a frame ---------------------------------------------------------------------------
- *
- * The other direction: somebody knows the packet they want and needs its bytes -- to paste into a
- * simulator, to push onto a bus by hand, or to send a deliberately odd value and see what the other
- * end does with it. Fields not named encode as zero, which is the runtime's rule and not one this
- * tool adds. */
-
-/* A scalar's value: decimal, or hex with a `0x` prefix. A leading zero is not octal -- nobody typing
- * a sequence number means 010 to be eight. */
-static bool parse_number(const char *text, uint64_t *out) {
-  const bool hex = text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
-  const char *digits = hex ? text + 2 : text;
-
-  /* strtoull() takes a sign and whitespace and would turn "-1" into the largest value there is. */
-  if (*digits == '\0' || *digits == '-' || *digits == '+' || *digits == ' ') {
-    return false;
-  }
-
-  char *end = NULL;
-  errno = 0;
-  unsigned long long value = strtoull(digits, &end, hex ? 16 : 10);
-  if (errno != 0 || *end != '\0') {
-    return false;
-  }
-  *out = (uint64_t)value;
-  return true;
-}
-
-/* One `field=value` onto the frame. Returns an exit status: 0, 1 when the value does not fit the
- * definition, 2 when the argument itself is malformed -- the same line decoding draws between bytes
- * that are wrong and hex that is not hex. */
-/* `samples[2].value=7` (#55): one field of one element of a repetition, found the way framedsl_find()
- * finds it. A number for a scalar member, hex for a whole-byte bit-string one. */
-static int assign_member(
-  const FramedslDefinition *definition,
-  FramedslFrame *frame,
-  size_t packet,
-  const char *name,
-  const char *text,
-  bool *given
-) {
-  const char *packet_name = framedsl_packet_name(definition, packet);
-  char dotted[256];
-  FramedslFieldId id;
-  snprintf(dotted, sizeof(dotted), "%s.%s", packet_name, name);
-  const char *close = strchr(name, ']');
-  size_t repetition = 0;
-  char base[128];
-  size_t base_length = (size_t)(strchr(name, '[') - name);
-  if (base_length >= sizeof(base) || close == NULL || close[1] != '.') {
-    log_fail("'%s': expected repetition[index].field=value", name);
-    return 2;
-  }
-  memcpy(base, name, base_length);
-  base[base_length] = '\0';
-  if (!framedsl_find(definition, dotted, &id) || !framedsl_find_field(definition, packet, base, &repetition)) {
-    log_fail("%s has no field '%s', or the element is past what '%s' has room for", packet_name, name, base);
-    return 1;
-  }
-
-  FramedslField field;
-  FramedslField member = { 0 };
-  bool found = false;
-  if (framedsl_field(definition, packet, repetition, &field)) {
-    for (size_t m = 0; m < field.member_count && !found; ++m) {
-      found = framedsl_member(definition, packet, repetition, m, &member) && strcmp(member.name, close + 2) == 0;
-    }
-  }
-  if (!found) {
-    log_fail("%s has no field '%s'", packet_name, name);
-    return 1;
-  }
-  if (member.has_fixed) {
-    log_fail("%s.%s is fixed at %#llx by the definition", packet_name, name, (unsigned long long)member.fixed);
-    return 1;
-  }
-  given[repetition] = true;
-
-  if (member.is_scalar) {
-    uint64_t value = 0;
-    if (!parse_number(text, &value)) {
-      log_fail("%s.%s: '%s' is not a number (decimal, or hex with 0x)", packet_name, name, text);
-      return 2;
-    }
-    if (framedsl_set_u64(frame, id, value) != FRAMEDSL_OK) {
-      log_fail(
-        "%s.%s: %s is too wide for its %llu bits", packet_name, name, text, (unsigned long long)member.width_bits
-      );
-      return 1;
-    }
-    return 0;
-  }
-  static uint8_t bytes[MAX_CAPTURE];
-  size_t length = 0;
-  if (!parse_hex(text, bytes, sizeof(bytes), &length, true)
-      || framedsl_set_bytes(frame, id, bytes, length) != FRAMEDSL_OK) {
-    log_fail(
-      "%s.%s is %llu bits of bytes, and takes that much hex", packet_name, name, (unsigned long long)member.width_bits
-    );
-    return 1;
-  }
-  return 0;
-}
-
-static int assign(
-  const FramedslDefinition *definition,
-  FramedslFrame *frame,
-  size_t packet,
-  const char *assignment,
-  bool *given
-) {
-  const char *equals = strchr(assignment, '=');
-  const size_t name_length = (size_t)(equals - assignment);
-  const char *text = equals + 1;
-  const char *packet_name = framedsl_packet_name(definition, packet);
-
-  char name[128];
-  if (name_length == 0 || name_length >= sizeof(name)) {
-    log_fail("'%s': expected field=value", assignment);
-    return 2;
-  }
-  memcpy(name, assignment, name_length);
-  name[name_length] = '\0';
-
-  size_t index = 0;
-  FramedslField field;
-  FramedslFieldId id;
-  if (strchr(name, '[') != NULL) {
-    return assign_member(definition, frame, packet, name, text, given);
-  }
-  if (!framedsl_find_field(definition, packet, name, &index)) {
-    log_fail("%s has no field '%s'", packet_name, name);
-    return 1;
-  }
-  if (!framedsl_field(definition, packet, index, &field) || !framedsl_field_id(definition, packet, index, &id)) {
-    log_fail("%s.%s could not be resolved", packet_name, name);
-    return 1;
-  }
-
-  /* The encoder writes a fixed value from the definition whatever the slot holds, so accepting one
-   * here would print bytes that silently disagree with what was asked for. */
-  if (field.has_fixed) {
-    log_fail("%s.%s is fixed at %#llx by the definition", packet_name, name, (unsigned long long)field.fixed);
-    return 1;
-  }
-  if (given[index]) {
-    log_fail("%s.%s is given twice", packet_name, name);
-    return 2;
-  }
-  given[index] = true;
-
-  if (field.is_scalar) {
-    uint64_t value = 0;
-    if (!parse_number(text, &value)) {
-      log_fail("%s.%s: '%s' is not a number (decimal, or hex with 0x)", packet_name, name, text);
-      return 2;
-    }
-    if (framedsl_set_u64(frame, id, value) != FRAMEDSL_OK) {
-      log_fail(
-        "%s.%s: %s is too wide for its %llu bits", packet_name, name, text, (unsigned long long)field.width_bits
-      );
-      return 1;
-    }
-    return 0;
-  }
-
-  /* A bit string takes hex, written any way -d takes it. Static for the same reason as the capture:
-   * the size is fixed, and it is more than a stack frame should carry. */
-  static uint8_t bytes[MAX_CAPTURE];
-  size_t length = 0;
-  if (!parse_hex(text, bytes, sizeof(bytes), &length, true)) {
-    log_fail("%s.%s is a bit string and takes hex", packet_name, name);
-    return 2;
-  }
-  if (framedsl_set_bytes(frame, id, bytes, length) != FRAMEDSL_OK) {
-    if (field.variable) {
-      log_fail(
-        "%s.%s reserves %llu bytes and was given %zu",
-        packet_name,
-        name,
-        (unsigned long long)(field.max_bits / 8),
-        length
-      );
-    } else {
-      log_fail(
-        "%s.%s is exactly %llu bytes and was given %zu",
-        packet_name,
-        name,
-        (unsigned long long)(field.width_bits / 8),
-        length
-      );
-    }
-    return 1;
-  }
-  return 0;
-}
-
-/* The one way an encode fails once every value has been accepted: a valof() field whose bytes and
- * length field disagree. The public header does not say which field sizes which, so the message names
- * the variable fields and what was given for each, rather than guessing at the length field. */
-static void explain_length_mismatch(
-  const FramedslDefinition *definition,
-  const FramedslFrame *frame,
-  size_t packet,
-  const bool *given
-) {
-  const char *packet_name = framedsl_packet_name(definition, packet);
-
-  for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
-    FramedslField field;
-    FramedslFieldId id;
-    if (!framedsl_field(definition, packet, f, &field) || !field.variable
-        || !framedsl_field_id(definition, packet, f, &id)) {
-      continue;
-    }
-
-    /* A repetition has no length of its own to disagree with, only a count to be too big. */
-    if (field.element_bits > 0) {
-      size_t count = 0;
-      if (framedsl_count(frame, id, &count) != FRAMEDSL_OK) {
-        log_fail(
-          "%s.%s has room for %llu elements, and the field that counts them says more",
-          packet_name,
-          field.name,
-          (unsigned long long)(field.max_bits / field.element_bits)
-        );
-      }
-      continue;
-    }
-
-    if (given[f]) {
-      log_fail(
-        "%s.%s was given %zu bytes and the field that sizes it does not say so; set that field as well",
-        packet_name,
-        field.name,
-        framedsl_byte_length(frame, id)
-      );
-    } else {
-      log_fail("%s.%s was not given, so the field that sizes it must be zero", packet_name, field.name);
-    }
-  }
-}
-
-static int encode_packet(
-  const FramedslDefinition *definition,
-  const char *name,
-  const char *const *assignments,
-  size_t count,
-  bool show,
-  bool quiet
-) {
-  size_t packet = 0;
-  if (!framedsl_find_packet(definition, name, &packet)) {
-    log_fail("no packet named '%s' in this definition", name);
-    return 1;
-  }
-
-  FramedslFrame *frame = framedsl_frame_new(definition);
-  bool *given = calloc(framedsl_field_count(definition, packet) + 1, sizeof(*given));
-  if (frame == NULL || given == NULL) {
-    framedsl_frame_free(frame);
-    free(given);
-    log_fail("out of memory");
-    return 2;
-  }
-
-  int status = 0;
-  for (size_t i = 0; i < count && status == 0; ++i) {
-    status = assign(definition, frame, packet, assignments[i], given);
-  }
-
-  if (status == 0) {
-    size_t length = 0;
-    FramedslStatus why = FRAMEDSL_OK;
-    const uint8_t *bytes = framedsl_encode(frame, name, &length, &why);
-
-    if (bytes == NULL) {
-      if (why == FRAMEDSL_ERROR_RANGE) {
-        explain_length_mismatch(definition, frame, packet, given);
-      } else {
-        log_fail("%s could not be encoded", name);
-      }
-      status = 1;
-    } else {
-      /* Spaced hex: it pastes straight back into -d, and `xxd -r -p` reads it as it is. */
-      for (size_t i = 0; i < length; ++i) {
-        printf(i == 0 ? "%02X" : " %02X", bytes[i]);
-      }
-      printf("\n");
-      fflush(stdout);
-
-      /* Zero is the rule for a field nobody named, and it is a legitimate value -- but a field left
-       * out by mistake looks exactly like one left out on purpose, so each is said once. On stderr,
-       * like the report, so that what is piped is still only the frame. */
-      if (!quiet) {
-        for (size_t f = 0; f < framedsl_field_count(definition, packet); ++f) {
-          FramedslField field;
-          if (!given[f] && framedsl_field(definition, packet, f, &field) && !field.has_fixed) {
-            fprintf(stderr, "[INFO] %s.%s not given, encoded as zero\n", name, field.name);
-          }
-        }
-      }
-
-      /* The report is of the bytes, decoded back, rather than of what was typed: it shows the fixed
-       * values that went out and proves the frame reads as the packet it was meant to be. */
-      if (show) {
-        FramedslFrame *check = framedsl_frame_new(definition);
-        size_t consumed = 0;
-        const char *decoded = check == NULL ? NULL : framedsl_decode(check, bytes, length, &consumed, NULL);
-        if (decoded != NULL) {
-          report_frame(stderr, definition, check, decoded, consumed);
-        }
-        framedsl_frame_free(check);
-      }
-    }
-  }
-
-  free(given);
-  framedsl_frame_free(frame);
-  return status;
-}
-
 /* The calibrations as a C header, on stdout, for a program that wants them compiled in. */
 static int emit_c(const FramedslDefinition *definition) {
   size_t length = framedsl_emit_c(definition, NULL, NULL, 0);
@@ -963,9 +629,6 @@ static int emit_c(const FramedslDefinition *definition) {
 
 typedef enum {
   OPTION_DECODE,
-  OPTION_ENCODE,
-  OPTION_REPORT,
-  OPTION_QUIET,
   OPTION_EMIT_C,
   OPTION_CHECK,
   OPTION_WERROR,
@@ -973,7 +636,6 @@ typedef enum {
   OPTION_STDIN_NAME,
   OPTION_LSP,
   OPTION_LIST_PACKETS,
-  OPTION_LIST_FIELDS,
   OPTION_HELP,
   OPTION_VERSION,
 } OptionId;
@@ -990,20 +652,16 @@ typedef struct {
  * prints this, so a flag cannot be accepted without also being documented -- and a script (the Bash
  * completion, a test) can read the flags back out of --help and trust the list is whole. */
 static const Option OPTIONS[] = {
-  { OPTION_DECODE,       "-d", "--decode",       "<hex>",    "decode bytes into packets and their fields"         },
-  { OPTION_ENCODE,       "-e", "--encode",       "<packet>", "encode a packet from field=value, print it as hex"  },
-  { OPTION_REPORT,       "-r", "--report",       NULL,       "with -e: also print the frame decoded back"         },
-  { OPTION_QUIET,        "-q", "--quiet",        NULL,       "with -e: say nothing of fields left out as zero"    },
-  { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,       "write the calibrations to stdout as C"              },
-  { OPTION_CHECK,        NULL, "--check",        NULL,       "only report problems; with --format, write nothing" },
-  { OPTION_WERROR,       NULL, "--werror",       NULL,       "with --check: fail on a warning too"                },
-  { OPTION_FORMAT,       NULL, "--format",       NULL,       "rewrite files in place, in the standard layout"     },
-  { OPTION_STDIN_NAME,   NULL, "--stdin-name",   "<path>",   "the file '-' stands for, for messages and imports"  },
-  { OPTION_LSP,          NULL, "--lsp",          NULL,       "be a language server on stdin and stdout"           },
-  { OPTION_LIST_PACKETS, NULL, "--list-packets", NULL,       "print the packet names, one per line"               },
-  { OPTION_LIST_FIELDS,  NULL, "--list-fields",  "<packet>", "print the fields -e <packet> takes, one per line"   },
-  { OPTION_HELP,         "-h", "--help",         NULL,       "print this help and exit"                           },
-  { OPTION_VERSION,      NULL, "--version",      NULL,       "print the version and exit"                         },
+  { OPTION_DECODE,       "-d", "--decode",       "<hex>",  "decode bytes into packets and their fields"         },
+  { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,     "write the calibrations to stdout as C"              },
+  { OPTION_CHECK,        NULL, "--check",        NULL,     "only report problems; with --format, write nothing" },
+  { OPTION_WERROR,       NULL, "--werror",       NULL,     "with --check: fail on a warning too"                },
+  { OPTION_FORMAT,       NULL, "--format",       NULL,     "rewrite files in place, in the standard layout"     },
+  { OPTION_STDIN_NAME,   NULL, "--stdin-name",   "<path>", "the file '-' stands for, for messages and imports"  },
+  { OPTION_LSP,          NULL, "--lsp",          NULL,     "be a language server on stdin and stdout"           },
+  { OPTION_LIST_PACKETS, NULL, "--list-packets", NULL,     "print the packet names, one per line"               },
+  { OPTION_HELP,         "-h", "--help",         NULL,     "print this help and exit"                           },
+  { OPTION_VERSION,      NULL, "--version",      NULL,     "print the version and exit"                         },
 };
 
 #define OPTION_COUNT (sizeof(OPTIONS) / sizeof(*OPTIONS))
@@ -1023,15 +681,13 @@ static const Option *find_option(const char *argument) {
  * to read the same piped into a pager, a file or a completion script. */
 static void help(void) {
   fputs(
-    "frame-dsl: check, describe, format, decode and encode against a Frame-DSL definition.\n"
+    "frame-dsl: check, describe, format and decode against a Frame-DSL definition.\n"
     "\n"
     "usage:\n"
     "  frame-dsl <file.fdsl>                                describe its packets and fields\n"
     "  frame-dsl <file.fdsl> -d <hex>                       decode bytes\n"
-    "  frame-dsl <file.fdsl> -e <packet> [field=value ...]  encode a packet [-r] [-q]\n"
     "  frame-dsl <file.fdsl> --emit-c                       write the calibrations out as C\n"
     "  frame-dsl <file.fdsl> --list-packets                 print the packet names, one per line\n"
-    "  frame-dsl <file.fdsl> --list-fields <packet>         print the fields -e <packet> takes\n"
     "  frame-dsl <file.fdsl>... --check [--werror]          report problems as path:line:col: message\n"
     "  frame-dsl <file.fdsl>... --format [--check]          rewrite in the standard layout, or only\n"
     "                                                       list the files that would change\n"
@@ -1062,19 +718,16 @@ static void help(void) {
     "arguments:\n"
     "  <file.fdsl>   a definition file; '-' reads it from standard input\n"
     "  <hex>         bytes as hex, one argument, separated any way or not at all: \"AA BB\", AA:BB, AABB\n"
-    "  field=value   a field of the -e packet: decimal or 0x hex for a number, hex bytes for a bit\n"
-    "                string; a field not given encodes as zero, and a fixed one cannot be given\n"
     "\n"
     "exit status:\n"
     "  0  done, and nothing was wrong\n"
-    "  1  the definition, the bytes or a value is wrong; --check found an error (or, with\n"
+    "  1  the definition or the bytes are wrong; --check found an error (or, with\n"
     "     --werror, a warning); --format --check found a file that would change\n"
     "  2  the command line is wrong, a file cannot be read, or the input is not what it claims to be\n"
     "\n"
     "examples:\n"
     "  frame-dsl examples/uart_device.fdsl\n"
     "  frame-dsl examples/uart_device.fdsl -d \"81 00 07 01\"\n"
-    "  frame-dsl examples/uart_device.fdsl -e TC_WRITE size=2 data=AABB crc=0x1234 -r\n"
     "  frame-dsl examples/*.fdsl --check --werror\n"
     "  frame-dsl examples/*.fdsl --format --check\n"
     "  frame-dsl - --check --stdin-name src/device.fdsl < unsaved-buffer\n",
@@ -1099,12 +752,8 @@ int main(int argc, char **argv) {
   bool werror = false;
   const char *stdin_name = NULL;
   const char *hex = NULL;
-  const char *packet = NULL;
-  bool show = false;
-  bool quiet = false;
   bool emit = false;
   bool list_packets = false;
-  const char *list_fields = NULL;
 
   /* Before anything else, and wherever they appear: somebody adding --help to the end of a command
    * that went wrong wants the help, not a complaint about the rest of the command. */
@@ -1122,34 +771,26 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  /* Every `field=value` is one of these, and there cannot be more of them than arguments. */
-  const char **assignments = calloc((size_t)argc, sizeof(*assignments));
-  size_t assigned = 0;
-  /* Likewise every definition file named; more than one only means something to --check. */
+  /* Every definition file named; more than one only means something to --check and --format. */
   const char **paths = calloc((size_t)argc, sizeof(*paths));
   size_t path_count = 0;
-  if (assignments == NULL || paths == NULL) {
-    free(assignments);
-    free(paths);
+  if (paths == NULL) {
     log_fail("out of memory");
     return 2;
   }
 
-  /* Flags may come before or after the file. Nothing here needs an argument parser: an argument with
-   * an `=` in it is a field's value, and anything else unexpected is a usage error rather than
-   * something to guess at. */
+  /* Flags may come before or after the file. Nothing here needs an argument parser: anything that is
+   * not a flag or a file is a usage error rather than something to guess at -- `field=value` included,
+   * which is what encoding took before it left the command line (#97). */
   for (int i = 1; i < argc; ++i) {
     const Option *option = find_option(argv[i]);
 
     if (option == NULL) {
-      if (strchr(argv[i], '=') != NULL) {
-        assignments[assigned++] = argv[i];
-      } else if (argv[i][0] != '-' || strcmp(argv[i], "-") == 0) {
+      if ((argv[i][0] != '-' || strcmp(argv[i], "-") == 0) && strchr(argv[i], '=') == NULL) {
         paths[path_count++] = argv[i];
       } else {
         char reason[256];
         snprintf(reason, sizeof(reason), "unexpected argument '%s'", argv[i]);
-        free(assignments);
         free(paths);
         return usage_error(argv[0], reason);
       }
@@ -1161,7 +802,6 @@ int main(int argc, char **argv) {
       if (i + 1 >= argc) {
         char reason[256];
         snprintf(reason, sizeof(reason), "%s: expected %s after it", argv[i], option->argument);
-        free(assignments);
         free(paths);
         return usage_error(argv[0], reason);
       }
@@ -1171,15 +811,6 @@ int main(int argc, char **argv) {
     switch (option->id) {
     case OPTION_DECODE:
       hex = value;
-      break;
-    case OPTION_ENCODE:
-      packet = value;
-      break;
-    case OPTION_REPORT:
-      show = true;
-      break;
-    case OPTION_QUIET:
-      quiet = true;
       break;
     case OPTION_EMIT_C:
       emit = true;
@@ -1202,9 +833,6 @@ int main(int argc, char **argv) {
     case OPTION_LIST_PACKETS:
       list_packets = true;
       break;
-    case OPTION_LIST_FIELDS:
-      list_fields = value;
-      break;
     case OPTION_HELP:
     case OPTION_VERSION:
       /* Answered before this loop. */
@@ -1220,29 +848,18 @@ int main(int argc, char **argv) {
 
   /* Each of these is a guess the tool would otherwise have to make about which one was meant. */
   const char *conflict = NULL;
-  const bool listing = list_packets || list_fields != NULL;
-  if (listing && (lsp || check || format || emit || hex != NULL || packet != NULL || werror || show || quiet)) {
-    conflict = "--list-packets and --list-fields only print names; they do nothing else";
-  } else if (list_packets && list_fields != NULL) {
-    conflict = "--list-packets and --list-fields are two different questions; ask one at a time";
-  } else if (lsp && (path_count > 0 || check || format || emit || hex != NULL || packet != NULL || werror)) {
+  if (list_packets && (lsp || check || format || emit || hex != NULL || werror)) {
+    conflict = "--list-packets only prints the packet names; it does nothing else";
+  } else if (lsp && (path_count > 0 || check || format || emit || hex != NULL || werror)) {
     conflict = "--lsp talks to an editor on stdin and stdout, and takes nothing else";
-  } else if (hex != NULL && packet != NULL) {
-    conflict = "-d and -e are two different questions; ask one at a time";
-  } else if (packet == NULL && assigned > 0) {
-    conflict = "field=value only means something with -e";
-  } else if (packet == NULL && show) {
-    conflict = "-r reports the frame -e builds; -d already prints its own";
-  } else if (emit && (hex != NULL || packet != NULL)) {
-    conflict = "--emit-c writes the calibrations out; it does not decode or encode as well";
-  } else if (packet == NULL && quiet) {
-    conflict = "-q silences what -e says about fields left at zero, and means nothing without it";
-  } else if (format && (emit || hex != NULL || packet != NULL)) {
-    conflict = "--format rewrites the definition; it does not decode, encode or emit as well";
+  } else if (emit && hex != NULL) {
+    conflict = "--emit-c writes the calibrations out; it does not decode as well";
+  } else if (format && (emit || hex != NULL)) {
+    conflict = "--format rewrites the definition; it does not decode or emit as well";
   } else if (format && werror) {
     conflict = "--werror is about warnings, and --format does not report any";
-  } else if (check && (emit || hex != NULL || packet != NULL)) {
-    conflict = "--check only reports on the definition; it does not decode, encode or emit as well";
+  } else if (check && (emit || hex != NULL)) {
+    conflict = "--check only reports on the definition; it does not decode or emit as well";
   } else if (werror && !check) {
     conflict = "--werror decides --check's exit status, and means nothing without it";
   } else if (path_count > 1 && !check && !format) {
@@ -1253,27 +870,23 @@ int main(int argc, char **argv) {
     conflict = "--stdin-name names what '-' reads, and means nothing without it";
   }
   if (conflict != NULL) {
-    free(assignments);
     free(paths);
     return usage_error(argv[0], conflict);
   }
 
   /* Before the check below: the server is told what to work on by the editor, not by an argument. */
   if (lsp) {
-    free(assignments);
     free(paths);
     return lsp_serve(stdin, stdout);
   }
 
   if (path == NULL) {
-    free(assignments);
     free(paths);
     return usage_error(argv[0], "no definition file; usage: frame-dsl <file.fdsl> [options], or frame-dsl --lsp");
   }
 
-  if (listing) {
-    int status = list_names(path, stdin_name, list_fields);
-    free(assignments);
+  if (list_packets) {
+    int status = list_packets_of(path, stdin_name);
     free(paths);
     return status;
   }
@@ -1284,14 +897,12 @@ int main(int argc, char **argv) {
       int one = format_one(paths[i], stdin_name, check);
       status = one > status ? one : status;
     }
-    free(assignments);
     free(paths);
     return status;
   }
 
   if (check) {
     int status = check_files(paths, path_count, stdin_name, werror);
-    free(assignments);
     free(paths);
     return status;
   }
@@ -1300,7 +911,6 @@ int main(int argc, char **argv) {
   free(paths);
   if (result == NULL) {
     log_fail("out of memory");
-    free(assignments);
     return 2;
   }
 
@@ -1333,11 +943,6 @@ int main(int argc, char **argv) {
       break;
     }
 
-    if (packet != NULL) {
-      status = encode_packet(definition, packet, assignments, assigned, show, quiet);
-      break;
-    }
-
     describe(definition);
     log_info(
       "%s: ok, %zu packet%s",
@@ -1363,6 +968,5 @@ int main(int argc, char **argv) {
   }
 
   framedsl_result_free(result);
-  free(assignments);
   return status;
 }

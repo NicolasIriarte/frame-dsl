@@ -139,24 +139,43 @@ static int run_capture(const char *command, char *output, size_t capacity) {
   return WIFEXITED(closed) ? WEXITSTATUS(closed) : -1;
 }
 
-/* At the terminal: dotted names on the way in with -e, and on the way out with -d. */
-static int us10_tc04_the_tool_takes_and_shows_dotted_names(const TestArguments *args) {
+/* Dotted names on the way in through the library, and on the way out of the tool with -d. */
+static int us10_tc04_dotted_names_encode_and_the_tool_shows_them(const TestArguments *args) {
   (void)args;
   static char output[8192];
   char command[1024];
 
-  /* hdr: 84 | 00 05 | version 2, flags 0 | axes 0001 0000 0000 | size 02 | AA BB */
-  snprintf(
-    command,
-    sizeof(command),
-    "%s %s/composed_packets.fdsl -e TM_SAMPLE hdr.sequence=5 sample.axes.x=1 sample.size=2 sample.extra=AABB -q "
-    "2>&1",
-    FRAMEDSL_BIN,
-    EXAMPLES_DIR
-  );
-  if (run_capture(command, output, sizeof(output)) != 0
-      || strcmp(output, "84 00 05 20 00 01 00 00 00 00 02 AA BB\n") != 0) {
-    return __LINE__;
+  /* hdr: 84 | 00 05 | version 2, flags 0 | axes 0001 0000 0000 | size 02 | AA BB. Encoded through the
+   * library, by the dotted names framedsl_find() takes -- the command line no longer encodes (#97). */
+  const uint8_t want[] = { 0x84, 0x00, 0x05, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x02, 0xAA, 0xBB };
+  const uint8_t extra[] = { 0xAA, 0xBB };
+  FramedslResult *result = framedsl_load_file(EXAMPLES_DIR "/composed_packets.fdsl");
+  const FramedslDefinition *definition = framedsl_definition(result);
+  FramedslFrame *frame = definition != NULL ? framedsl_frame_new(definition) : NULL;
+  FramedslFieldId id;
+  size_t length = 0;
+  const uint8_t *bytes = NULL;
+  int failure = 0;
+  if (frame == NULL || !set(definition, frame, "TM_SAMPLE.hdr.sequence", 5)
+      || !set(definition, frame, "TM_SAMPLE.sample.axes.x", 1) || !set(definition, frame, "TM_SAMPLE.sample.size", 2)
+      || !framedsl_find(definition, "TM_SAMPLE.sample.extra", &id)
+      || framedsl_set_bytes(frame, id, extra, sizeof(extra)) != FRAMEDSL_OK) {
+    failure = __LINE__;
+  } else if ((bytes = framedsl_encode(frame, "TM_SAMPLE", &length, NULL)) == NULL || length != sizeof(want)
+             || memcmp(bytes, want, length) != 0) {
+    failure = __LINE__;
+  }
+
+  /* An override is a fixed value: whatever the slot holds, the definition's value is what goes out. */
+  if (
+    failure == 0
+    && (!set(definition, frame, "TM_ACK.hdr.id", 5) || (bytes = framedsl_encode(frame, "TM_ACK", &length, NULL)) == NULL || bytes[0] == 5)) {
+    failure = __LINE__;
+  }
+  framedsl_frame_free(frame);
+  framedsl_result_free(result);
+  if (failure != 0) {
+    return failure;
   }
 
   snprintf(
@@ -169,12 +188,6 @@ static int us10_tc04_the_tool_takes_and_shows_dotted_names(const TestArguments *
   if (run_capture(command, output, sizeof(output)) != 0 || strstr(output, "TM_SAMPLE") == NULL
       || strstr(output, "sample.axes.x") == NULL || strstr(output, "sample.extra") == NULL
       || strstr(output, "AA BB") == NULL) {
-    return __LINE__;
-  }
-
-  /* The override is fixed, so -e refuses to set it like any other fixed field. */
-  snprintf(command, sizeof(command), "%s %s/composed_packets.fdsl -e TM_ACK hdr.id=5 2>&1", FRAMEDSL_BIN, EXAMPLES_DIR);
-  if (run_capture(command, output, sizeof(output)) != 1 || strstr(output, "fixed") == NULL) {
     return __LINE__;
   }
   return 0;
@@ -272,7 +285,7 @@ void register_user_story10(void) {
   ADD_TEST_CASE(
     us10_tc03_introspection_shows_the_expanded_fields, "introspection shows expanded names and fixed values", false
   );
-  ADD_TEST_CASE(us10_tc04_the_tool_takes_and_shows_dotted_names, "-e and -d take and show dotted names", false);
+  ADD_TEST_CASE(us10_tc04_dotted_names_encode_and_the_tool_shows_them, "dotted names encode, and -d shows them", false);
   ADD_TEST_CASE(
     us10_tc05_a_pasted_block_is_addressed_without_an_instance,
     "a pasted block's fields have no instance in their names",

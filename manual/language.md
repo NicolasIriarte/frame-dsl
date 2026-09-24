@@ -328,8 +328,8 @@ pkt TM_IMU {
 ```
 
 **Names.** A use is an *instance* with a name of its own, and the block's fields appear under it:
-`TC_SET_LIMIT.hdr.sequence`, `TM_IMU.gyro.z`. That is the name the C API's `framedsl_find()`, `-e`
-and `-d` all use. It is also why the same block can appear twice in one packet.
+`TC_SET_LIMIT.hdr.sequence`, `TM_IMU.gyro.z`. That is the name the C API's `framedsl_find()` takes
+and `-d` prints. It is also why the same block can appear twice in one packet.
 
 **Pasting a block in.** Written without an instance name, a use pastes the block's fields in under
 their own names, as if they had been written out where the use is:
@@ -414,7 +414,7 @@ Counted by a field, the repetition reserves its room like any field sized by ano
 is encoded. A constant count needs no reservation, and may not have one (check 14).
 
 **Names.** An element's fields are reached through the repetition, with the element's index from
-zero: `TM_SAMPLES.samples[2].reading`. That is what `framedsl_find()` and `-e` take, and what `-d`
+zero: `TM_SAMPLES.samples[2].reading`. That is what `framedsl_find()` takes, and what `-d`
 prints. In C, a loop finds the field once without an index and picks each element with
 `framedsl_element()`; `framedsl_count()` says how many elements a frame holds. `TM_SAMPLES.samples` on
 its own is the whole run, read as bytes.

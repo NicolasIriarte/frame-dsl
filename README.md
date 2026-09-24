@@ -113,11 +113,10 @@ frame-dsl examples/packet_family.fdsl
 
 `frame-dsl --help` lists every mode and option, with examples; what follows is the tour.
 
-Bash and zsh complete it: `frame-dsl --<TAB>` offers the flags, a definition argument `.fdsl` files,
-`-e <TAB>` the packets of the file already on the line, and `-e TC_WRITE <TAB>` that packet's fields
-as `size=`. The names come from `--list-packets` and `--list-fields <packet>`, which print them one per
-line for any script to read. `make install` puts both completions where their shells look; to try them
-from the checkout, `source completions/frame-dsl.bash`.
+Bash and zsh complete it: `frame-dsl --<TAB>` offers the flags and a definition argument `.fdsl` files.
+`--list-packets` prints a file's packet names one per line, for any script to read. `make install`
+puts both completions where their shells look; to try them from the checkout,
+`source completions/frame-dsl.bash`.
 
 Give it bytes and it decodes them instead, working out which packet they are from the frame itself:
 
@@ -147,24 +146,9 @@ packet whose length is a field inside it. A frame nothing matches, one that runs
 one whose length field claims more than its field reserved are three different messages, because
 they mean three different things to whoever is holding the capture.
 
-Name a packet and some field values and it encodes them instead, printing the frame as hex on
-stdout -- the same spacing `-d` accepts, and what `xxd -r -p` reads, so it can be pasted or piped:
-
-```sh
-$ frame-dsl examples/packet_family.fdsl -e TC_PAYLOAD seq=2 len=2 body=AABB
-03 00 02 00 02 AA BB
-$ frame-dsl examples/packet_family.fdsl -e TC_PING seq=1 | xxd -r -p > ping.bin
-```
-
-A scalar takes decimal or `0x` hex; a bit string takes hex, written any way `-d` takes it. A field
-not named encodes as zero, as it does through the library, and each one is named on stderr so that
-a field forgotten does not pass for a field meant to be zero; `-q`/`--quiet` stops that. `-r`/`--report` also prints the frame
-field by field, as `-d` would, on stderr so that stdout stays just the bytes.
-
-A field the packet does not have, a value too wide for its field, a packet the definition does not
-contain, and a fixed-value field -- the definition sets that one, not you -- are each refused with
-their own message. A `valof()` field and the field that sizes it must agree: give a payload and its
-length both, or neither, and it will not work the length out for you.
+The tool reads and does not write: it does not encode. A frame to send is built by a program through
+the library -- in C as in [`examples/uart_device.c`](examples/uart_device.c), or from a
+script through the Python bindings planned in #98.
 
 A field with a calibration shows its engineering value beside the raw one, and `--emit-c` writes
 every calibration in the file out as C, for a program that wants the curves compiled in:
@@ -179,8 +163,8 @@ $ frame-dsl examples/calibrated_sensor.fdsl --emit-c > curves.h
 
 See [Calibrations](manual/language.md#calibrations) for how a curve is written.
 
-Exit status is `0` for success, `1` when the definition, the bytes or the field values are wrong, and
-`2` when the invocation is -- including `-d` and `-e` together, which are two questions at once.
+Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
+invocation is.
 
 ### Checking a file
 

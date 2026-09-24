@@ -1,4 +1,5 @@
-/* Story 19: `--list-packets` and `--list-fields <packet>` (#85) -- names for a program to read.
+/* Story 19: `--list-packets` (#85) -- the packet names, for a program to read. `--list-fields` went with
+ * encoding in #97.
  *
  * What the Bash and zsh completions ask the tool, so the answer has to be exactly the names, one per
  * line, and nothing at all -- on either stream -- when there is no answer: a completion that printed a
@@ -71,25 +72,9 @@ static int us19_tc01_packets_are_listed_one_per_line(const TestArguments *args) 
   return answers(&run, "TC_HK_REQ\nTC_SET_LIMIT\nTC_WRITE\nTM_ACK\nTM_HK\n") ? 0 : __LINE__;
 }
 
-/* The fields -e takes: `id` is fixed by the definition, and -e refuses it, so it is not offered. */
-static int us19_tc02_fields_are_the_ones_encode_takes(const TestArguments *args) {
-  (void)args;
-  Run run = run_with(EXAMPLES_DIR "/uart_device.fdsl --list-fields TC_WRITE");
-  if (!answers(&run, "size\ndata\ncrc\n")) {
-    return __LINE__;
-  }
-  /* An instance's fields by the name -e takes them. */
-  run = run_with(EXAMPLES_DIR "/composed_packets.fdsl --list-fields TC_SET_LIMIT");
-  return run.status == 0 && strstr(run.out, "hdr.") != NULL ? 0 : __LINE__;
-}
-
 static int us19_tc03_no_answer_is_silent(const TestArguments *args) {
   (void)args;
-  Run run = run_with(EXAMPLES_DIR "/uart_device.fdsl --list-fields NO_SUCH_PACKET");
-  if (!silent_failure(&run)) {
-    return __LINE__;
-  }
-  run = run_with(EXAMPLES_DIR "/invalid/unknown_block.fdsl --list-packets");
+  Run run = run_with(EXAMPLES_DIR "/invalid/unknown_block.fdsl --list-packets");
   if (!silent_failure(&run)) {
     return __LINE__;
   }
@@ -107,9 +92,9 @@ static int us19_tc04_standard_input_is_listed_too(const TestArguments *args) {
 static int us19_tc05_listing_does_nothing_else(const TestArguments *args) {
   (void)args;
   const char *conflicts[] = {
-    EXAMPLES_DIR "/uart_device.fdsl --list-packets -e TC_WRITE",
+    EXAMPLES_DIR "/uart_device.fdsl --list-packets -d 01",
     EXAMPLES_DIR "/uart_device.fdsl --list-packets --check",
-    EXAMPLES_DIR "/uart_device.fdsl --list-packets --list-fields TC_WRITE",
+    EXAMPLES_DIR "/uart_device.fdsl --list-packets --emit-c",
     EXAMPLES_DIR "/uart_device.fdsl " EXAMPLES_DIR "/tm_datagram.fdsl --list-packets",
   };
   for (size_t i = 0; i < sizeof(conflicts) / sizeof(*conflicts); ++i) {
@@ -124,7 +109,6 @@ static int us19_tc05_listing_does_nothing_else(const TestArguments *args) {
 void register_user_story19(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us19_tc01_packets_are_listed_one_per_line, "--list-packets prints the names, one per line", false);
-  ADD_TEST_CASE(us19_tc02_fields_are_the_ones_encode_takes, "--list-fields prints the fields -e takes", false);
   ADD_TEST_CASE(us19_tc03_no_answer_is_silent, "no answer is exit 1 and nothing on either stream", false);
   ADD_TEST_CASE(us19_tc04_standard_input_is_listed_too, "a definition on stdin is listed too", false);
   ADD_TEST_CASE(us19_tc05_listing_does_nothing_else, "listing with another mode is a usage error", false);

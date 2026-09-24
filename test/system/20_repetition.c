@@ -375,16 +375,12 @@ static int us20_tc11_the_whole_repetition_reads_as_bytes(const TestArguments *ar
   return failure;
 }
 
-/* The worked example, as the tool sees it: -e takes elements by name and -d prints them. */
-static int us20_tc12_the_tool_encodes_and_decodes_elements(const TestArguments *args) {
+/* The worked example, as the tool sees it: -d prints each element by the name framedsl_find() takes. */
+static int us20_tc12_the_tool_decodes_elements(const TestArguments *args) {
   (void)args;
   char command[1024];
   snprintf(
-    command,
-    sizeof(command),
-    "%s %s/sensor_samples.fdsl -e TM_SAMPLES count=1 'samples[0].channel=3' 'samples[0].reading=0x123' -r -q 2>&1",
-    FRAMEDSL_BIN,
-    EXAMPLES_DIR
+    command, sizeof(command), "%s %s/sensor_samples.fdsl -d '30 00 00 01 A3 23 01' 2>&1", FRAMEDSL_BIN, EXAMPLES_DIR
   );
   FILE *pipe = popen(command, "r");
   if (pipe == NULL) {
@@ -394,7 +390,7 @@ static int us20_tc12_the_tool_encodes_and_decodes_elements(const TestArguments *
   size_t used = fread(output, 1, sizeof(output) - 1, pipe);
   output[used] = '\0';
   int status = pclose(pipe);
-  if (status != 0 || strstr(output, "30 00 00 01 A3 23 01") == NULL) {
+  if (status != 0 || strstr(output, "samples[0].channel 3 (0x3)") == NULL) {
     return __LINE__;
   }
   return strstr(output, "samples[0].reading 291 (0x123)") != NULL && strstr(output, "samples        1 element") != NULL
@@ -435,7 +431,5 @@ void register_user_story20(void) {
   ADD_TEST_CASE(
     us20_tc11_the_whole_repetition_reads_as_bytes, "the whole repetition reads as the bytes that arrived", false
   );
-  ADD_TEST_CASE(
-    us20_tc12_the_tool_encodes_and_decodes_elements, "the tool encodes and decodes elements by name", false
-  );
+  ADD_TEST_CASE(us20_tc12_the_tool_decodes_elements, "-d prints each element by name", false);
 }

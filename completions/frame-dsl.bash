@@ -6,12 +6,12 @@
 #   source completions/frame-dsl.bash
 #
 # Nothing here is a copy of the tool's own knowledge. The flags come from `frame-dsl --help` at the
-# moment <TAB> is pressed, so they cannot drift from the parser, and packet and field names come from
-# `--list-packets` and `--list-fields`, which print one name per line and nothing at all for a file
-# that does not load. The tool asked is whichever one is being completed -- `./build/frame-dsl` as much
-# as the installed one. completions/_frame-dsl is the same for zsh.
+# moment <TAB> is pressed, so they cannot drift from the parser. The tool asked is whichever one is
+# being completed -- `./build/frame-dsl` as much as the installed one. No flag takes a packet or a
+# field name since encoding left the command line (#97), so nothing else needs asking.
+# completions/_frame-dsl is the same for zsh.
 
-# The option lines of --help, as "flag takes-argument" pairs: `-e 1`, `--encode 1`, `--check 0`.
+# The option lines of --help, as "flag takes-argument" pairs: `-d 1`, `--decode 1`, `--check 0`.
 _frame_dsl_flags() {
 	"$1" --help 2>/dev/null | awk '
 		/^options:/ { taking = 1; next }
@@ -40,40 +40,17 @@ _frame_dsl() {
 
 	local flag_table
 	flag_table="$(_frame_dsl_flags "$program")"
-
-	# The definition file and the -e packet already on the line. A flag's argument is skipped, so the
-	# hex after -d is never taken for a file.
-	local definition="" packet="" word i
 	local -A takes_argument=()
 	local flag takes
 	while read -r flag takes; do
 		[[ -n "$flag" ]] && takes_argument[$flag]="$takes"
 	done <<<"$flag_table"
-	for ((i = 1; i < COMP_CWORD; i++)); do
-		word="${COMP_WORDS[i]}"
-		if [[ "${takes_argument[${word:-_}]:-0}" == 1 ]]; then
-			if [[ "$word" == -e || "$word" == --encode ]]; then
-				packet="${COMP_WORDS[i + 1]}"
-			fi
-			((i++))
-		elif [[ "$word" != -* && "$word" != *=* && -z "$definition" ]]; then
-			definition="${word/#\~/$HOME}"
-		fi
-	done
 
-	case "$prev" in
-	-e | --encode | --list-fields)
-		if [[ -n "$definition" && "$definition" != - ]]; then
-			mapfile -t COMPREPLY < <(compgen -W "$("$program" "$definition" --list-packets 2>/dev/null)" -- "$cur")
-		fi
-		return 0
-		;;
-	--stdin-name)
+	if [[ "$prev" == --stdin-name ]]; then
 		compopt -o filenames 2>/dev/null
 		mapfile -t COMPREPLY < <(compgen -f -- "$cur")
 		return 0
-		;;
-	esac
+	fi
 	# Any other flag that takes an argument (-d's hex) has nothing worth offering.
 	if [[ "${takes_argument[${prev:-_}]:-0}" == 1 ]]; then
 		return 0
@@ -81,23 +58,6 @@ _frame_dsl() {
 
 	if [[ "$cur" == -* ]]; then
 		mapfile -t COMPREPLY < <(compgen -W "$(cut -d' ' -f1 <<<"$flag_table")" -- "$cur")
-		return 0
-	fi
-
-	# After `-e PACKET`, the arguments are that packet's fields: offered as `name=`, leaving out the ones
-	# already given.
-	if [[ -n "$packet" && -n "$definition" && "$definition" != - ]]; then
-		local field given candidates=()
-		while IFS= read -r field; do
-			[[ -n "$field" ]] || continue
-			given=0
-			for ((i = 1; i < COMP_CWORD; i++)); do
-				[[ "${COMP_WORDS[i]}" == "$field="* ]] && given=1
-			done
-			((given)) || candidates+=("$field=")
-		done < <("$program" "$definition" --list-fields "$packet" 2>/dev/null)
-		mapfile -t COMPREPLY < <(compgen -W "${candidates[*]}" -- "$cur")
-		compopt -o nospace 2>/dev/null
 		return 0
 	fi
 

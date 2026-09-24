@@ -65,18 +65,6 @@ echo "completions/frame-dsl.bash"
 same "--<TAB> offers exactly the flags --help lists" "$help_flags" "$(bash_complete "-")"
 same "a definition completes to .fdsl files and directories" "$(lines broken.fdsl device.fdsl sub)" \
 	"$(bash_complete "")"
-same "-e <TAB> offers the file's packets" "$(lines TC_HK_REQ TC_SET_LIMIT TC_WRITE TM_ACK TM_HK)" \
-	"$(bash_complete device.fdsl -e "")"
-same "--list-fields <TAB> offers them too, filtered by what is typed" "$(lines TC_HK_REQ TC_SET_LIMIT TC_WRITE)" \
-	"$(bash_complete device.fdsl --list-fields TC_)"
-same "-e <TAB> on a file that does not load offers nothing, silently" "" \
-	"$(bash_complete broken.fdsl -e "" 2>&1)"
-same "-e TC_WRITE <TAB> offers its fields as name=" "$(lines crc= data= size=)" \
-	"$(bash_complete device.fdsl -e TC_WRITE "")"
-same "a field already given is not offered again" "$(lines crc= data=)" \
-	"$(bash_complete device.fdsl -e TC_WRITE size=2 "")"
-same "the file may come after -e" "$(lines crc= data= size=)" \
-	"$(bash_complete -e TC_WRITE device.fdsl "")"
 same "-d's hex is not taken for a file, and offers nothing" "" "$(bash_complete device.fdsl -d "")"
 same "--stdin-name <TAB> offers any file" "$(lines broken.fdsl device.fdsl notes.txt sub)" \
 	"$(bash_complete - --check --stdin-name "")"
@@ -118,14 +106,6 @@ else
 
 	same "--<TAB> offers exactly the flags --help lists" "$help_flags" "$(zsh_complete "-")"
 	same "a definition completes to .fdsl files" "<files: -g *.fdsl(-.)>" "$(zsh_complete "")"
-	same "-e <TAB> offers the file's packets" "$(lines TC_HK_REQ TC_SET_LIMIT TC_WRITE TM_ACK TM_HK)" \
-		"$(zsh_complete device.fdsl -e "")"
-	same "-e <TAB> on a file that does not load offers nothing, silently" "" \
-		"$(zsh_complete broken.fdsl -e "" 2>&1)"
-	same "-e TC_WRITE <TAB> offers its fields as name=" "$(lines crc= data= size=)" \
-		"$(zsh_complete device.fdsl -e TC_WRITE "")"
-	same "a field already given is not offered again" "$(lines crc= data=)" \
-		"$(zsh_complete device.fdsl -e TC_WRITE size=2 "")"
 	same "-d's hex offers nothing" "" "$(zsh_complete device.fdsl -d "")"
 	same "--stdin-name <TAB> offers any file" "<files: >" "$(zsh_complete - --check --stdin-name "")"
 fi

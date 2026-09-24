@@ -251,14 +251,37 @@ static int us11_tc08_the_tool_and_a_string_load_follow_imports(const TestArgumen
   static char output[8192];
   char command[1024];
 
+  /* Encoded through the library, since the command line no longer encodes (#97); decoded by the tool. */
+  const uint8_t want[] = { 0x82, 0x00, 0x01, 0x10, 0x20, 0x03, 0x00, 0x08, 0xBE, 0xEF };
+  FramedslResult *loaded = framedsl_load_file(EXAMPLES_DIR "/imported_device.fdsl");
+  const FramedslDefinition *definition = framedsl_definition(loaded);
+  FramedslFrame *frame = definition != NULL ? framedsl_frame_new(definition) : NULL;
+  const char *names[] = {
+    "TM_TEMPERATURE.hdr.sequence", "TM_TEMPERATURE.board", "TM_TEMPERATURE.supply", "TM_TEMPERATURE.end.crc"
+  };
+  const uint64_t values[] = { 1, 800, 2048, 0xBEEF };
+  bool encoded = frame != NULL;
+  for (size_t i = 0; i < 4 && encoded; ++i) {
+    FramedslFieldId id;
+    encoded = framedsl_find(definition, names[i], &id) && framedsl_set_u64(frame, id, values[i]) == FRAMEDSL_OK;
+  }
+  size_t length = 0;
+  const uint8_t *bytes = encoded ? framedsl_encode(frame, "TM_TEMPERATURE", &length, NULL) : NULL;
+  encoded = bytes != NULL && length == sizeof(want) && memcmp(bytes, want, length) == 0;
+  framedsl_frame_free(frame);
+  framedsl_result_free(loaded);
+  if (!encoded) {
+    return __LINE__;
+  }
+
   snprintf(
     command,
     sizeof(command),
-    "%s %s/imported_device.fdsl -e TM_TEMPERATURE hdr.sequence=1 board=800 supply=2048 end.crc=0xBEEF -q 2>&1",
+    "%s %s/imported_device.fdsl -d '82 00 01 10 20 03 00 08 BE EF' 2>&1",
     FRAMEDSL_BIN,
     EXAMPLES_DIR
   );
-  if (run_capture(command, output, sizeof(output)) != 0 || strcmp(output, "82 00 01 10 20 03 00 08 BE EF\n") != 0) {
+  if (run_capture(command, output, sizeof(output)) != 0 || strstr(output, "end.crc") == NULL) {
     return __LINE__;
   }
 
