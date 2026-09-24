@@ -61,14 +61,39 @@ void lint_unused(const AstFile *file, DiagList *diags) {
   for (size_t b = 0; b < file->block_count; ++b) {
     const AstPacket *block = &file->blocks[b];
     if (block->origin == NULL && block->name != NULL && !is_used(&uses, block->name)) {
+      size_t index = diags->count;
       diag_warn(diags, block->name_line, block->name_column, 30, "block '%s' is not used by anything", block->name);
+      /* From its attribute group, if it has one, to just past the `;` after its closing brace. */
+      diag_set_removal(
+        diags,
+        index,
+        block->start_line,
+        block->start_column,
+        block->end_line,
+        block->end_column + 2,
+        "remove the unused block '%s'",
+        block->name
+      );
     }
   }
 
   for (size_t c = 0; c < file->cal_count; ++c) {
     const AstCal *cal = &file->cals[c];
     if (cal->origin == NULL && cal->name != NULL && !is_used(&uses, cal->name)) {
+      size_t index = diags->count;
       diag_warn(diags, cal->name_line, cal->name_column, 30, "calibration '%s' is not used by anything", cal->name);
+      if (cal->end_line > 0) {
+        diag_set_removal(
+          diags,
+          index,
+          cal->line,
+          cal->column,
+          cal->end_line,
+          cal->end_column,
+          "remove the unused calibration '%s'",
+          cal->name
+        );
+      }
     }
   }
 
@@ -78,6 +103,7 @@ void lint_unused(const AstFile *file, DiagList *diags) {
       used = is_used(&uses, import->brought[n]);
     }
     if (!used) {
+      size_t index = diags->count;
       diag_warn(
         diags,
         import->line,
@@ -87,6 +113,11 @@ void lint_unused(const AstFile *file, DiagList *diags) {
         import->path,
         import->brought_count == 0 ? " -- it declares no blocks or calibrations" : ""
       );
+      if (import->end_line > 0) {
+        diag_set_removal(
+          diags, index, import->line, import->column, import->end_line, import->end_column, "remove the unused import"
+        );
+      }
     }
   }
 }

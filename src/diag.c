@@ -15,10 +15,19 @@ void diag_init(DiagList *list) {
   list->overflowed = false;
 }
 
+static void fix_free(DiagFix *fix) {
+  if (fix != NULL) {
+    free(fix->text);
+    free(fix->title);
+    free(fix);
+  }
+}
+
 void diag_free(DiagList *list) {
   for (size_t i = 0; i < list->count; ++i) {
     free(list->items[i].message);
     free(list->items[i].file);
+    fix_free(list->items[i].fix);
   }
   free(list->items);
   diag_init(list);
@@ -58,7 +67,7 @@ static void add(DiagList *list, DiagSeverity severity, int line, int column, int
   vsnprintf(message, (size_t)len + 1, fmt, args);
 
   list->items[list->count++] =
-    (Diag){ .line = line, .column = column, .severity = severity, .check = check, .message = message, .file = NULL };
+    (Diag){ .line = line, .column = column, .severity = severity, .check = check, .message = message };
 }
 
 void diag_add(DiagList *list, int line, int column, int check, const char *fmt, ...) {
@@ -89,6 +98,7 @@ void diag_drop_warnings(DiagList *list) {
     if (list->items[i].severity == DIAG_WARNING) {
       free(list->items[i].message);
       free(list->items[i].file);
+      fix_free(list->items[i].fix);
     } else {
       list->items[kept++] = list->items[i];
     }
@@ -205,4 +215,239 @@ void diag_append(DiagList *to, const DiagList *from, const char *file) {
   if (from->overflowed) {
     to->overflowed = true;
   }
+}
+
+static DiagFix *make_fix(
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *text,
+  const char *title,
+  va_list args
+) __attribute__((format(printf, 6, 0)));
+
+static DiagFix *make_fix(
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *text,
+  const char *title,
+  va_list args
+) {
+  DiagFix *fix = calloc(1, sizeof(*fix));
+  if (fix == NULL) {
+    return NULL;
+  }
+  va_list measure;
+  va_copy(measure, args);
+  int len = vsnprintf(NULL, 0, title, measure);
+  va_end(measure);
+  fix->text = malloc(strlen(text) + 1);
+  fix->title = len >= 0 ? malloc((size_t)len + 1) : NULL;
+  if (fix->text == NULL || fix->title == NULL) {
+    fix_free(fix);
+    return NULL;
+  }
+  strcpy(fix->text, text);
+  vsnprintf(fix->title, (size_t)len + 1, title, args);
+  *fix = (DiagFix){
+    .line = line,
+    .column = column,
+    .end_line = end_line,
+    .end_column = end_column,
+    .text = fix->text,
+    .title = fix->title,
+  };
+  return fix;
+}
+
+void diag_set_fix(
+  DiagList *list,
+  size_t index,
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *text,
+  const char *title,
+  ...
+) {
+  if (index >= list->count) {
+    return;
+  }
+  va_list args;
+  va_start(args, title);
+  DiagFix *fix = make_fix(line, column, end_line, end_column, text, title, args);
+  va_end(args);
+  fix_free(list->items[index].fix);
+  list->items[index].fix = fix;
+}
+
+void diag_set_removal(
+  DiagList *list,
+  size_t index,
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *title,
+  ...
+) {
+  if (index >= list->count) {
+    return;
+  }
+  va_list args;
+  va_start(args, title);
+  DiagFix *fix = make_fix(line, column, end_line, end_column, "", title, args);
+  va_end(args);
+  if (fix != NULL) {
+    fix->whole_lines = true;
+  }
+  fix_free(list->items[index].fix);
+  list->items[index].fix = fix;
+}
+
+void diag_drop_fixes(DiagList *list, int check) {
+  for (size_t i = 0; i < list->count; ++i) {
+    if (list->items[i].check == check) {
+      fix_free(list->items[i].fix);
+      list->items[i].fix = NULL;
+    }
+  }
+}
+
+/* Whether line `line` of `source` holds nothing but blanks -- or does not exist. */
+static bool blank_line(const char *source, int line) {
+  size_t at = line > 0 ? offset_of(source, line, 1) : SIZE_MAX;
+  if (at == SIZE_MAX) {
+    return true;
+  }
+  while (source[at] == ' ' || source[at] == '\t' || source[at] == '\r') {
+    at += 1;
+  }
+  return source[at] == '\n' || source[at] == '\0';
+}
+
+static int line_count(const char *source) {
+  int lines = 1;
+  for (const char *at = source; *at != '\0'; ++at) {
+    lines += *at == '\n' && at[1] != '\0';
+  }
+  return lines;
+}
+
+void diag_settle_fixes(DiagList *list, const char *source) {
+  for (size_t i = 0; i < list->count; ++i) {
+    DiagFix *fix = list->items[i].fix;
+    if (fix == NULL || !fix->whole_lines || list->items[i].file != NULL) {
+      continue;
+    }
+    fix->whole_lines = false;
+
+    size_t start = offset_of(source, fix->line, fix->column);
+    size_t end = offset_of(source, fix->end_line, fix->end_column);
+    if (start == SIZE_MAX) {
+      continue;
+    }
+    if (end == SIZE_MAX) {
+      end = strlen(source);
+    }
+
+    /* What else is on the first and last lines. Only blanks before, and only blanks or a comment
+     * after, and the declaration has those lines to itself. */
+    size_t line_start = start;
+    while (line_start > 0 && source[line_start - 1] != '\n') {
+      line_start -= 1;
+    }
+    bool alone_before = true;
+    for (size_t at = line_start; at < start; ++at) {
+      alone_before = alone_before && (source[at] == ' ' || source[at] == '\t');
+    }
+    size_t after = end;
+    while (source[after] == ' ' || source[after] == '\t') {
+      after += 1;
+    }
+    bool alone_after = source[after] == '\n' || source[after] == '\0' || source[after] == '\r' || source[after] == '#';
+
+    if (!alone_before || !alone_after) {
+      /* Shares a line with something that stays: take the blanks after it, so what follows closes up. */
+      int end_line = fix->end_line;
+      int end_column = fix->end_column + (int)(after - end);
+      if (source[after] == '\n' || source[after] == '\0' || source[after] == '#') {
+        end_column = fix->end_column;
+      }
+      fix->end_line = end_line;
+      fix->end_column = end_column;
+      continue;
+    }
+
+    int first = fix->line;
+    int last = fix->end_line;
+    /* One blank line goes with it, so two declarations it stood between keep exactly one between them:
+     * the one after when there is one, or else the one before. At the top of the file there is nothing
+     * before it to keep apart, so the blank line after goes too. */
+    if (blank_line(source, first - 1) && blank_line(source, last + 1) && last < line_count(source)) {
+      last += 1;
+    } else if (last >= line_count(source) && first > 1 && blank_line(source, first - 1)) {
+      first -= 1;
+    }
+    fix->line = first;
+    fix->column = 1;
+    fix->end_line = last + 1;
+    fix->end_column = 1;
+  }
+}
+
+/* Edits between two words, a swap of neighbours counting as one: optimal string alignment distance.
+ * Bounded by the caller to words a name could plausibly be, so the fixed table is enough. */
+static size_t distance(const char *a, size_t a_length, const char *b, size_t b_length) {
+  enum { MAX = 64 };
+  if (a_length >= MAX || b_length >= MAX) {
+    return SIZE_MAX;
+  }
+  size_t table[MAX + 1][MAX + 1];
+  for (size_t i = 0; i <= a_length; ++i) {
+    table[i][0] = i;
+  }
+  for (size_t j = 0; j <= b_length; ++j) {
+    table[0][j] = j;
+  }
+  for (size_t i = 1; i <= a_length; ++i) {
+    for (size_t j = 1; j <= b_length; ++j) {
+      size_t cost = a[i - 1] == b[j - 1] ? 0 : 1;
+      size_t best = table[i - 1][j] + 1;
+      best = table[i][j - 1] + 1 < best ? table[i][j - 1] + 1 : best;
+      best = table[i - 1][j - 1] + cost < best ? table[i - 1][j - 1] + cost : best;
+      if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] && table[i - 2][j - 2] + 1 < best) {
+        best = table[i - 2][j - 2] + 1;
+      }
+      table[i][j] = best;
+    }
+  }
+  return table[a_length][b_length];
+}
+
+const char *diag_closest(const char *word, size_t length, const char *const *candidates, size_t count) {
+  const char *best = NULL;
+  size_t best_distance = SIZE_MAX;
+  bool tied = false;
+  for (size_t i = 0; i < count; ++i) {
+    if (candidates[i] == NULL) {
+      continue;
+    }
+    size_t d = distance(word, length, candidates[i], strlen(candidates[i]));
+    if (d == 0 || d > 2 || d >= length) {
+      continue;
+    }
+    if (d < best_distance) {
+      best = candidates[i];
+      best_distance = d;
+      tied = false;
+    } else if (d == best_distance && strcmp(candidates[i], best) != 0) {
+      tied = true;
+    }
+  }
+  return tied ? NULL : best;
 }

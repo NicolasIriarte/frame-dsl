@@ -100,6 +100,35 @@ static bool declared_by(const AstPacket *block, int line, int column) {
 
 static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out);
 
+/* A "did you mean" for a use naming no block: the closest block name there is, imported ones included
+ * under the name this file gives them -- so `link.Heder` can become `link.Header`. */
+static void suggest_block(Composer *composer, size_t index, const AstField *use) {
+  const AstFile *file = composer->file;
+  const char **names = malloc((file->block_count + 1) * sizeof(*names));
+  if (names == NULL || use->block_line == 0) {
+    free(names);
+    return;
+  }
+  for (size_t i = 0; i < file->block_count; ++i) {
+    names[i] = file->blocks[i].name;
+  }
+  const char *closest = diag_closest(use->block, strlen(use->block), names, file->block_count);
+  if (closest != NULL) {
+    diag_set_fix(
+      composer->diags,
+      index,
+      use->block_line,
+      use->block_column,
+      use->block_line,
+      use->block_column + (int)strlen(use->block),
+      closest,
+      "did you mean '%s'?",
+      closest
+    );
+  }
+  free(names);
+}
+
 /* Check 25, for one use: each override must name a field of this instance, and only once. */
 static void apply_overrides(
   Composer *composer,
@@ -263,6 +292,7 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     /* Check 23. Written without a width, a field and an anonymous use look alike, so the message for
      * one says what the other would have needed. */
     if (block == NULL) {
+      size_t index = composer->diags->count;
       if (field->anonymous) {
         snprintf(
           message, sizeof(message), "'%s' is not a block; a field needs a width, '%s: 8;'", field->block, field->block
@@ -271,6 +301,7 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
         snprintf(message, sizeof(message), "'%s' uses '%s', which is not a block", field->name, field->block);
       }
       fail(composer, field->line, field->column, 23, message);
+      suggest_block(composer, index, field);
       continue;
     }
 

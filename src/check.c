@@ -194,6 +194,71 @@ static bool residue_mod8(const Expr *expr, uint64_t *out) {
   }
 }
 
+/* A "did you mean" for a valof() naming nothing: the closest field declared before this one. Inside a
+ * block instance every name carries the instance's prefix -- `hdr.lenght` -- but what is written in
+ * the parentheses is only the part after it, so the prefix is set aside for the comparison and the
+ * replacement. */
+static void suggest_reference(
+  Checker *checker,
+  size_t index,
+  const AstPacket *packet,
+  size_t field_index,
+  const Expr *expr
+) {
+  if (expr->reference_line == 0) {
+    return;
+  }
+  const char *dot = strrchr(expr->reference, '.');
+  const size_t prefix = dot != NULL ? (size_t)(dot - expr->reference) + 1 : 0;
+  const char *written = expr->reference + prefix;
+
+  const char **names = malloc((field_index + 1) * sizeof(*names));
+  if (names == NULL) {
+    return;
+  }
+  size_t count = 0;
+  for (size_t i = 0; i < field_index; ++i) {
+    const char *name = packet->fields[i].name;
+    if (strncmp(name, expr->reference, prefix) == 0 && strchr(name + prefix, '.') == NULL) {
+      names[count++] = name + prefix;
+    }
+  }
+  const char *closest = diag_closest(written, strlen(written), names, count);
+  if (closest != NULL) {
+    diag_set_fix(
+      checker->diags,
+      index,
+      expr->reference_line,
+      expr->reference_column,
+      expr->reference_line,
+      expr->reference_column + (int)strlen(written),
+      closest,
+      "did you mean '%s'?",
+      closest
+    );
+  }
+  free(names);
+}
+
+/* The same for a name that should be a calibration's, written at (line, column). */
+static void suggest_cal(Checker *checker, size_t index, const AstFile *file, const char *wrong, int line, int column) {
+  const char **names = malloc((file->cal_count + 1) * sizeof(*names));
+  if (names == NULL || line == 0) {
+    free(names);
+    return;
+  }
+  for (size_t i = 0; i < file->cal_count; ++i) {
+    names[i] = file->cals[i].name;
+  }
+  const char *closest = diag_closest(wrong, strlen(wrong), names, file->cal_count);
+  if (closest != NULL) {
+    diag_set_fix(
+      checker->diags, index, line, column, line, column + (int)strlen(wrong), closest, "did you mean '%s'?", closest
+    );
+  }
+  free(names);
+}
+
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
  * means knowing where it starts, which means every field before it is already resolved. */
 static void check_references(
@@ -256,7 +321,9 @@ static void check_references(
     }
   }
 
+  size_t index = checker->diags->count;
   fail(checker, expr->line, expr->column, 7, "valof(%s) names no field in '%s'", expr->reference, packet->name);
+  suggest_reference(checker, index, packet, field_index, expr);
 }
 
 /* ---- Fixed-bit projection (check 12) -------------------------------------------------------- */
@@ -799,7 +866,9 @@ static void check_cal_body(Checker *checker, const AstCal *cal, const char *para
     return;
   case CAL_EXPR_CALL:
     if (find_cal(checker->file, expr->name, NULL) == NULL) {
+      size_t index = checker->diags->count;
       fail(checker, expr->line, expr->column, 18, "'%s' calls '%s', which is not a calibration", cal->name, expr->name);
+      suggest_cal(checker, index, checker->file, expr->name, expr->line, expr->column);
     }
     check_cal_body(checker, cal, param, expr->lhs);
     return;
@@ -858,6 +927,7 @@ static void check_field_cals(Checker *checker, const AstPacket *packet, const Pa
 
     /* Check 18, from the field's side. */
     if (find_cal(file, field->cal, NULL) == NULL) {
+      size_t index = checker->diags->count;
       fail(
         checker,
         field->cal_line,
@@ -868,6 +938,7 @@ static void check_field_cals(Checker *checker, const AstPacket *packet, const Pa
         field->name,
         field->cal
       );
+      suggest_cal(checker, index, file, field->cal, field->cal_value_line, field->cal_value_column);
     }
 
     /* Check 21. Asked of the width directly rather than of is_scalar, which a width that failed

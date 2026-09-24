@@ -507,6 +507,14 @@ static void handle_initialize(Server *server, const Json *id, const Json *params
   json_key(&writer, "documentFormattingProvider");
   json_write_bool(&writer, true);
 
+  json_key(&writer, "codeActionProvider");
+  json_object_begin(&writer);
+  json_key(&writer, "codeActionKinds");
+  json_array_begin(&writer);
+  json_write_cstring(&writer, "quickfix");
+  json_array_end(&writer);
+  json_object_end(&writer);
+
   json_key(&writer, "hoverProvider");
   json_write_bool(&writer, true);
   json_key(&writer, "definitionProvider");
@@ -829,6 +837,107 @@ static void handle_completion(Server *server, const Json *id, const Json *params
   nav_close(navigator);
 }
 
+/* ---- Quick fixes -----------------------------------------------------------------------------------
+ *
+ * The loader makes every fix -- the check that finds a problem is what knows the likely repair -- and
+ * attaches it to the diagnostic. All that is left here is to say which fixes the editor's range
+ * touches, as edits. */
+
+/* A byte offset for the compiler's 1-based line and column, clamped to the text. */
+static size_t offset_of_position(const LspText *text, int line, int column) {
+  if (line < 1) {
+    return 0;
+  }
+  size_t index = (size_t)line - 1 < text->line_count ? (size_t)line - 1 : text->line_count - 1;
+  size_t offset = text->starts[index] + (size_t)(column > 0 ? column - 1 : 0);
+  return offset < text->length ? offset : text->length;
+}
+
+static void handle_code_action(Server *server, const Json *id, const Json *params) {
+  const char *uri = json_string(json_get(json_get(params, "textDocument"), "uri"));
+  Document *document = uri != NULL ? find_document(server, uri) : NULL;
+
+  JsonWriter writer;
+  begin_response(&writer, id);
+  json_array_begin(&writer);
+
+  LspText text;
+  if (document != NULL && lsp_text_init(&text, document->text, strlen(document->text), server->utf16)) {
+    const Json *range = json_get(params, "range");
+    int64_t values[4] = { 0, 0, 0, 0 };
+    json_integer(json_get(json_get(range, "start"), "line"), &values[0]);
+    json_integer(json_get(json_get(range, "start"), "character"), &values[1]);
+    json_integer(json_get(json_get(range, "end"), "line"), &values[2]);
+    json_integer(json_get(json_get(range, "end"), "character"), &values[3]);
+    for (int i = 0; i < 4; ++i) {
+      values[i] = values[i] < 0 ? 0 : values[i];
+    }
+    size_t from = lsp_text_offset(&text, (size_t)values[0], (size_t)values[1]);
+    size_t to = lsp_text_offset(&text, (size_t)values[2], (size_t)values[3]);
+
+    FramedslResult *result = document->path != NULL ? framedsl_load_source(document->text, document->path)
+                                                    : framedsl_load_string(document->text, document->uri);
+    for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
+      const FramedslDiagnostic *diagnostic = framedsl_diagnostic(result, i);
+      if (diagnostic->fix_title == NULL || diagnostic->file != NULL) {
+        continue;
+      }
+      size_t start = offset_of_position(&text, diagnostic->line, diagnostic->column);
+      size_t end = offset_of_position(
+        &text,
+        diagnostic->end_line > 0 ? diagnostic->end_line : diagnostic->line,
+        diagnostic->end_line > 0 ? diagnostic->end_column : diagnostic->column
+      );
+      if (start > to || from > end) {
+        continue;
+      }
+
+      json_object_begin(&writer);
+      json_key(&writer, "title");
+      json_write_cstring(&writer, diagnostic->fix_title);
+      json_key(&writer, "kind");
+      json_write_cstring(&writer, "quickfix");
+      json_key(&writer, "diagnostics");
+      json_array_begin(&writer);
+      write_diagnostic(&writer, document, &text, diagnostic);
+      json_array_end(&writer);
+      /* An error's fix is the one to reach for; a warning's is a tidy-up. */
+      json_key(&writer, "isPreferred");
+      json_write_bool(&writer, diagnostic->severity == FRAMEDSL_SEVERITY_ERROR);
+      json_key(&writer, "edit");
+      json_object_begin(&writer);
+      json_key(&writer, "changes");
+      json_object_begin(&writer);
+      json_key(&writer, document->uri);
+      json_array_begin(&writer);
+      json_object_begin(&writer);
+      json_key(&writer, "range");
+      write_range(
+        &writer,
+        &text,
+        diagnostic->fix_line,
+        diagnostic->fix_column,
+        diagnostic->fix_end_line,
+        diagnostic->fix_end_column
+      );
+      json_key(&writer, "newText");
+      json_write_cstring(&writer, diagnostic->fix_text);
+      json_object_end(&writer);
+      json_array_end(&writer);
+      json_object_end(&writer); /* changes */
+      json_object_end(&writer); /* edit */
+      json_object_end(&writer);
+    }
+    framedsl_result_free(result);
+    lsp_text_free(&text);
+  }
+
+  json_array_end(&writer);
+  json_object_end(&writer);
+  write_message(server, &writer);
+  json_writer_free(&writer);
+}
+
 /* ---- Notifications --------------------------------------------------------------------------------- */
 
 
@@ -977,6 +1086,10 @@ static bool handle(Server *server, const Json *message, int *exit_code) {
   }
   if (strcmp(method, "textDocument/formatting") == 0) {
     handle_formatting(server, id, params);
+    return true;
+  }
+  if (strcmp(method, "textDocument/codeAction") == 0) {
+    handle_code_action(server, id, params);
     return true;
   }
   if (strcmp(method, "textDocument/hover") == 0) {

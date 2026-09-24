@@ -612,6 +612,52 @@ static int us13_tc13_hover_definition_and_completion_are_answered(const TestArgu
   return failure;
 }
 
+/* #73 through the protocol: a fix the loader attached comes back as a quick fix whose edit an editor
+ * applies as it is. Which fixes there are is system story 18's. */
+static int us13_tc14_a_fix_is_offered_as_a_code_action(const TestArguments *args) {
+  (void)args;
+  const char *const messages[] = {
+    INITIALIZE,
+    DID_OPEN("@byte_ordre: big_endian;\\npkt TM {\\n  id: 8 = 1;\\n};\\n"),
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/codeAction\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"range\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":3}},"
+    "\"context\":{\"diagnostics\":[]}}}",
+    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"textDocument/codeAction\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"range\":{\"start\":{\"line\":2,\"character\":0},\"end\":{\"line\":2,\"character\":0}},"
+    "\"context\":{\"diagnostics\":[]}}}",
+    EXIT,
+  };
+  Session session;
+  if (!run(&session, messages, 5)) {
+    return __LINE__;
+  }
+
+  int failure = 0;
+  const Json *capabilities = json_get(json_get(response_to(&session, 1), "result"), "capabilities");
+  const Json *actions = json_get(response_to(&session, 2), "result");
+  const Json *elsewhere = json_get(response_to(&session, 3), "result");
+  const Json *action = actions != NULL && actions->kind == JSON_ARRAY && actions->count == 1 ? actions->items[0] : NULL;
+  const Json *edits = json_get(json_get(json_get(action, "edit"), "changes"), "file:///tmp/t.fdsl");
+  const Json *edit = edits != NULL && edits->kind == JSON_ARRAY && edits->count == 1 ? edits->items[0] : NULL;
+  const Json *range = json_get(edit, "range");
+
+  if (json_get(capabilities, "codeActionProvider") == NULL) {
+    failure = __LINE__;
+  } else if (action == NULL || strcmp(json_string(json_get(action, "title")), "did you mean 'byte_order'?") != 0
+             || strcmp(json_string(json_get(action, "kind")), "quickfix") != 0) {
+    failure = __LINE__;
+  } else if (edit == NULL || strcmp(json_string(json_get(edit, "newText")), "byte_order") != 0
+             || integer_at(json_get(range, "start"), "line") != 0
+             || integer_at(json_get(range, "start"), "character") != 1
+             || integer_at(json_get(range, "end"), "character") != 11) {
+    failure = __LINE__;
+  } else if (elsewhere == NULL || elsewhere->kind != JSON_ARRAY || elsewhere->count != 0) {
+    failure = __LINE__; /* a range no diagnostic touches is offered nothing */
+  }
+  session_free(&session);
+  return failure;
+}
+
 void register_user_story13(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us13_tc01_initialize_says_what_it_can_do, "initialize announces what the server does", false);
@@ -631,4 +677,5 @@ void register_user_story13(void) {
   ADD_TEST_CASE(
     us13_tc13_hover_definition_and_completion_are_answered, "hover, definition and completion are answered", false
   );
+  ADD_TEST_CASE(us13_tc14_a_fix_is_offered_as_a_code_action, "a fix is offered as a quick-fix code action", false);
 }

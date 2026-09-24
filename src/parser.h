@@ -18,3 +18,6 @@
  * not mean success: check `diags`.
  */
 AstFile *parse(const char *source, DiagList *diags);
+
+/** @brief The attribute names the parser knows, NULL-terminated: for a "did you mean", and completion. */
+extern const char *const PARSER_ATTRIBUTE_NAMES[];

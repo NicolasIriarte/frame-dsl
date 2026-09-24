@@ -82,8 +82,15 @@ static int us13_tc01_an_error_is_one_plain_line(const TestArguments *args) {
   snprintf(arguments, sizeof(arguments), "%s --check", path);
   Run run = run_with(arguments);
 
-  char expected[1400];
-  snprintf(expected, sizeof(expected), "%s:4:3: error: expected ';', found the name 'data'\n", path);
+  /* The fix, where there is one, follows as a note at the place it would edit (#73). */
+  char expected[2200];
+  snprintf(
+    expected,
+    sizeof(expected),
+    "%s:4:3: error: expected ';', found the name 'data'\n%s:3:9: note: insert ';'\n",
+    path,
+    path
+  );
   if (run.status != 1) {
     return __LINE__;
   }
@@ -136,12 +143,15 @@ static int us13_tc04_several_files_are_each_checked(const TestArguments *args) {
   snprintf(arguments, sizeof(arguments), "%s %s %s --check", broken, clean, other);
   Run run = run_with(arguments);
 
-  char expected[3000];
+  char expected[5000];
   snprintf(
     expected,
     sizeof(expected),
-    "%s:4:3: error: expected ';', found the name 'data'\n%s:4:3: error: expected ';', found the name 'data'\n",
+    "%s:4:3: error: expected ';', found the name 'data'\n%s:3:9: note: insert ';'\n"
+    "%s:4:3: error: expected ';', found the name 'data'\n%s:3:9: note: insert ';'\n",
     broken,
+    broken,
+    other,
     other
   );
   return run.status == 1 && strcmp(run.output, expected) == 0 ? 0 : __LINE__;
@@ -183,8 +193,8 @@ static int us13_tc06_standard_input_is_checked_as_the_named_file(const TestArgum
     top
   );
   Run run = run_shell(command);
-  char expected[1200];
-  snprintf(expected, sizeof(expected), "%s:5:1: error: expected ';', found '}'\n", top);
+  char expected[2400];
+  snprintf(expected, sizeof(expected), "%s:5:1: error: expected ';', found '}'\n%s:4:9: note: insert ';'\n", top, top);
   if (run.status != 1 || strcmp(run.output, expected) != 0) {
     return __LINE__;
   }

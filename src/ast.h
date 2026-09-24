@@ -29,6 +29,9 @@ typedef struct Expr {
 
   uint64_t literal; /**< EXPR_LITERAL */
   const char *reference; /**< EXPR_VALOF */
+  /** @brief EXPR_VALOF: where the name inside the parentheses is, as opposed to the `valof`. */
+  int reference_line;
+  int reference_column;
 
   char op; /**< EXPR_BINARY: one of + - * / */
   struct Expr *lhs;
@@ -84,6 +87,9 @@ typedef struct {
 
   /** @brief As AstPacket.origin: where an imported calibration was declared, or NULL. */
   const char *origin;
+  /** @brief Just past its closing `;`. */
+  int end_line;
+  int end_column;
 } AstCal;
 
 /** @brief `import "path" [as alias];` at the top of a file. */
@@ -93,6 +99,9 @@ typedef struct AstImport {
   const char *alias;
   int line;
   int column;
+  /** @brief Just past its closing `;`. */
+  int end_line;
+  int end_column;
   /**
    * @brief Every name this import made available, as the file sees it -- `ns.Header` for an `as`
    * import. Filled by imports_resolve(), in the file's region, so the unused-import warning can ask
@@ -125,6 +134,9 @@ typedef struct {
    * block's fields, so nothing after it -- the checks, the layout, the bytecode -- sees one.
    */
   const char *block;
+  /** @brief Where the block's name is written in the use: after the `:`, or first when anonymous. */
+  int block_line;
+  int block_column;
   AstOverride *overrides;
   /**
    * @brief A use written without an instance name, `Header { ... };`: the block's fields are pasted
@@ -171,6 +183,9 @@ typedef struct {
   const char *cal;
   int cal_line;
   int cal_column;
+  /** @brief Where the calibration's name is, after `@cal:`: what a "did you mean" replaces. */
+  int cal_value_line;
+  int cal_value_column;
 } AstField;
 
 typedef struct {
@@ -180,6 +195,9 @@ typedef struct {
   /** @brief Where the name is, as opposed to the `pkt` or `block` in front of it. */
   int name_line;
   int name_column;
+  /** @brief Where the declaration starts: its attribute group when it has one, else the keyword. */
+  int start_line;
+  int start_column;
 
   AstField *fields;
   size_t field_count;

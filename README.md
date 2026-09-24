@@ -214,7 +214,8 @@ parse is left exactly as it was, and its errors are printed.
 
 `frame-dsl --lsp` is a language server: errors and warnings as you type, formatting, highlighting
 that comes from the compiler's own lexer rather than from a copy of its word lists, and hover, go to
-definition and completion -- hovering a field says where it lands in the packet. Emacs, Vim, Neovim
+definition and completion -- hovering a field says where it lands in the packet -- and quick fixes for
+the mistakes with one obvious repair: a misspelt name, a missing `;`, an unused declaration. Emacs, Vim, Neovim
 and VS Code each get highlighting, comments and indentation on their own, and a client for the server
 on top -- Emacs needs nothing configured beyond loading
 [`editors/frame-dsl-mode.el`](editors/frame-dsl-mode.el), Neovim 0.11+ beyond

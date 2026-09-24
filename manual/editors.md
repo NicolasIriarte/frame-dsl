@@ -27,6 +27,7 @@ installed: no runtime, no package, no network.
 | `textDocument/hover` | what the name under the cursor is -- see [Hover](#hover) |
 | `textDocument/definition` | where it is declared, in whichever file that is |
 | `textDocument/completion` | what can be written where the cursor is -- see [Completion](#completion) |
+| `textDocument/codeAction` | the one obvious fix for a diagnostic under the cursor -- see [Quick fixes](#quick-fixes) |
 
 A problem inside an imported file is shown on the `import` line that brought it in, with the real file
 and position in the message and in the diagnostic's `relatedInformation` -- so "go to the problem"
@@ -34,9 +35,6 @@ lands in the right file.
 
 What is checked is the buffer, not the file on disk. Imports resolve from the directory the buffer
 belongs to, so a file being edited before it is saved behaves as it will once saved.
-
-Quick fixes are not in this version; they are
-[#73](http://100.125.208.18:3000/nico/Frame-DSL/issues/73).
 
 ### Hover
 
@@ -72,6 +70,40 @@ and a namespace, which goes to its `import`.
 | the start of a declaration in a body | the blocks, to paste one in, and `block` |
 | `Block {` of a use | that block's fields, to override |
 | the start of a line at file level | `pkt`, `block`, `cal`, `import` |
+
+### Quick fixes
+
+A diagnostic carries a fix when there is exactly one obvious way to repair it, and the editor offers it
+as a quick fix (VS Code's light bulb, `vim.lsp.buf.code_action()`, Eglot's `eglot-code-actions`):
+
+| Diagnostic | Fix |
+| --- | --- |
+| an unknown attribute name or value | **did you mean** the closest one |
+| a `valof()` naming no field | **did you mean** the closest field declared above it |
+| an unknown block, or calibration after `@cal:` or in a curve | **did you mean** the closest one, imported names included as this file writes them (`link.Header`) |
+| a missing `;` | **insert `;`** straight after what came before it |
+| an unused block, calibration or import (check 30) | **remove** it, with its attribute group and one of the blank lines around it |
+| a redundant attribute (check 31) | **remove** it, or its whole group when it is the only thing in it |
+
+"Closest" means within two edits -- a letter added, dropped, changed, or two neighbours swapped -- and
+fewer edits than the name has letters. When two names are equally close nothing is offered: a guess
+between them would be a coin toss.
+
+A removal is not offered while the file has errors: a use with a typo in it -- `Heder` for `Header`
+-- is exactly what makes the block it meant look unused. A problem in an imported file carries no fix
+here; open that file to fix it.
+
+The fixes are made by the checks, not by the server, so `--check` prints the same suggestion as a
+`note:` line under its diagnostic:
+
+```text
+defs.fdsl:1:2: error: unknown attribute 'byte_ordre'; this version knows 'bit_order', 'byte_order' and 'cal'
+defs.fdsl:1:2: note: did you mean 'byte_order'?
+```
+
+Its position is where the fix would edit. The note lines match neither Vim's `errorformat` nor the
+Emacs and ALE patterns, so those show the diagnostic alone. A program using the library reads the same
+fix from `FramedslDiagnostic.fix_title`, `fix_text` and the `fix_*` positions.
 
 ## Without a server
 

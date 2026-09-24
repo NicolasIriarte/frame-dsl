@@ -124,6 +124,20 @@ typedef struct {
    */
   int end_line;
   int end_column;
+  /**
+   * @brief A suggested fix, or NULL when there is no single obvious one: replace `fix_line`:`fix_column`
+   * up to (not including) `fix_end_line`:`fix_end_column` with `fix_text` -- an insertion when the two
+   * are the same place, a deletion when `fix_text` is empty. Positions count as `line` and `column` do.
+   *
+   * `fix_title` says what it does, as a menu entry would: "change to 'byte_order'", "insert ';'",
+   * "remove the unused block 'Spare'". A diagnostic in an imported file never carries one.
+   */
+  const char *fix_title;
+  const char *fix_text;
+  int fix_line;
+  int fix_column;
+  int fix_end_line;
+  int fix_end_column;
 } FramedslDiagnostic;
 
 typedef struct {

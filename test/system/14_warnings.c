@@ -312,8 +312,15 @@ static int us14_tc11_werror_decides_what_a_warning_costs(const TestArguments *ar
   if (!write_file(args, "w.fdsl", "block Spare {\n  s: 8;\n};\npkt TM {\n  id: 8 = 1;\n};\n", path, sizeof(path))) {
     return __LINE__;
   }
-  char expected[1400];
-  snprintf(expected, sizeof(expected), "%s:1:7: warning: block 'Spare' is not used by anything [check 30]\n", path);
+  char expected[2800];
+  snprintf(
+    expected,
+    sizeof(expected),
+    "%s:1:7: warning: block 'Spare' is not used by anything [check 30]\n%s:1:1: note: remove the unused block "
+    "'Spare'\n",
+    path,
+    path
+  );
 
   for (int werror = 0; werror <= 1; ++werror) {
     char command[2400];

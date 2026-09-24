@@ -71,6 +71,15 @@ static bool publish_diagnostics(FramedslResult *result) {
       .message = result->diags.items[i].message,
       .file = result->diags.items[i].file,
     };
+    const DiagFix *fix = result->diags.items[i].fix;
+    if (fix != NULL && result->diags.items[i].file == NULL) {
+      result->public_diags[i].fix_title = fix->title;
+      result->public_diags[i].fix_text = fix->text;
+      result->public_diags[i].fix_line = fix->line;
+      result->public_diags[i].fix_column = fix->column;
+      result->public_diags[i].fix_end_line = fix->end_line;
+      result->public_diags[i].fix_end_column = fix->end_column;
+    }
   }
   return true;
 }
@@ -91,6 +100,7 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
   if (ast == NULL) {
     result->status = FRAMEDSL_ERROR_MEMORY;
     diag_fill_spans(&result->diags, source);
+    diag_settle_fixes(&result->diags, source);
     publish_diagnostics(result);
     return result;
   }
@@ -136,6 +146,12 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
   }
 
   diag_fill_spans(&result->diags, source);
+  diag_settle_fixes(&result->diags, source);
+  /* Deleting a declaration that looks unused is not offered while the file has errors: a use with a
+   * typo in it -- `Heder` for `Header` -- is exactly what makes the one it meant look unused. */
+  if (diag_error_count(&result->diags) > 0) {
+    diag_drop_fixes(&result->diags, 30);
+  }
   if (!publish_diagnostics(result)) {
     result->status = FRAMEDSL_ERROR_MEMORY;
   }

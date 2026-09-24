@@ -68,6 +68,11 @@ static void report_plain(const FramedslResult *result) {
       printf(" [check %d]", diag->check);
     }
     putchar('\n');
+    /* The fix, where there is one, as a note of its own: the same `file:line:col:` shape, but no
+     * editor's pattern for this output takes a note for a problem. */
+    if (diag->fix_title != NULL) {
+      printf("%s:%d:%d: note: %s\n", name, diag->fix_line, diag->fix_column, diag->fix_title);
+    }
   }
 }
 

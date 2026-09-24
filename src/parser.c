@@ -5,18 +5,49 @@
 
 #include "lexer.h"
 
+const char *const PARSER_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", NULL };
+static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first" };
+static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian" };
+
 typedef struct {
   Lexer lexer;
   Token current;
+  /* Just past the token before `current`: where a missing ';' would have gone. */
+  int previous_end_line;
+  int previous_end_column;
   DiagList *diags;
   AstFile *file;
   bool out_of_memory;
   /* Set while recovering, so a cascade of consequences is not reported as a cascade of errors. */
   bool panicking;
+  /* The check-31 warning the last attribute raised, or -1: its fix is only known once the group ends. */
+  long redundant;
 } Parser;
 
 static void advance(Parser *parser) {
+  /* The lexer skips what is between tokens before a token, not after, so here it stands exactly at
+   * the end of the one about to become the previous. */
+  parser->previous_end_line = parser->lexer.line;
+  parser->previous_end_column = parser->lexer.column;
   parser->current = lexer_next(&parser->lexer);
+}
+
+/* A "did you mean" for the diagnostic at `index`, about the word `wrong` written at its own position. */
+static void suggest(Parser *parser, size_t index, const Token *wrong, const char *const *candidates, size_t count) {
+  const char *closest = diag_closest(wrong->text, wrong->length, candidates, count);
+  if (closest != NULL) {
+    diag_set_fix(
+      parser->diags,
+      index,
+      wrong->line,
+      wrong->column,
+      wrong->line,
+      wrong->column + (int)wrong->length,
+      closest,
+      "did you mean '%s'?",
+      closest
+    );
+  }
 }
 
 static bool check(const Parser *parser, TokenKind kind) {
@@ -51,7 +82,21 @@ static bool expect(Parser *parser, TokenKind kind) {
   if (match(parser, kind)) {
     return true;
   }
+  size_t index = parser->diags->count;
   error_at_current(parser, token_kind_name(kind));
+  /* A missing ';' has one place it could go: straight after what came before it. */
+  if (kind == TOK_SEMICOLON && parser->previous_end_line > 0) {
+    diag_set_fix(
+      parser->diags,
+      index,
+      parser->previous_end_line,
+      parser->previous_end_column,
+      parser->previous_end_line,
+      parser->previous_end_column,
+      ";",
+      "insert ';'"
+    );
+  }
   return false;
 }
 
@@ -121,6 +166,8 @@ static Expr *parse_factor(Parser *parser) {
 
     Expr *expr = expr_new(parser, EXPR_VALOF, line, column);
     if (expr != NULL) {
+      expr->reference_line = parser->current.line;
+      expr->reference_column = parser->current.column;
       expr->reference = region_strndup(parser->file->region, parser->current.text, parser->current.length);
       if (expr->reference == NULL) {
         parser->out_of_memory = true;
@@ -226,6 +273,8 @@ typedef struct {
   const char *cal;
   int cal_line;
   int cal_column;
+  int cal_value_line;
+  int cal_value_column;
 } Attributes;
 
 /* Everything a declaration inherits arrives with the flags cleared: what the enclosing scope said is
@@ -289,6 +338,7 @@ static const char *dotted_name(Parser *parser, const char *first, size_t first_l
 /* Check 31, a warning: an attribute setting what an enclosing scope already wrote. At the value, which
  * is the part that says nothing new. */
 static void redundant(Parser *parser, const Token *value, const char *name, int from_line) {
+  parser->redundant = (long)parser->diags->count;
   diag_warn(
     parser->diags,
     value->line,
@@ -344,6 +394,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     } else if (word_is(&value, "lsb_first")) {
       attrs->bit_order = BIT_ORDER_LSB_FIRST;
     } else {
+      size_t index = parser->diags->count;
       diag_add(
         parser->diags,
         value.line,
@@ -353,6 +404,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
         (int)value.length,
         value.text
       );
+      suggest(parser, index, &value, BIT_ORDER_VALUES, 2);
       ok = false;
     }
     if (ok && bit_inherited && attrs->bit_order == bit_before) {
@@ -368,6 +420,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     } else if (word_is(&value, "little_endian")) {
       attrs->byte_order = BYTE_ORDER_LITTLE_ENDIAN;
     } else {
+      size_t index = parser->diags->count;
       diag_add(
         parser->diags,
         value.line,
@@ -377,6 +430,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
         (int)value.length,
         value.text
       );
+      suggest(parser, index, &value, BYTE_ORDER_VALUES, 2);
       ok = false;
     }
     if (ok && byte_inherited && attrs->byte_order == byte_before) {
@@ -391,7 +445,10 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     attrs->cal = dotted_name(parser, value.text, value.length);
     attrs->cal_line = line;
     attrs->cal_column = column;
+    attrs->cal_value_line = value.line;
+    attrs->cal_value_column = value.column;
   } else {
+    size_t index = parser->diags->count;
     diag_add(
       parser->diags,
       name.line,
@@ -401,6 +458,7 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
       (int)name.length,
       name.text
     );
+    suggest(parser, index, &name, PARSER_ATTRIBUTE_NAMES, 3);
     ok = false;
   }
 
@@ -428,12 +486,62 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
     return false;
   }
 
+  /* Each attribute's extent, and the check-31 warning it raised if any: the fix for a redundant one
+   * is to delete it, or the whole group when it is the only thing in it -- known only once `]` is. */
+  enum { GROUP_MAX = 16 };
+  struct {
+    int line, column, end_line, end_column;
+    long redundant;
+  } seen[GROUP_MAX];
+  size_t count = 0;
+
   while (check(parser, TOK_AT)) {
+    int at_line = parser->current.line;
+    int at_column = parser->current.column;
+    parser->redundant = -1;
     if (!parse_attribute(parser, attrs)) {
       return false;
     }
+    if (count < GROUP_MAX) {
+      seen[count].line = at_line;
+      seen[count].column = at_column;
+      seen[count].end_line = parser->previous_end_line;
+      seen[count].end_column = parser->previous_end_column;
+      seen[count].redundant = parser->redundant;
+    }
+    count += 1;
   }
-  return expect(parser, TOK_RBRACKET);
+  if (!expect(parser, TOK_RBRACKET)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < count && i < GROUP_MAX; ++i) {
+    if (seen[i].redundant < 0) {
+      continue;
+    }
+    if (count == 1) {
+      diag_set_removal(
+        parser->diags,
+        (size_t)seen[i].redundant,
+        line,
+        column,
+        parser->previous_end_line,
+        parser->previous_end_column,
+        "remove the attribute group"
+      );
+    } else {
+      diag_set_removal(
+        parser->diags,
+        (size_t)seen[i].redundant,
+        seen[i].line,
+        seen[i].column,
+        seen[i].end_line,
+        seen[i].end_column,
+        "remove the redundant attribute"
+      );
+    }
+  }
+  return true;
 }
 
 /* field = identifier [ "[" expression "]" ] ":" width [ "=" integer ] ";" */
@@ -574,6 +682,8 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
   }
 
   Token first = parser->current;
+  field->block_line = first.line;
+  field->block_column = first.column;
   advance(parser);
   field->block = dotted_name(parser, first.text, first.length);
   if (field->block == NULL) {
@@ -585,6 +695,8 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
 /* `Header { ... };` or `Header;`: the name just read, `first`, was a block's and not a field's. */
 static void parse_anonymous_use(Parser *parser, AstField *field, Token first, Attributes attrs) {
   field->anonymous = true;
+  field->block_line = first.line;
+  field->block_column = first.column;
   field->block = dotted_name(parser, first.text, first.length);
   if (field->block == NULL) {
     return;
@@ -614,6 +726,8 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   field->cal = attrs.cal;
   field->cal_line = attrs.cal_line;
   field->cal_column = attrs.cal_column;
+  field->cal_value_line = attrs.cal_value_line;
+  field->cal_value_column = attrs.cal_value_column;
 
   if (!check(parser, TOK_IDENT)) {
     error_at_current(parser, "a field name");
@@ -980,7 +1094,10 @@ static void parse_cal(Parser *parser) {
 
   if (!expect(parser, TOK_SEMICOLON)) {
     recover_to_field_end(parser);
+    return;
   }
+  cal->end_line = parser->previous_end_line;
+  cal->end_column = parser->previous_end_column;
 }
 
 /* import = "import" string [ "as" identifier ] ";" */
@@ -1021,13 +1138,17 @@ static AstImport *parse_import(Parser *parser) {
 
   if (!expect(parser, TOK_SEMICOLON)) {
     recover_to_field_end(parser);
+    return import;
   }
+  import->end_line = parser->previous_end_line;
+  import->end_column = parser->previous_end_column;
   return import;
 }
 
 AstFile *parse(const char *source, DiagList *diags) {
   Parser parser = { 0 };
   parser.diags = diags;
+  parser.redundant = -1;
   parser.file = ast_new();
   if (parser.file == NULL) {
     diag_add(diags, 1, 1, 0, "out of memory");
@@ -1088,6 +1209,8 @@ AstFile *parse(const char *source, DiagList *diags) {
     }
 
     Attributes packet_attrs = inherited(file_attrs);
+    const int start_line = parser.current.line;
+    const int start_column = parser.current.column;
     if (check(&parser, TOK_LBRACKET)) {
       if (!parse_attribute_group(&parser, &packet_attrs)) {
         recover_to_packet_end(&parser);
@@ -1127,6 +1250,8 @@ AstFile *parse(const char *source, DiagList *diags) {
     }
     packet->line = line;
     packet->column = column;
+    packet->start_line = start_line;
+    packet->start_column = start_column;
 
     if (!check(&parser, TOK_IDENT)) {
       error_at_current(

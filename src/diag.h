@@ -22,6 +22,28 @@ typedef enum {
   DIAG_WARNING,
 } DiagSeverity;
 
+/**
+ * @brief An edit that would fix a diagnostic: replace `line`:`column` up to `end_line`:`end_column`
+ * with `text` -- an insertion when the two are the same place, a deletion when `text` is empty.
+ *
+ * Made by whatever reported the problem, since that is what knows what was meant; everything after it
+ * only relays the fix. Positions are the compiler's: lines and byte columns from 1.
+ */
+typedef struct {
+  int line;
+  int column;
+  int end_line;
+  int end_column;
+  char *text;
+  /** @brief What applying it does, said the way a menu entry says it: "change to 'byte_order'". */
+  char *title;
+  /**
+   * @brief Set for a removal of whole declarations: diag_settle_fixes() widens it to the whole lines
+   * it stands on, and one of the blank lines either side, once there is source to look at.
+   */
+  bool whole_lines;
+} DiagFix;
+
 typedef struct {
   int line;
   int column;
@@ -48,6 +70,8 @@ typedef struct {
    * importing file's list with this set -- so a position is always a position in the file named.
    */
   char *file;
+  /** @brief How to fix it, when there is one obvious way; NULL otherwise. Owned. */
+  DiagFix *fix;
 } Diag;
 
 typedef struct {
@@ -107,3 +131,47 @@ void diag_sort(DiagList *list);
  * position is.
  */
 void diag_append(DiagList *to, const DiagList *from, const char *file);
+
+/**
+ * @brief Attach a fix to the diagnostic at `index`, typically the one just added -- nothing happens if
+ * that one was not added after all (the list was full, or memory ran out).
+ * @param text The replacement; "" to delete.
+ * @param title printf-style: what the fix does, for a menu and for `--check`'s note.
+ */
+void diag_set_fix(
+  DiagList *list,
+  size_t index,
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *text,
+  const char *title,
+  ...
+) __attribute__((format(printf, 8, 9)));
+
+/** @brief As diag_set_fix(), and marks the fix as a removal of whole lines; see DiagFix.whole_lines. */
+void diag_set_removal(
+  DiagList *list,
+  size_t index,
+  int line,
+  int column,
+  int end_line,
+  int end_column,
+  const char *title,
+  ...
+) __attribute__((format(printf, 7, 8)));
+
+/** @brief Takes the fixes off every diagnostic of check `check`, keeping the diagnostics. */
+void diag_drop_fixes(DiagList *list, int check);
+
+/** @brief Widens every whole-line removal to the lines it stands on, now that `source` can be read. */
+void diag_settle_fixes(DiagList *list, const char *source);
+
+/**
+ * @brief The one candidate closest to `word`, for a "did you mean": within two edits (an insertion, a
+ * deletion, a substitution or two neighbours swapped), and fewer edits than `word` has letters.
+ * @return NULL when nothing is that close, or when two candidates are equally close -- a guess
+ * between them would be a coin toss offered as a fix.
+ */
+const char *diag_closest(const char *word, size_t length, const char *const *candidates, size_t count);
