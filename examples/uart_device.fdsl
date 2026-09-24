@@ -9,6 +9,11 @@
 @bit_order:  msb_first;
 @byte_order: big_endian;
 
+# TM_HK.reading is raw ADC counts; this is the curve that turns it into the millivolts a console
+# would show. The arena keeps the raw value regardless -- framedsl_get_eng() (or Python's
+# frame.eng[...]) is what runs the curve, on read or on write.
+cal millivolts(raw) = raw * 1000.0 / 65535;
+
 ############################
 # TCs
 ############################
@@ -51,6 +56,7 @@ pkt TM_HK {
   id:       8 = 0x82;
   sequence: 16;
   channel:  8;
+  [ @cal: millivolts; ]
   reading:  32;
   limit:    32;
 };

@@ -29,6 +29,16 @@ which is the whole point of the project in one step. It runs as part of `make te
 [`test/system/8_examples.c`](../test/system/8_examples.c)) so it cannot go stale silently -- it is an
 example, and the test is only there to keep it true.
 
+[`uart_device.py`](uart_device.py) is the same driver again, from [Python](../README.md#from-python):
+same definition, same three commands answered, same bytes on the wire, so the two are worth reading
+side by side -- what changes is how a field is addressed (a dotted string, cached by
+`framedsl.Frame` itself, rather than a `FramedslFieldId` resolved up front), not what a frame is.
+
+```sh
+make python
+PYTHONPATH=python examples/uart_device.py
+```
+
 That is the first of the two ways this project is used -- the library, linked into the software being
 written. The other is `build/frame-dsl` against a capture, with no program in the middle; both are
 described in [the README](../README.md#the-two-ways-this-gets-used).
@@ -45,7 +55,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`ccsds_space_packet.fdsl`](ccsds_space_packet.fdsl) | a real CCSDS primary header: six sub-byte fields totalling exactly 48 bits |
 | [`packet_family.fdsl`](packet_family.fdsl) | several packets in one file, told apart by a shared type field |
 | [`bit_order.fdsl`](bit_order.fdsl) | attributes at every scope: file, packet, field and `block` |
-| [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all |
+| [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
 
 ## Should be rejected
 

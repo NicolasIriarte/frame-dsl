@@ -254,6 +254,10 @@ Without that copy, the package looks for the library in `FRAMEDSL_LIBRARY` first
 loader's path, where `make install` puts it. To use it straight from the checkout instead:
 `FRAMEDSL_LIBRARY=build/libframedsl.so.0 PYTHONPATH=python python3`.
 
+[`examples/uart_device.py`](examples/uart_device.py) is [`examples/uart_device.c`](examples/uart_device.c)
+again, same definition and same protocol, from here instead: `make python && PYTHONPATH=python
+examples/uart_device.py`.
+
 ## Building
 
 Requires a C11 compiler, `make` and `tar`. **No network, and no credentials.**
