@@ -17,7 +17,8 @@
 
 /* Every packet a measurement uses. One file, so each measurement is one frame over one definition,
  * and the packets cover the shapes the runtime treats differently: whole bytes, sub-byte fields with
- * a little-endian one among them, a valof()-sized payload, and a packet built from blocks. */
+ * a little-endian one among them, a valof()-sized payload, a packet built from blocks, and a counted
+ * repetition (#55) whose elements carry a fixed value and a little-endian field. */
 static const char *const DEFINITION =
   "@bit_order: msb_first;\n"
   "@byte_order: big_endian;\n"
@@ -27,6 +28,7 @@ static const char *const DEFINITION =
   "\n"
   "block Header  { id: 8; sequence: 16; };\n"
   "block Vector3 { x: 16; y: 16; z: 16; };\n"
+  "block Sample  { marker: 4 = 0xA; channel: 4; [ @byte_order: little_endian; ] reading: 16; };\n"
   "\n"
   "pkt TC_SET_LIMIT { id: 8 = 0x02; sequence: 16; channel: 8; limit: 32; };\n"
   "\n"
@@ -41,7 +43,12 @@ static const char *const DEFINITION =
   "  hdr: Header { id = 0x83; };\n"
   "  accel: Vector3; gyro: Vector3;\n"
   "  [ @cal: volts; ] bus: 12; [ @cal: ohms; ] sensor: 12;\n"
-  "};\n";
+  "};\n"
+  "\n"
+  "pkt TM_SAMPLES { id: 8 = 0x30; count: 8; samples[96]: Sample[valof(count)]; };\n";
+
+/* Elements in the repetition measurements: all the room TM_SAMPLES reserves. */
+#define SAMPLES 32
 
 /* Written to so the compiler cannot conclude a result is unused. The library is a separate archive
  * with no link-time optimisation, so the calls could not be removed anyway; this makes it certain. */
@@ -65,6 +72,9 @@ typedef struct {
   FramedslFieldId gyro_z;
   FramedslFieldId bus;
   FramedslFieldId sensor;
+  FramedslFieldId count;
+  /* `TM_SAMPLES.samples.reading` with no element chosen, as a loop over a repetition holds it. */
+  FramedslFieldId reading;
 
   /* Each packet's encoded bytes, captured once, for the decode measurements to read. */
   uint8_t set_limit[16];
@@ -75,6 +85,8 @@ typedef struct {
   size_t payload_length;
   uint8_t imu[64];
   size_t imu_length;
+  uint8_t samples[128];
+  size_t samples_length;
 } Bench;
 
 typedef void (*Body)(Bench *bench, uint64_t iteration);
@@ -133,6 +145,46 @@ static void decode_imu(Bench *bench, uint64_t i) {
   (void)i;
   size_t consumed;
   sink += (uintptr_t)framedsl_decode(bench->frame, bench->imu, bench->imu_length, &consumed, NULL);
+}
+
+/* A repetition's elements are set one member at a time; one of them changes per frame, and each encode
+ * still writes all 32 elements and stamps every element's fixed marker. */
+static void encode_samples(Bench *bench, uint64_t i) {
+  size_t length;
+  FramedslFieldId element;
+  framedsl_element(bench->definition, bench->reading, i % SAMPLES, &element);
+  framedsl_set_u64(bench->frame, element, i & 0xFFFF);
+  const uint8_t *bytes = framedsl_encode(bench->frame, "TM_SAMPLES", &length, NULL);
+  sink += bytes[length - 1];
+}
+
+static void decode_samples(Bench *bench, uint64_t i) {
+  (void)i;
+  size_t consumed;
+  sink += (uintptr_t)framedsl_decode(bench->frame, bench->samples, bench->samples_length, &consumed, NULL);
+}
+
+/* One element's field, picked by index: framedsl_element() and a read. */
+static void read_element(Bench *bench, uint64_t i) {
+  FramedslFieldId element;
+  uint64_t value = 0;
+  framedsl_element(bench->definition, bench->reading, i % SAMPLES, &element);
+  framedsl_get_u64(bench->frame, element, &value);
+  sink += value;
+}
+
+/* What a program does with a decoded repetition: ask how many there are, and read every one. */
+static void read_all_elements(Bench *bench, uint64_t i) {
+  (void)i;
+  size_t count = 0;
+  framedsl_count(bench->frame, bench->reading, &count);
+  for (size_t e = 0; e < count; ++e) {
+    FramedslFieldId element;
+    uint64_t value = 0;
+    framedsl_element(bench->definition, bench->reading, e, &element);
+    framedsl_get_u64(bench->frame, element, &value);
+    sink += value;
+  }
 }
 
 static void read_linear(Bench *bench, uint64_t i) {
@@ -218,18 +270,27 @@ int main(int argc, char **argv) {
   bool ok = bench.frame != NULL && resolve(&bench, "TC_SET_LIMIT.limit", &bench.limit)
             && resolve(&bench, "TM_BITS.counter", &bench.counter) && resolve(&bench, "TM_PAYLOAD.len", &bench.len)
             && resolve(&bench, "TM_PAYLOAD.data", &bench.data) && resolve(&bench, "TM_IMU.gyro.z", &bench.gyro_z)
-            && resolve(&bench, "TM_IMU.bus", &bench.bus) && resolve(&bench, "TM_IMU.sensor", &bench.sensor);
+            && resolve(&bench, "TM_IMU.bus", &bench.bus) && resolve(&bench, "TM_IMU.sensor", &bench.sensor)
+            && resolve(&bench, "TM_SAMPLES.count", &bench.count)
+            && resolve(&bench, "TM_SAMPLES.samples.reading", &bench.reading);
 
   /* A 200-byte payload: long enough that copying it is part of what is measured. */
   ok = ok && framedsl_set_u64(bench.frame, bench.len, 200) == FRAMEDSL_OK
        && framedsl_set_bytes(bench.frame, bench.data, data, 200) == FRAMEDSL_OK
        && framedsl_set_u64(bench.frame, bench.bus, 2048) == FRAMEDSL_OK
-       && framedsl_set_u64(bench.frame, bench.sensor, 1234) == FRAMEDSL_OK;
+       && framedsl_set_u64(bench.frame, bench.sensor, 1234) == FRAMEDSL_OK
+       && framedsl_set_u64(bench.frame, bench.count, SAMPLES) == FRAMEDSL_OK;
+  for (size_t e = 0; e < SAMPLES && ok; ++e) {
+    FramedslFieldId element;
+    ok = framedsl_element(bench.definition, bench.reading, e, &element) == FRAMEDSL_OK
+         && framedsl_set_u64(bench.frame, element, 1000 + e) == FRAMEDSL_OK;
+  }
 
   ok = ok && capture(&bench, "TC_SET_LIMIT", bench.set_limit, sizeof(bench.set_limit), &bench.set_limit_length)
        && capture(&bench, "TM_BITS", bench.bits, sizeof(bench.bits), &bench.bits_length)
        && capture(&bench, "TM_PAYLOAD", bench.payload, sizeof(bench.payload), &bench.payload_length)
-       && capture(&bench, "TM_IMU", bench.imu, sizeof(bench.imu), &bench.imu_length);
+       && capture(&bench, "TM_IMU", bench.imu, sizeof(bench.imu), &bench.imu_length)
+       && capture(&bench, "TM_SAMPLES", bench.samples, sizeof(bench.samples), &bench.samples_length);
 
   if (!ok) {
     framedsl_frame_free(bench.frame);
@@ -246,6 +307,10 @@ int main(int argc, char **argv) {
   measure(&bench, "decode   valof payload  (203 B)", decode_payload, minimum);
   measure(&bench, "encode   composed       (19 B)", encode_imu, minimum);
   measure(&bench, "decode   composed       (19 B)", decode_imu, minimum);
+  measure(&bench, "encode   repetition, 32 (98 B)", encode_samples, minimum);
+  measure(&bench, "decode   repetition, 32 (98 B)", decode_samples, minimum);
+  measure(&bench, "get_u64  one element, by index", read_element, minimum);
+  measure(&bench, "get_u64  all 32 elements", read_all_elements, minimum);
   measure(&bench, "get_eng  linear curve", read_linear, minimum);
   measure(&bench, "get_eng  bytecode curve", read_curve, minimum);
   measure(&bench, "set_eng  linear curve", write_linear, minimum);

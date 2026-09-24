@@ -65,3 +65,29 @@ the order is the reverse of the stream's, and it is rare.
 - **Encode looks the packet up by name on every call.** On these small definitions that is a handful
   of string compares and is lost in the bit loop; it becomes worth a pre-resolved handle only once the
   copying is fast, or a definition has many packets.
+
+## Repetition (#55), same machine, 2026-09-24
+
+Added once repetition landed: `TM_SAMPLES`, a counted repetition of 32 three-byte `Sample` elements
+(98 bytes a frame), each with a fixed 4-bit marker and a little-endian 16-bit reading. Three runs agreed
+to within about 10%.
+
+| Operation | Packet | Time |
+| --- | --- | --- |
+| encode | 98 bytes, 32 elements, one element's reading set per frame | 600--650 ns |
+| decode | same | 89--100 ns |
+| `framedsl_element` + `get_u64` | one element's reading | 60 ns |
+| `framedsl_count` + 32 of the above | every element's reading | 2000 ns |
+
+- **Decoding a repetition costs what any payload does.** Its elements are copied in as the bit string
+  they are, and nothing looks inside until somebody asks.
+- **Encoding one is slow, and most of it is the fixed values.** After copying the run, encode writes
+  every element's fixed marker from the definition, a bit at a time through `frame_member_put()`. The
+  same benchmark without a fixed value in `Sample` encodes in about 270 ns, so the stamping is over half
+  the cost, about 10 ns per element here. A whole-byte fixed field could be written a byte at a time,
+  as #62 did for ordinary fields.
+- **Reading an element costs as much as decoding a small frame.** 60 ns a field: `framedsl_element()`
+  and the accessor each validate the id and recompute how many elements the repetition has room for,
+  and the member is read a bit at a time. A loop over a decoded repetition pays that per element, so
+  reading all 32 costs twenty times the decode that brought them in. Byte-aligned members read as a
+  load, and a capacity kept in the element program rather than recomputed, are the two obvious fixes.
