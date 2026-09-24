@@ -28,7 +28,7 @@
 # commit what it replaces.
 
 CC ?= cc
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
+CFLAGS ?= -std=c11 -Wall -Wunused -Wextra -Werror -O2
 
 # CLibs' own sources are built with this instead. Our warning policy is ours to answer for; failing
 # the build on a warning in code this project only consumes would make every upstream release a
