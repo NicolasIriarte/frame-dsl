@@ -18,8 +18,11 @@ To take it apart, copy it out and build against the library:
 
 ```sh
 make lib
-cc -std=c11 -Wall -Wextra -Iinclude my_device.c -Lbuild -lframedsl -o my_device
+cc -std=c11 -Wall -Wextra -Iinclude my_device.c -Lbuild -l:libframedsl.a -o my_device
 ```
+
+`-l:libframedsl.a` links the static archive. `build/` holds the shared `libframedsl.so` too, and a plain
+`-lframedsl` picks that one, which then needs `LD_LIBRARY_PATH=build` to run.
 
 Then change a width in [`uart_device.fdsl`](uart_device.fdsl) and re-run **without recompiling**,
 which is the whole point of the project in one step. It runs as part of `make test-system` (see

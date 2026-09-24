@@ -23,7 +23,7 @@
  * To take it apart and play with it, copy this file somewhere and build against the library:
  *
  *   make lib
- *   cc -std=c11 -Wall -Wextra -Iinclude my_device.c -Lbuild -lframedsl -o my_device
+ *   cc -std=c11 -Wall -Wextra -Iinclude my_device.c -Lbuild -l:libframedsl.a -o my_device
  *
  * Try: change a width in examples/uart_device.fdsl and re-run without recompiling; add a packet and
  * a handler for it; feed uart_receive_pkt() a frame with a byte missing and watch what it says.

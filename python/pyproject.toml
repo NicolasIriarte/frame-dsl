@@ -1,0 +1,16 @@
+# The Python bindings (#98): `pip install ./python` from a checkout, after `make python`.
+#
+# The build backend is python/_backend.py, in this directory, rather than setuptools: pip builds a
+# package in an isolated environment and installs its backend there first, which for setuptools means a
+# download. This one needs nothing but the standard library, so the install works on a machine with no
+# network -- the same rule the C build keeps by vendoring CLibs.
+[build-system]
+requires = []
+build-backend = "_backend"
+backend-path = ["."]
+
+[project]
+name = "framedsl"
+version = "0.1.0"
+description = "Frame-DSL packet definitions from Python, through the C library"
+requires-python = ">=3.8"

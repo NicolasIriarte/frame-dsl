@@ -148,7 +148,7 @@ they mean three different things to whoever is holding the capture.
 
 The tool reads and does not write: it does not encode. A frame to send is built by a program through
 the library -- in C as in [`examples/uart_device.c`](examples/uart_device.c), or from a
-script through the Python bindings planned in #98.
+script through the [Python bindings](#from-python).
 
 A field with a calibration shows its engineering value beside the raw one, and `--emit-c` writes
 every calibration in the file out as C, for a program that wants the curves compiled in:
@@ -216,6 +216,44 @@ on top -- Emacs needs nothing configured beyond loading
 [`editors/README.md`](editors/README.md) how to set each editor up, and
 [`docs/editors.md`](docs/editors.md) why it is a server rather than a tree-sitter grammar.
 
+## From Python
+
+`python/framedsl` is a small package over the C library, for scripts and quick experiments -- building
+a command to send by hand, or picking apart a capture. It calls `libframedsl.so` through `ctypes`, so it
+encodes and decodes exactly as a C program does: there is no second implementation to disagree.
+
+```python
+import framedsl
+
+definition = framedsl.load("examples/uart_device.fdsl")    # LoadError, with every diagnostic, if not
+frame = definition.frame()
+frame["TC_WRITE.size"] = 2                                  # a scalar is an int
+frame["TC_WRITE.data"] = b"\xAA\xBB"                        # anything wider is bytes
+wire = frame.encode("TC_WRITE")                             # b'\x03\x02\xaa\xbb\x00\x00'
+
+reply = definition.frame()
+reply.decode(wire)                                          # 'TC_WRITE'
+reply["TC_WRITE.size"]                                      # 2
+```
+
+`frame.eng["PKT.field"]` reads and writes a calibrated field in engineering units. A repetition's
+elements are `frame["TM_SAMPLES.samples[3].reading"]`, `frame.count("TM_SAMPLES.samples")`, or all of one
+member at once with `frame.elements("TM_SAMPLES.samples.reading")`. `frame.decode_prefix(data)` returns
+the packet and how many bytes it took, for walking a stream. Each error the library reports is its own
+exception under `framedsl.Error`: `FieldError`, `RangeError`, `UnrecognisedError`, `TruncatedError`, ...
+
+To install it into an environment, from the checkout (nothing is published, and nothing is downloaded --
+the package builds with the standard library alone):
+
+```sh
+make python              # build the library and copy it into python/framedsl/
+pip install ./python
+```
+
+Without that copy, the package looks for the library in `FRAMEDSL_LIBRARY` first, then on the system
+loader's path, where `make install` puts it. To use it straight from the checkout instead:
+`FRAMEDSL_LIBRARY=build/libframedsl.so.0 PYTHONPATH=python python3`.
+
 ## Building
 
 Requires a C11 compiler, `make` and `tar`. **No network, and no credentials.**
@@ -263,12 +301,14 @@ configured.
 |-------------------------|--------------------------------------------------------|
 | `make`                  | build `build/frame-dsl`                                |
 | `make example`          | build `build/uart_device`, the worked example           |
-| `make lib`              | build `build/libframedsl.a` to compile your own against |
+| `make lib`              | build `build/libframedsl.a` and `build/libframedsl.so` to compile your own against |
+| `make python`           | copy the shared library into `python/framedsl/`, for `pip install ./python` |
 | `make deps`             | unpack the vendored CLibs libraries into `build/deps/` |
 | `make test`             | run both levels of tests                               |
 | `make test-unit`        | unit tests only                                        |
 | `make test-system`      | system tests only                                      |
 | `make test-editors`     | the Emacs, Vim and Neovim tests; each skipped when that editor is absent |
+| `make test-python`      | the Python bindings' tests; skipped without `python3`  |
 | `make vsix`             | build `build/frame-dsl-<version>.vsix`, the VS Code extension |
 | `make format`           | reformat every first-party C source in place           |
 | `make format-check`     | check the formatting without changing anything         |
@@ -287,6 +327,7 @@ configured.
 | `docs/`              | design documents -- why the language and runtime are shaped the way they are       |
 | `examples/`          | example definition files, doubling as the parser's fixtures                        |
 | `editors/`           | editor support: an Emacs major mode, a Vim/Neovim runtime directory, a VS Code extension |
+| `python/`            | the Python bindings: `framedsl/` over the shared library, and their tests          |
 | `completions/`       | Bash and zsh completion for `frame-dsl`, and the test that drives them without a terminal |
 | `scripts/`           | `vendor_clibs.sh` and `vendor_vscode_languageclient.sh`, which update committed dependencies |
 | `.forgejo/`          | CI, and the issue/PR templates `GUIDELINES.md` requires following                  |

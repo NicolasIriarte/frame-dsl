@@ -3,7 +3,9 @@
 #   make              build build/frame-dsl
 #   make deps         unpack the vendored CLibs libraries
 #   make example      build build/uart_device, the worked example
-#   make lib          build build/libframedsl.a, to compile your own program against
+#   make lib          build build/libframedsl.a and build/libframedsl.so, to compile your own program against
+#   make python       copy the shared library into python/framedsl/, for `pip install ./python`
+#   make test-python  the Python bindings' tests; skipped without python3
 #   make test         run both levels of tests
 #   make test-unit    unit tests only
 #   make test-system  system tests only
@@ -100,9 +102,32 @@ SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-fra
 	$(SANITIZE_NO_PIE)
 
 # The library as one file, so a program outside this repository -- a copy of the example being
-# played with, most likely -- compiles with `-Lbuild -lframedsl` instead of naming object files.
+# played with, most likely -- compiles with `-Lbuild -l:libframedsl.a` instead of naming object files.
+# The `:` form names the archive: build/ also holds libframedsl.so (#98), and a plain -lframedsl prefers
+# the shared object, leaving a program that will not start without LD_LIBRARY_PATH.
 LIB_ARCHIVE := $(BUILD)/libframedsl.a
 AR ?= ar
+
+# The same library as a shared object (#98), which is what the Python bindings load through ctypes. Its
+# objects are compiled a second time with -fPIC into build/pic/ rather than giving every object -fPIC:
+# the tool, the tests and the benchmark keep linking exactly the code they linked before, so a timing
+# taken through the archive is not moved by a change made for somebody else's loader.
+#
+# Versioned the usual way: the file is libframedsl.so.<version>, its soname is libframedsl.so.<major>,
+# and libframedsl.so points at that for a linker's -lframedsl. Only the framedsl_* functions are exported
+# (src/libframedsl.map); everything else in the library is internal and stays out of the symbol table.
+PIC_OBJ := $(LIB_SRC:src/%.c=$(BUILD)/pic/%.o)
+DEPFILES += $(PIC_OBJ:.o=.d)
+SO_MAJOR := 0
+SO_VERSION := $(SO_MAJOR).1.0
+LIB_SONAME := libframedsl.so.$(SO_MAJOR)
+LIB_SHARED := $(BUILD)/libframedsl.so.$(SO_VERSION)
+LIB_SHARED_LINKS := $(BUILD)/$(LIB_SONAME) $(BUILD)/libframedsl.so
+LIB_EXPORTS := src/libframedsl.map
+
+# The Python bindings (#98). A pure-Python package, python/framedsl/, over the shared library above.
+PYTHON ?= python3
+PYTHON_PACKAGE := python/framedsl
 
 # One per level, not one shared. testsuite.c sizes its user-story array from
 # TESTSUITE_USER_STORY_COUNT, which it picks up from whichever testsuite_registry.h is on its include
@@ -147,7 +172,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 
 .PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
 	format-tool hooks clean bench fuzz test-fuzz-replay vsix test-changelog changelog changelog-preview \
-	conflicts test-completion FORCE
+	conflicts test-completion lib python test-python FORCE
 
 # Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
 # the person running this has in their own configuration cannot make an editor look like it works.
@@ -182,7 +207,13 @@ deps: $(DEPS)
 
 example: $(EXAMPLE_UART_DEVICE)
 
-lib: $(LIB_ARCHIVE)
+lib: $(LIB_ARCHIVE) $(LIB_SHARED_LINKS)
+
+# A copy next to the package is the second place python/framedsl/_native.py looks, after
+# FRAMEDSL_LIBRARY, so `pip install ./python` after this carries the library into the installed package.
+# The copy is gitignored: it is build output that happens to live in the source tree.
+python: $(LIB_SHARED_LINKS)
+	cp $(BUILD)/$(LIB_SONAME) $(PYTHON_PACKAGE)/$(LIB_SONAME)
 
 # The VS Code extension, packaged with zip alone -- see scripts/build_vsix.sh. The version comes
 # from editors/vscode/package.json, not this Makefile: there is exactly one place that number is
@@ -199,17 +230,27 @@ vsix: $(VSIX)
 $(VSIX): $(VSCODE_SRC) scripts/build_vsix.sh
 	scripts/build_vsix.sh $@
 
-# The tool only. The library and its header are consumed from the build tree by a project linking
-# them, which is a different question from putting a command on somebody's PATH.
-install: $(TARGET)
+# The tool, its completions, and the shared library with its header (#98) -- the library so that the
+# Python bindings find it through the system loader with nothing set. The static archive is not
+# installed: a program linking it statically is built against the build tree. Run ldconfig afterwards
+# when PREFIX is a system directory; a PREFIX the loader does not search needs LD_LIBRARY_PATH or
+# FRAMEDSL_LIBRARY instead.
+install: $(TARGET) $(LIB_SHARED_LINKS)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/frame-dsl
+	install -d $(DESTDIR)$(PREFIX)/lib $(DESTDIR)$(PREFIX)/include
+	install -m 755 $(LIB_SHARED) $(DESTDIR)$(PREFIX)/lib/
+	ln -sf libframedsl.so.$(SO_VERSION) $(DESTDIR)$(PREFIX)/lib/$(LIB_SONAME)
+	ln -sf $(LIB_SONAME) $(DESTDIR)$(PREFIX)/lib/libframedsl.so
+	install -m 644 include/framedsl.h $(DESTDIR)$(PREFIX)/include/framedsl.h
 	install -d $(DESTDIR)$(BASH_COMPLETION_DIR) $(DESTDIR)$(ZSH_COMPLETION_DIR)
 	install -m 644 completions/frame-dsl.bash $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl
 	install -m 644 completions/_frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/frame-dsl
+	rm -f $(DESTDIR)$(PREFIX)/lib/libframedsl.so.$(SO_VERSION) $(DESTDIR)$(PREFIX)/lib/$(LIB_SONAME) \
+	  $(DESTDIR)$(PREFIX)/lib/libframedsl.so $(DESTDIR)$(PREFIX)/include/framedsl.h
 	rm -f $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
 
 # Not part of `test`, and nothing in it fails on a slow result: timing on a shared machine is too noisy
@@ -303,18 +344,35 @@ $(LIB_ARCHIVE): $(LIB_OBJ)
 	@mkdir -p $(@D)
 	$(AR) rcs $@ $^
 
+$(BUILD)/pic/%.o: src/%.c | $(DEPS)
+	@mkdir -p $(@D)
+	$(CC) $(SRC_FLAGS) -fPIC -MMD -MP -c $< -o $@
+
+# --no-undefined so that a library needing something it does not link fails here, rather than in the
+# first program to dlopen() it. -lm because the calibrations include <math.h>: at -O2 the compiler
+# inlines what they use, and a build at another level may call into libm instead.
+$(LIB_SHARED): $(PIC_OBJ) $(LIB_EXPORTS)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -shared -Wl,-soname,$(LIB_SONAME) -Wl,--version-script=$(LIB_EXPORTS) -Wl,--no-undefined \
+	  $(PIC_OBJ) -lm -o $@
+
+# Grouped (&:), so one recipe makes both links rather than running once per link.
+$(LIB_SHARED_LINKS) &: $(LIB_SHARED)
+	ln -sf libframedsl.so.$(SO_VERSION) $(BUILD)/$(LIB_SONAME)
+	ln -sf $(LIB_SONAME) $(BUILD)/libframedsl.so
+
 # No -Isrc, same as SYSTEM_FLAGS below: the example is a user of the library, not part of it. It
 # links the archive rather than the objects for the same reason -- that is the line someone copying
 # this file out of the repository will write.
 $(EXAMPLE_UART_DEVICE): examples/uart_device.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -Iinclude examples/uart_device.c -L$(BUILD) -lframedsl -o $@
+	$(CC) $(CFLAGS) -Iinclude examples/uart_device.c -L$(BUILD) -l:libframedsl.a -o $@
 
 # Built like the example: a user of the library, against the public header and the archive. -O2 comes
 # from CFLAGS, as it would for anybody building their own program.
 $(BENCH): bench/bench.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Iinclude bench/bench.c -L$(BUILD) -lframedsl -o $@
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Iinclude bench/bench.c -L$(BUILD) -l:libframedsl.a -o $@
 
 # The library is compiled into each fuzz binary from source rather than linked from the archive: the
 # sanitizers and libFuzzer's coverage instrumentation have to reach inside it to see anything.
@@ -357,7 +415,18 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system test-editors test-fuzz-replay test-changelog test-completion
+test: test-unit test-system test-editors test-fuzz-replay test-changelog test-completion test-python
+
+# The Python bindings' tests (#98), through python3's own unittest: no pip, no network, nothing to install.
+# FRAMEDSL_LIBRARY points them at this build's library rather than whatever the system has, or a copy
+# `make python` left in the package. Skipped, and said so, without python3.
+test-python: $(LIB_SHARED_LINKS)
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then \
+		echo "no $(PYTHON) -- skipping the Python bindings' tests"; \
+	else \
+		FRAMEDSL_LIBRARY="$(abspath $(BUILD)/$(LIB_SONAME))" PYTHONPATH="$(abspath python)" \
+		  $(PYTHON) -m unittest discover -s python/tests -t python -v; \
+	fi
 
 test-unit: $(UNIT_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)

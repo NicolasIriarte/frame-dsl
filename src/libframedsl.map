@@ -1,0 +1,9 @@
+/* What libframedsl.so exports (#98): the public API in include/framedsl.h, and nothing else. The
+ * library's internal functions -- the lexer, the checker, the language server -- stay local, so no
+ * program can come to depend on one by linking the shared object. */
+{
+  global:
+    framedsl_*;
+  local:
+    *;
+};
