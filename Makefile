@@ -147,7 +147,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 
 .PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
 	format-tool hooks clean bench fuzz test-fuzz-replay vsix test-changelog changelog changelog-preview \
-	conflicts FORCE
+	conflicts test-completion FORCE
 
 # Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
 # the person running this has in their own configuration cannot make an editor look like it works.
@@ -166,6 +166,12 @@ VIM_TEST_CMD = PATH="$(abspath $(BUILD)):$$PATH" $(1) -u NONE -N -es --cmd 'set 
 # Where `make install` puts the tool. Every editor integration starts by finding `frame-dsl` on the
 # PATH, so ~/.local is the usual answer for one person: make install PREFIX=~/.local
 PREFIX ?= /usr/local
+# Where bash-completion and zsh look for a command's completion (#85): bash-completion loads
+# share/bash-completion/completions/<command> on first <TAB>, for any PREFIX it knows of (it also searches
+# $XDG_DATA_HOME, so ~/.local works); zsh has share/zsh/site-functions on its $fpath for /usr and
+# /usr/local, and needs it added for any other PREFIX -- see completions/_frame-dsl.
+BASH_COMPLETION_DIR ?= $(PREFIX)/share/bash-completion/completions
+ZSH_COMPLETION_DIR ?= $(PREFIX)/share/zsh/site-functions
 
 # compile_commands.json is built by default so a fresh clone is browsable after `make`, with no
 # second step for somebody to discover. hooks is here for the same reason: a fresh clone's first
@@ -198,9 +204,13 @@ $(VSIX): $(VSCODE_SRC) scripts/build_vsix.sh
 install: $(TARGET)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/frame-dsl
+	install -d $(DESTDIR)$(BASH_COMPLETION_DIR) $(DESTDIR)$(ZSH_COMPLETION_DIR)
+	install -m 644 completions/frame-dsl.bash $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl
+	install -m 644 completions/_frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/frame-dsl
+	rm -f $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
 
 # Not part of `test`, and nothing in it fails on a slow result: timing on a shared machine is too noisy
 # to fail a build on. BENCH_SECONDS is the minimum each measurement runs for.
@@ -347,7 +357,7 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system test-editors test-fuzz-replay test-changelog
+test: test-unit test-system test-editors test-fuzz-replay test-changelog test-completion
 
 test-unit: $(UNIT_RUNNER)
 	@TESTSUITE_OUTPUT_DIR=$(BUILD)/tests/unit ./$(UNIT_RUNNER)
@@ -376,6 +386,20 @@ test-editors: $(TARGET)
 	else \
 		echo "test-editors: no $(NVIM) on PATH, skipping editors/vim tests under Neovim"; \
 	fi
+
+# The Bash and zsh completions (#85), driven without a terminal against the tool just built. The zsh half
+# skips, loudly, without zsh. Then the install: both scripts land where their shells look, and
+# uninstall takes them away again.
+test-completion: $(TARGET)
+	@completions/test_completion.sh $(TARGET)
+	@staging=$$(mktemp -d) && trap 'rm -rf "$$staging"' EXIT && \
+	$(MAKE) -s install DESTDIR=$$staging PREFIX=/usr >/dev/null && \
+	test -f $$staging/usr/share/bash-completion/completions/frame-dsl && \
+	test -f $$staging/usr/share/zsh/site-functions/_frame-dsl && \
+	$(MAKE) -s uninstall DESTDIR=$$staging PREFIX=/usr >/dev/null && \
+	test -z "$$(find $$staging -type f)" && \
+	echo "  ok   make install puts both completions where their shells look; make uninstall removes them" \
+	|| { echo "  FAIL make install / make uninstall of the completions" >&2; exit 1; }
 
 # The changelog is written as one fragment per entry under changelog.d/ and assembled when a version is
 # cut (#90); see changelog.d/README.md. These check the scripts that do that, and the conflict-marker

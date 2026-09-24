@@ -25,6 +25,7 @@ jobs:
       # third_party/clibs/ and unpacked locally. Nothing here reaches the network, and nothing here
       # needs a secret -- which is the point, since CLibs is private and the token a workflow is
       # given automatically cannot read another repository.
+      # zsh is for the zsh half of `make test-completion`, which skips without it.
       # emacs-nox, vim and neovim are for `make test-editors' alone -- none of them is needed to
       # build, and each of those three halves skips with a message when its editor is absent, so a
       # contributor without one still runs everything else. All three are installed here because a
@@ -40,7 +41,7 @@ jobs:
         run: |
           scripts/ci_apt_get.sh update -qq
           scripts/ci_apt_get.sh install -y -qq --no-install-recommends \
-            build-essential emacs-nox vim-nox neovim clang-format-22 jq zip unzip
+            build-essential emacs-nox vim-nox neovim zsh clang-format-22 jq zip unzip
 
       # Before the full build, so a formatting problem is reported without waiting on all of it. It does
       # build the tool itself: definition files are formatted by `frame-dsl --format`, not clang-format. The

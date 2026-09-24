@@ -113,6 +113,12 @@ frame-dsl examples/packet_family.fdsl
 
 `frame-dsl --help` lists every mode and option, with examples; what follows is the tour.
 
+Bash and zsh complete it: `frame-dsl --<TAB>` offers the flags, a definition argument `.fdsl` files,
+`-e <TAB>` the packets of the file already on the line, and `-e TC_WRITE <TAB>` that packet's fields
+as `size=`. The names come from `--list-packets` and `--list-fields <packet>`, which print them one per
+line for any script to read. `make install` puts both completions where their shells look; to try them
+from the checkout, `source completions/frame-dsl.bash`.
+
 Give it bytes and it decodes them instead, working out which packet they are from the frame itself:
 
 ```sh
@@ -200,7 +206,9 @@ frame-dsl - --check --stdin-name src/frames/device.fdsl < unsaved-buffer
 ```
 
 `make install PREFIX=~/.local` puts `frame-dsl` on the PATH, which is where every editor integration
-looks for it.
+looks for it, along with its Bash and zsh completions. zsh looks in `share/zsh/site-functions` only
+under `/usr` and `/usr/local`; for `~/.local`, add `fpath=(~/.local/share/zsh/site-functions $fpath)`
+before `compinit`.
 
 ### Formatting a file
 
@@ -295,6 +303,7 @@ configured.
 | `docs/`              | design documents -- why the language and runtime are shaped the way they are       |
 | `examples/`          | example definition files, doubling as the parser's fixtures                        |
 | `editors/`           | editor support: an Emacs major mode, a Vim/Neovim runtime directory, a VS Code extension |
+| `completions/`       | Bash and zsh completion for `frame-dsl`, and the test that drives them without a terminal |
 | `scripts/`           | `vendor_clibs.sh` and `vendor_vscode_languageclient.sh`, which update committed dependencies |
 | `.forgejo/`          | CI, and the issue/PR templates `GUIDELINES.md` requires following                  |
 | `third_party/clibs/` | the CLibs release tarballs, committed and unpacked at build time                   |

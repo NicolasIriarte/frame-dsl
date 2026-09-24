@@ -119,8 +119,25 @@ static int us17_tc03_version_names_the_build(const TestArguments *args) {
 /* The flags the tool has. Adding one to the tool without adding it here fails tc05 below, because
  * --help then lists a flag this story has not heard of. */
 static const char *const KNOWN_FLAGS[] = {
-  "-d",      "--decode", "-e",       "--encode",     "-r",    "--report", "-q",     "--quiet",   "--emit-c",
-  "--check", "--werror", "--format", "--stdin-name", "--lsp", "-h",       "--help", "--version",
+  "-d",
+  "--decode",
+  "-e",
+  "--encode",
+  "-r",
+  "--report",
+  "-q",
+  "--quiet",
+  "--emit-c",
+  "--check",
+  "--werror",
+  "--format",
+  "--stdin-name",
+  "--lsp",
+  "--list-packets",
+  "--list-fields",
+  "-h",
+  "--help",
+  "--version",
 };
 
 #define KNOWN_FLAG_COUNT (sizeof(KNOWN_FLAGS) / sizeof(*KNOWN_FLAGS))

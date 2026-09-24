@@ -308,6 +308,39 @@ static void describe(const FramedslDefinition *definition) {
   }
 }
 
+/* --list-packets, and --list-fields <packet>: names, one per line, for a completion script (#85) or any
+ * other program to read. Nothing else on stdout or stderr -- a completion that printed a diagnostic
+ * would print it into the middle of somebody's command line -- so a file that does not load, or a
+ * packet it does not have, is only an exit status of 1. The fields are the ones -e takes: a fixed one
+ * cannot be given, so it is not offered. */
+static int list_names(const char *path, const char *stdin_name, const char *packet) {
+  FramedslResult *result = load_path(path, stdin_name);
+  if (result == NULL) {
+    return 2;
+  }
+  const FramedslDefinition *definition = framedsl_definition(result);
+  int status = 0;
+  size_t index = 0;
+  if (!framedsl_ok(result) || definition == NULL) {
+    status = 1;
+  } else if (packet == NULL) {
+    for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
+      printf("%s\n", framedsl_packet_name(definition, p));
+    }
+  } else if (!framedsl_find_packet(definition, packet, &index)) {
+    status = 1;
+  } else {
+    for (size_t f = 0; f < framedsl_field_count(definition, index); ++f) {
+      FramedslField field;
+      if (framedsl_field(definition, index, f, &field) && !field.has_fixed) {
+        printf("%s\n", field.name);
+      }
+    }
+  }
+  framedsl_result_free(result);
+  return status;
+}
+
 /* ---- Hex --------------------------------------------------------------------------------------
  *
  * The hex somebody has was copied out of something that chose its own separators -- a log line, a
@@ -783,6 +816,8 @@ typedef enum {
   OPTION_FORMAT,
   OPTION_STDIN_NAME,
   OPTION_LSP,
+  OPTION_LIST_PACKETS,
+  OPTION_LIST_FIELDS,
   OPTION_HELP,
   OPTION_VERSION,
 } OptionId;
@@ -799,18 +834,20 @@ typedef struct {
  * prints this, so a flag cannot be accepted without also being documented -- and a script (the Bash
  * completion, a test) can read the flags back out of --help and trust the list is whole. */
 static const Option OPTIONS[] = {
-  { OPTION_DECODE,     "-d", "--decode",     "<hex>",    "decode bytes into packets and their fields"         },
-  { OPTION_ENCODE,     "-e", "--encode",     "<packet>", "encode a packet from field=value, print it as hex"  },
-  { OPTION_REPORT,     "-r", "--report",     NULL,       "with -e: also print the frame decoded back"         },
-  { OPTION_QUIET,      "-q", "--quiet",      NULL,       "with -e: say nothing of fields left out as zero"    },
-  { OPTION_EMIT_C,     NULL, "--emit-c",     NULL,       "write the calibrations to stdout as C"              },
-  { OPTION_CHECK,      NULL, "--check",      NULL,       "only report problems; with --format, write nothing" },
-  { OPTION_WERROR,     NULL, "--werror",     NULL,       "with --check: fail on a warning too"                },
-  { OPTION_FORMAT,     NULL, "--format",     NULL,       "rewrite files in place, in the standard layout"     },
-  { OPTION_STDIN_NAME, NULL, "--stdin-name", "<path>",   "the file '-' stands for, for messages and imports"  },
-  { OPTION_LSP,        NULL, "--lsp",        NULL,       "be a language server on stdin and stdout"           },
-  { OPTION_HELP,       "-h", "--help",       NULL,       "print this help and exit"                           },
-  { OPTION_VERSION,    NULL, "--version",    NULL,       "print the version and exit"                         },
+  { OPTION_DECODE,       "-d", "--decode",       "<hex>",    "decode bytes into packets and their fields"         },
+  { OPTION_ENCODE,       "-e", "--encode",       "<packet>", "encode a packet from field=value, print it as hex"  },
+  { OPTION_REPORT,       "-r", "--report",       NULL,       "with -e: also print the frame decoded back"         },
+  { OPTION_QUIET,        "-q", "--quiet",        NULL,       "with -e: say nothing of fields left out as zero"    },
+  { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,       "write the calibrations to stdout as C"              },
+  { OPTION_CHECK,        NULL, "--check",        NULL,       "only report problems; with --format, write nothing" },
+  { OPTION_WERROR,       NULL, "--werror",       NULL,       "with --check: fail on a warning too"                },
+  { OPTION_FORMAT,       NULL, "--format",       NULL,       "rewrite files in place, in the standard layout"     },
+  { OPTION_STDIN_NAME,   NULL, "--stdin-name",   "<path>",   "the file '-' stands for, for messages and imports"  },
+  { OPTION_LSP,          NULL, "--lsp",          NULL,       "be a language server on stdin and stdout"           },
+  { OPTION_LIST_PACKETS, NULL, "--list-packets", NULL,       "print the packet names, one per line"               },
+  { OPTION_LIST_FIELDS,  NULL, "--list-fields",  "<packet>", "print the fields -e <packet> takes, one per line"   },
+  { OPTION_HELP,         "-h", "--help",         NULL,       "print this help and exit"                           },
+  { OPTION_VERSION,      NULL, "--version",      NULL,       "print the version and exit"                         },
 };
 
 #define OPTION_COUNT (sizeof(OPTIONS) / sizeof(*OPTIONS))
@@ -837,6 +874,8 @@ static void help(void) {
     "  frame-dsl <file.fdsl> -d <hex>                       decode bytes\n"
     "  frame-dsl <file.fdsl> -e <packet> [field=value ...]  encode a packet [-r] [-q]\n"
     "  frame-dsl <file.fdsl> --emit-c                       write the calibrations out as C\n"
+    "  frame-dsl <file.fdsl> --list-packets                 print the packet names, one per line\n"
+    "  frame-dsl <file.fdsl> --list-fields <packet>         print the fields -e <packet> takes\n"
     "  frame-dsl <file.fdsl>... --check [--werror]          report problems as path:line:col: message\n"
     "  frame-dsl <file.fdsl>... --format [--check]          rewrite in the standard layout, or only\n"
     "                                                       list the files that would change\n"
@@ -859,7 +898,7 @@ static void help(void) {
       option->argument != NULL ? " " : "",
       option->argument != NULL ? option->argument : ""
     );
-    printf("  %-24s  %s\n", flags, option->help);
+    printf("  %-26s  %s\n", flags, option->help);
   }
 
   fputs(
@@ -908,6 +947,8 @@ int main(int argc, char **argv) {
   bool show = false;
   bool quiet = false;
   bool emit = false;
+  bool list_packets = false;
+  const char *list_fields = NULL;
 
   /* Before anything else, and wherever they appear: somebody adding --help to the end of a command
    * that went wrong wants the help, not a complaint about the rest of the command. */
@@ -1002,6 +1043,12 @@ int main(int argc, char **argv) {
     case OPTION_LSP:
       lsp = true;
       break;
+    case OPTION_LIST_PACKETS:
+      list_packets = true;
+      break;
+    case OPTION_LIST_FIELDS:
+      list_fields = value;
+      break;
     case OPTION_HELP:
     case OPTION_VERSION:
       /* Answered before this loop. */
@@ -1017,7 +1064,12 @@ int main(int argc, char **argv) {
 
   /* Each of these is a guess the tool would otherwise have to make about which one was meant. */
   const char *conflict = NULL;
-  if (lsp && (path_count > 0 || check || format || emit || hex != NULL || packet != NULL || werror)) {
+  const bool listing = list_packets || list_fields != NULL;
+  if (listing && (lsp || check || format || emit || hex != NULL || packet != NULL || werror || show || quiet)) {
+    conflict = "--list-packets and --list-fields only print names; they do nothing else";
+  } else if (list_packets && list_fields != NULL) {
+    conflict = "--list-packets and --list-fields are two different questions; ask one at a time";
+  } else if (lsp && (path_count > 0 || check || format || emit || hex != NULL || packet != NULL || werror)) {
     conflict = "--lsp talks to an editor on stdin and stdout, and takes nothing else";
   } else if (hex != NULL && packet != NULL) {
     conflict = "-d and -e are two different questions; ask one at a time";
@@ -1061,6 +1113,13 @@ int main(int argc, char **argv) {
     free(assignments);
     free(paths);
     return usage_error(argv[0], "no definition file; usage: frame-dsl <file.fdsl> [options], or frame-dsl --lsp");
+  }
+
+  if (listing) {
+    int status = list_names(path, stdin_name, list_fields);
+    free(assignments);
+    free(paths);
+    return status;
   }
 
   if (format) {
