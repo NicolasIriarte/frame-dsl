@@ -297,23 +297,26 @@ That script is the only thing here that talks to the network, and the only thing
 -- CLibs is private. `bytewise --conf-repo .` links one in; `bytewise --status .` shows what is
 configured.
 
-| Target                  |                                                        |
-|-------------------------|--------------------------------------------------------|
-| `make`                  | build `build/frame-dsl`                                |
-| `make example`          | build `build/uart_device`, the worked example           |
-| `make lib`              | build `build/libframedsl.a` and `build/libframedsl.so` to compile your own against |
-| `make python`           | copy the shared library into `python/framedsl/`, for `pip install ./python` |
-| `make deps`             | unpack the vendored CLibs libraries into `build/deps/` |
-| `make test`             | run both levels of tests                               |
-| `make test-unit`        | unit tests only                                        |
-| `make test-system`      | system tests only                                      |
-| `make test-editors`     | the Emacs, Vim and Neovim tests; each skipped when that editor is absent |
-| `make test-python`      | the Python bindings' tests; skipped without `python3`  |
-| `make vsix`             | build `build/frame-dsl-<version>.vsix`, the VS Code extension |
-| `make format`           | reformat every first-party C source in place           |
-| `make format-check`     | check the formatting without changing anything         |
-| `make compile-commands` | regenerate `compile_commands.json` alone               |
-| `make clean`            | remove `build/` and `compile_commands.json`            |
+| Target                  |                                                                                                                   |
+|-------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `make`                  | build `build/frame-dsl`                                                                                           |
+| `make example`          | build `build/uart_device`, the worked example                                                                     |
+| `make lib`              | build `build/libframedsl.a` and `build/libframedsl.so` to compile your own against                                |
+| `make python`           | copy the shared library into `python/framedsl/`, for `pip install ./python`                                       |
+| `make deps`             | unpack the vendored CLibs libraries into `build/deps/`                                                            |
+| `make test`             | run both levels of tests                                                                                          |
+| `make test-unit`        | unit tests only                                                                                                   |
+| `make test-system`      | system tests only                                                                                                 |
+| `make test-editors`     | the Emacs, Vim and Neovim tests; each skipped when that editor is absent                                          |
+| `make bench`            | time a dozen operations once each, in seconds                                                                     |
+| `make baseline`         | the performance baseline over generated definitions, ~7.5 min -- see [`docs/performance.md`](docs/performance.md) |
+| `make baseline-quick`   | the same, reduced to seconds                                                                                      |
+| `make test-python`      | the Python bindings' tests; skipped without `python3`                                                             |
+| `make vsix`             | build `build/frame-dsl-<version>.vsix`, the VS Code extension                                                     |
+| `make format`           | reformat every first-party C source in place                                                                      |
+| `make format-check`     | check the formatting without changing anything                                                                    |
+| `make compile-commands` | regenerate `compile_commands.json` alone                                                                          |
+| `make clean`            | remove `build/` and `compile_commands.json`                                                                       |
 
 ## Layout
 

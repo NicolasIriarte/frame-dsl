@@ -13,6 +13,9 @@
 #   make format-check check formatting without changing anything (what CI runs)
 #                     both take CLANG_FORMAT=<binary> when the default one is too old
 #   make compile-commands  regenerate compile_commands.json alone
+#   make bench        time a dozen operations once each, in seconds
+#   make baseline     the performance baseline (#102): minutes, by hand; see docs/performance.md
+#   make baseline-quick    the same sweep reduced to a few points, in seconds
 #   make clean        remove build output
 #
 # Tests come at two levels. Unit tests reach into a module directly and are compiled with src/ on
@@ -73,6 +76,7 @@ SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 # without a test failing first -- it is an example, and the test is only there to keep it true.
 EXAMPLE_UART_DEVICE := $(BUILD)/uart_device
 BENCH := $(BUILD)/bench
+BASELINE := $(BUILD)/baseline
 
 # Fuzzing (#59). The targets are fuzz/fuzz_*.c. `make fuzz` runs them under libFuzzer, which needs
 # clang; the replay binaries run every saved input through the same targets with the ordinary compiler,
@@ -170,9 +174,36 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	-D_POSIX_C_SOURCE=200809L -DFRAMEDSL_BIN=\"$(TARGET)\" -DEXAMPLES_DIR=\"examples\" \
 	-DCORPUS_DIR=\"test/corpus\" -DUART_DEVICE_BIN=\"$(EXAMPLE_UART_DEVICE)\"
 
-.PHONY: all deps install uninstall test test-unit test-system test-editors compile-commands format format-check \
-	format-tool hooks clean bench fuzz test-fuzz-replay vsix test-changelog changelog changelog-preview \
-	conflicts test-completion lib python test-python FORCE
+.PHONY: \
+	all \
+	baseline \
+	baseline-quick \
+	bench \
+	changelog \
+	changelog-preview \
+	clean \
+	compile-commands \
+	conflicts \
+	deps \
+	format \
+	format-check \
+	format-tool \
+	fuzz \
+	hooks \
+	install \
+	lib \
+	python \
+	test \
+	test-changelog \
+	test-completion \
+	test-editors \
+	test-fuzz-replay \
+	test-python \
+	test-system \
+	test-unit \
+	uninstall \
+	vsix \
+	FORCE
 
 # Where the editor support lives, and the invocations that test it. -Q / -u NONE -N so that whatever
 # the person running this has in their own configuration cannot make an editor look like it works.
@@ -258,6 +289,22 @@ uninstall:
 BENCH_SECONDS ?= 0.25
 bench: $(BENCH)
 	$(BENCH) $(BENCH_SECONDS)
+
+# The performance baseline (#102). Not part of `test`, and not run in CI, for the same reason as bench;
+# CI builds it so that it keeps compiling. The results are named for the date and the commit, and go to
+# build/performance/ -- copy a run worth keeping into docs/performance/ and commit it there.
+# BASELINE_ARGS passes anything else through: --cpu, --samples, --only, ... (build/baseline --help).
+BASELINE_DIR := $(BUILD)/performance
+# Recursive (=), not :=, because VERSION_STRING is defined further down.
+BASELINE_NAME = $(shell date +%Y-%m-%d)-$(VERSION_STRING)
+BASELINE_ARGS ?=
+baseline: $(BASELINE)
+	@mkdir -p $(BASELINE_DIR)
+	$(BASELINE) --commit $(VERSION_STRING) --out $(BASELINE_DIR)/$(BASELINE_NAME).csv $(BASELINE_ARGS)
+
+baseline-quick: $(BASELINE)
+	@mkdir -p $(BASELINE_DIR)
+	$(BASELINE) --quick --commit $(VERSION_STRING) --out $(BASELINE_DIR)/$(BASELINE_NAME)-quick.csv $(BASELINE_ARGS)
 
 # Each target for FUZZ_SECONDS, starting from a working copy of its seed corpus -- libFuzzer adds to the
 # corpus it is given, and what it finds interesting belongs in build/, not in the repository. A crash
@@ -373,6 +420,14 @@ $(EXAMPLE_UART_DEVICE): examples/uart_device.c $(LIB_ARCHIVE)
 $(BENCH): bench/bench.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -Iinclude bench/bench.c -L$(BUILD) -l:libframedsl.a -o $@
+
+# Built like the benchmark, against the archive by name (`-l:`) so that no shared library sitting beside
+# it in build/ can be linked instead. The compiler and flags are compiled in, so the results say what
+# built them.
+$(BASELINE): bench/baseline.c $(LIB_ARCHIVE)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Iinclude '-DBASELINE_CC="$(CC)"' '-DBASELINE_CFLAGS="$(CFLAGS)"' bench/baseline.c \
+	  -L$(BUILD) -l:libframedsl.a -o $@
 
 # The library is compiled into each fuzz binary from source rather than linked from the archive: the
 # sanitizers and libFuzzer's coverage instrumentation have to reach inside it to see anything.

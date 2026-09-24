@@ -63,9 +63,10 @@ jobs:
         run: make test
 
       # Built, not run: a timing on a shared runner means nothing, but a benchmark that no longer
-      # compiles would only be noticed the next time somebody wanted a number.
-      - name: Build the benchmark
-        run: make build/bench
+      # compiles would only be noticed the next time somebody wanted a number. The same goes for the
+      # performance baseline (#102), which is run by hand.
+      - name: Build the benchmarks
+        run: make build/bench build/baseline
 
       # The VS Code extension, packaged the same way a release does. Needs no npm: the vendored
       # client (editors/vscode/vendor/vscode-languageclient.js) is committed, like the CLibs
