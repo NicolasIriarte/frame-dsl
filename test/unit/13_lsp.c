@@ -561,6 +561,57 @@ static int us13_tc12_a_non_ascii_line_is_measured_the_editors_way(const TestArgu
   return failure;
 }
 
+/* #72 through the protocol: announced, and each request answered in the shape an editor reads. The
+ * answers themselves are story 15's. */
+static int us13_tc13_hover_definition_and_completion_are_answered(const TestArguments *args) {
+  (void)args;
+  const char *const messages[] = {
+    INITIALIZE,
+    DID_OPEN("block H {\\n  id: 8;\\n};\\npkt TM {\\n  h:   H { id = 1; };\\n  len: 8;\\n  [ @\\n"),
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"position\":{\"line\":4,\"character\":2}}}",
+    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"position\":{\"line\":4,\"character\":7}}}",
+    "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"textDocument/completion\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"position\":{\"line\":6,\"character\":5}}}",
+    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"position\":{\"line\":0,\"character\":8}}}",
+    EXIT,
+  };
+  Session session;
+  if (!run(&session, messages, 7)) {
+    return __LINE__;
+  }
+
+  int failure = 0;
+  const Json *capabilities = json_get(json_get(response_to(&session, 1), "result"), "capabilities");
+  const Json *hover = json_get(response_to(&session, 2), "result");
+  const Json *definition = json_get(response_to(&session, 3), "result");
+  const Json *completion = json_get(response_to(&session, 4), "result");
+  const Json *nothing = response_to(&session, 5);
+  const char *markdown = json_string(json_get(json_get(hover, "contents"), "value"));
+  const char *uri = json_string(json_get(definition, "uri"));
+
+  if (json_get(capabilities, "hoverProvider") == NULL || json_get(capabilities, "definitionProvider") == NULL
+      || json_get(json_get(capabilities, "completionProvider"), "triggerCharacters") == NULL) {
+    failure = __LINE__;
+  } else if (markdown == NULL || strstr(markdown, "instance of block `H`") == NULL
+             || strcmp(json_string(json_get(json_get(hover, "contents"), "kind")), "markdown") != 0) {
+    failure = __LINE__;
+  } else if (uri == NULL || strcmp(uri, "file:///tmp/t.fdsl") != 0
+             || integer_at(json_get(json_get(definition, "range"), "start"), "line") != 0
+             || integer_at(json_get(json_get(definition, "range"), "start"), "character") != 6) {
+    failure = __LINE__; /* `H` in the use, onto `block H` */
+  } else if (completion == NULL || completion->kind != JSON_ARRAY || completion->count != 3
+             || integer_at(completion->items[0], "kind") != 10) {
+    failure = __LINE__; /* the three attribute names, as properties */
+  } else if (nothing == NULL || json_get(nothing, "result") == NULL || json_get(nothing, "result")->kind != JSON_NULL) {
+    failure = __LINE__; /* a question about `{` is answered with null, not an error */
+  }
+  session_free(&session);
+  return failure;
+}
+
 void register_user_story13(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us13_tc01_initialize_says_what_it_can_do, "initialize announces what the server does", false);
@@ -576,5 +627,8 @@ void register_user_story13(void) {
   ADD_TEST_CASE(us13_tc11_every_state_of_typing_is_survivable, "every state of typing a file is survivable", false);
   ADD_TEST_CASE(
     us13_tc12_a_non_ascii_line_is_measured_the_editors_way, "a non-ASCII line is measured both ways", false
+  );
+  ADD_TEST_CASE(
+    us13_tc13_hover_definition_and_completion_are_answered, "hover, definition and completion are answered", false
   );
 }

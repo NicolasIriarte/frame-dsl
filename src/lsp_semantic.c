@@ -12,7 +12,7 @@ const char *const SEMANTIC_TYPE_NAMES[SEM_TYPE_COUNT] = {
 };
 
 /* Every token, comments included, gathered first so a name can be classified by what follows it. */
-static Token *lex_all(const char *source, size_t *count) {
+Token *lsp_lex_all(const char *source, size_t *count) {
   size_t capacity = 256;
   Token *tokens = malloc(capacity * sizeof(*tokens));
   if (tokens == NULL) {
@@ -80,7 +80,7 @@ typedef enum {
 SemanticToken *semantic_tokens(const char *source, size_t *count) {
   *count = 0;
   size_t token_count = 0;
-  Token *tokens = lex_all(source, &token_count);
+  Token *tokens = lsp_lex_all(source, &token_count);
   if (tokens == NULL || token_count == 0) {
     free(tokens);
     return NULL;

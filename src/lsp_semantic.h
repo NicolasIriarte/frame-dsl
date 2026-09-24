@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "lexer.h"
+
 /** @brief In the order of the legend the server announces; the protocol refers to them by index. */
 typedef enum {
   SEM_KEYWORD,
@@ -51,3 +53,10 @@ typedef struct {
  * @return Allocated; NULL with `count` 0 if there were none or an allocation failed.
  */
 SemanticToken *semantic_tokens(const char *source, size_t *count);
+
+/**
+ * @brief Every token of `source`, comments included, each with its exact spelling; what cannot be a
+ * token is stepped over. The same scan semantic_tokens() classifies, for the navigation to read.
+ * @return NULL when memory runs out, or when there are no tokens at all. Free with free().
+ */
+Token *lsp_lex_all(const char *source, size_t *count);

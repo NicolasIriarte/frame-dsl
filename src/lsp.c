@@ -18,6 +18,7 @@
 #include "framedsl.h"
 #include "json.h"
 #include "lexer.h"
+#include "lsp_navigate.h"
 #include "lsp_semantic.h"
 #include "lsp_text.h"
 
@@ -506,6 +507,23 @@ static void handle_initialize(Server *server, const Json *id, const Json *params
   json_key(&writer, "documentFormattingProvider");
   json_write_bool(&writer, true);
 
+  json_key(&writer, "hoverProvider");
+  json_write_bool(&writer, true);
+  json_key(&writer, "definitionProvider");
+  json_write_bool(&writer, true);
+  json_key(&writer, "completionProvider");
+  json_object_begin(&writer);
+  /* Where a completion is worth offering before a letter is typed: an attribute's name, its value, a
+   * valof() target, and what an `as` import brings. */
+  json_key(&writer, "triggerCharacters");
+  json_array_begin(&writer);
+  json_write_cstring(&writer, "@");
+  json_write_cstring(&writer, ":");
+  json_write_cstring(&writer, "(");
+  json_write_cstring(&writer, ".");
+  json_array_end(&writer);
+  json_object_end(&writer);
+
   json_key(&writer, "semanticTokensProvider");
   json_object_begin(&writer);
   json_key(&writer, "legend");
@@ -625,8 +643,6 @@ static void handle_semantic_tokens(Server *server, const Json *id, const Json *p
   json_writer_free(&writer);
 }
 
-/* ---- Notifications --------------------------------------------------------------------------------- */
-
 static char *copy_string(const Json *value) {
   const char *text = json_string(value);
   if (text == NULL) {
@@ -638,6 +654,183 @@ static char *copy_string(const Json *value) {
   }
   return copy;
 }
+
+/* ---- Navigation ---------------------------------------------------------------------------------
+ *
+ * Each question opens the document afresh with nav_open(): a definition file is a few dozen lines, and
+ * keeping a parsed copy in step with every edit would be bookkeeping with nothing to buy -- the same
+ * reasoning as full-text sync. */
+
+/* The document a request names, and the compiler's line and byte column for its position. */
+static Document *position_of(Server *server, const Json *params, int *line, int *column) {
+  const char *uri = json_string(json_get(json_get(params, "textDocument"), "uri"));
+  Document *document = uri != NULL ? find_document(server, uri) : NULL;
+  if (document == NULL) {
+    return NULL;
+  }
+  int64_t protocol_line = 0;
+  int64_t character = 0;
+  const Json *position = json_get(params, "position");
+  if (!json_integer(json_get(position, "line"), &protocol_line)
+      || !json_integer(json_get(position, "character"), &character) || protocol_line < 0 || character < 0) {
+    return NULL;
+  }
+
+  LspText text;
+  if (!lsp_text_init(&text, document->text, strlen(document->text), server->utf16)) {
+    return NULL;
+  }
+  size_t offset = lsp_text_offset(&text, (size_t)protocol_line, (size_t)character);
+  size_t index = text.line_count - 1;
+  while (index > 0 && text.starts[index] > offset) {
+    index -= 1;
+  }
+  *line = (int)index + 1;
+  *column = (int)(offset - text.starts[index]) + 1;
+  lsp_text_free(&text);
+  return document;
+}
+
+static void handle_hover(Server *server, const Json *id, const Json *params) {
+  int line = 0;
+  int column = 0;
+  Document *document = position_of(server, params, &line, &column);
+  Navigator *navigator = document != NULL ? nav_open(document->text, document->path) : NULL;
+  NavLocation range;
+  char *markdown = navigator != NULL ? nav_hover(navigator, line, column, &range) : NULL;
+
+  JsonWriter writer;
+  begin_response(&writer, id);
+  LspText text;
+  if (markdown != NULL && lsp_text_init(&text, document->text, strlen(document->text), server->utf16)) {
+    json_object_begin(&writer);
+    json_key(&writer, "contents");
+    json_object_begin(&writer);
+    json_key(&writer, "kind");
+    json_write_cstring(&writer, "markdown");
+    json_key(&writer, "value");
+    json_write_cstring(&writer, markdown);
+    json_object_end(&writer);
+    json_key(&writer, "range");
+    write_range(&writer, &text, range.line, range.column, range.end_line, range.end_column);
+    json_object_end(&writer);
+    lsp_text_free(&text);
+  } else {
+    json_write_null(&writer);
+  }
+  json_object_end(&writer);
+  write_message(server, &writer);
+  json_writer_free(&writer);
+  free(markdown);
+  nav_close(navigator);
+}
+
+/* A whole file, for positions in one the editor may not have open. NULL if it cannot be read. */
+static char *slurp(const char *path) {
+  FILE *handle = fopen(path, "rb");
+  if (handle == NULL) {
+    return NULL;
+  }
+  size_t capacity = 4096;
+  size_t used = 0;
+  char *data = malloc(capacity);
+  while (data != NULL) {
+    used += fread(data + used, 1, capacity - used - 1, handle);
+    if (used + 1 < capacity) {
+      break;
+    }
+    capacity *= 2;
+    char *grown = realloc(data, capacity);
+    if (grown == NULL) {
+      free(data);
+      data = NULL;
+    }
+    data = grown;
+  }
+  fclose(handle);
+  if (data != NULL) {
+    data[used] = '\0';
+  }
+  return data;
+}
+
+static void handle_definition(Server *server, const Json *id, const Json *params) {
+  int line = 0;
+  int column = 0;
+  Document *document = position_of(server, params, &line, &column);
+  Navigator *navigator = document != NULL ? nav_open(document->text, document->path) : NULL;
+  NavLocation where = { 0 };
+  bool found = navigator != NULL && nav_definition(navigator, line, column, &where);
+
+  /* Positions are converted with the text they are in: an imported file's own, read from disk. */
+  char *other = found && where.file != NULL ? slurp(where.file) : NULL;
+  const char *in = where.file != NULL ? other : document != NULL ? document->text : NULL;
+  char *uri = !found               ? NULL
+              : where.file != NULL ? uri_of_path(where.file)
+                                   : copy_string(json_get(json_get(params, "textDocument"), "uri"));
+
+  JsonWriter writer;
+  begin_response(&writer, id);
+  LspText text;
+  if (found && in != NULL && uri != NULL && lsp_text_init(&text, in, strlen(in), server->utf16)) {
+    json_object_begin(&writer);
+    json_key(&writer, "uri");
+    json_write_cstring(&writer, uri);
+    json_key(&writer, "range");
+    write_range(&writer, &text, where.line, where.column, where.end_line, where.end_column);
+    json_object_end(&writer);
+    lsp_text_free(&text);
+  } else {
+    json_write_null(&writer);
+  }
+  json_object_end(&writer);
+  write_message(server, &writer);
+  json_writer_free(&writer);
+  free(uri);
+  free(other);
+  free(where.file);
+  nav_close(navigator);
+}
+
+static void handle_completion(Server *server, const Json *id, const Json *params) {
+  int line = 0;
+  int column = 0;
+  Document *document = position_of(server, params, &line, &column);
+  Navigator *navigator = document != NULL ? nav_open(document->text, document->path) : NULL;
+  size_t count = 0;
+  NavCompletion *items = navigator != NULL ? nav_complete(navigator, line, column, &count) : NULL;
+
+  /* CompletionItemKind, as the protocol numbers them. */
+  static const int KINDS[] = {
+    [NAV_KEYWORD] = 14,   [NAV_BLOCK] = 22, [NAV_CAL] = 3,       [NAV_FIELD] = 5,
+    [NAV_ATTRIBUTE] = 10, [NAV_VALUE] = 20, [NAV_NAMESPACE] = 9,
+  };
+
+  JsonWriter writer;
+  begin_response(&writer, id);
+  json_array_begin(&writer);
+  for (size_t i = 0; i < count; ++i) {
+    json_object_begin(&writer);
+    json_key(&writer, "label");
+    json_write_cstring(&writer, items[i].label);
+    json_key(&writer, "kind");
+    json_write_integer(&writer, KINDS[items[i].kind]);
+    if (items[i].detail != NULL) {
+      json_key(&writer, "detail");
+      json_write_cstring(&writer, items[i].detail);
+    }
+    json_object_end(&writer);
+  }
+  json_array_end(&writer);
+  json_object_end(&writer);
+  write_message(server, &writer);
+  json_writer_free(&writer);
+  nav_completions_free(items, count);
+  nav_close(navigator);
+}
+
+/* ---- Notifications --------------------------------------------------------------------------------- */
+
 
 static void handle_did_open(Server *server, const Json *params) {
   const Json *item = json_get(params, "textDocument");
@@ -784,6 +977,18 @@ static bool handle(Server *server, const Json *message, int *exit_code) {
   }
   if (strcmp(method, "textDocument/formatting") == 0) {
     handle_formatting(server, id, params);
+    return true;
+  }
+  if (strcmp(method, "textDocument/hover") == 0) {
+    handle_hover(server, id, params);
+    return true;
+  }
+  if (strcmp(method, "textDocument/definition") == 0) {
+    handle_definition(server, id, params);
+    return true;
+  }
+  if (strcmp(method, "textDocument/completion") == 0) {
+    handle_completion(server, id, params);
     return true;
   }
   if (strcmp(method, "textDocument/semanticTokens/full") == 0) {
