@@ -1,0 +1,14 @@
+# REJECTED: check 33 -- a repetition takes no overrides.
+#
+# An override fixes one field of one instance, and `points` is two instances. A value every element
+# should carry belongs in the block, where it is fixed for all of them.
+
+block Point {
+  kind:  8;
+  value: 16;
+};
+
+pkt TM_POINTS {
+  id:     8 = 0x41;
+  points: Point[2] { kind = 1; };
+};

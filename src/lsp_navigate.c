@@ -532,6 +532,47 @@ static void describe_field(
   );
 }
 
+/* `samples: Sample[valof(count)]` (#55): how many elements, of how many bits, and how to reach one. */
+static void describe_repetition(
+  Buffer *buffer,
+  const Navigator *navigator,
+  const AstPacket *container,
+  bool is_block,
+  const AstField *use,
+  const char *expanded
+) {
+  put(
+    buffer,
+    "**%s** -- repetition of block `%s` in %s `%s`\n\n",
+    expanded,
+    use->block,
+    is_block ? "block" : "pkt",
+    container->name
+  );
+  FramedslField field;
+  if (!is_block && laid_out(navigator, container->name, expanded, &field) && field.element_bits > 0) {
+    if (field.variable) {
+      put(
+        buffer,
+        "- up to %llu elements of %llu bits, counted by a field\n",
+        (unsigned long long)(field.max_bits / field.element_bits),
+        (unsigned long long)field.element_bits
+      );
+    } else {
+      put(
+        buffer,
+        "- %llu elements of %llu bits\n",
+        (unsigned long long)(field.width_bits / field.element_bits),
+        (unsigned long long)field.element_bits
+      );
+    }
+    if (field.offset_known) {
+      put(buffer, "- offset: bit %llu\n", (unsigned long long)field.offset_bits);
+    }
+  }
+  put(buffer, "\nAn element's field is `%s[i].<field>`.\n", expanded);
+}
+
 /* Every field an instance expanded to, `hdr.*`, taken together. */
 static void describe_instance(
   Buffer *buffer,
@@ -541,6 +582,10 @@ static void describe_instance(
   const AstField *use,
   const char *expanded
 ) {
+  if (use->repeat != NULL) {
+    describe_repetition(buffer, navigator, container, is_block, use, expanded);
+    return;
+  }
   put(
     buffer,
     "**%s** -- instance of block `%s` in %s `%s`\n\n",

@@ -255,6 +255,19 @@ alternative is finding out on a live link.
     declaration reached twice -- two libraries importing a third -- is not a clash. A local
     declaration of an imported name is check 1 or 17, reported where it is written.
 
+**Repetition**
+
+32. A repeated block (`name: Block[count];`) must be the same size every time -- none of its widths
+    may depend on another field -- and a whole number of bytes. The first is what puts element *i* at
+    *i* times the element's size; the second is what keeps a packet whole bytes however many elements
+    a frame carries, the half of check 13 a count cannot otherwise promise.
+33. A repetition takes no overrides. An override fixes one field of one instance, and a repetition is
+    many; a value every element carries is fixed in the block.
+
+A repetition counted by a field is a field whose width has a `valof()` in it, so checks 5, 6 and 7
+apply to its count and its reservation exactly as they do to any such field, and check 14 forbids a
+reservation on a constant one.
+
 **Shape**
 
 29. A packet has at most 4096 fields, block and composition expansion included. Found by fuzzing
@@ -458,6 +471,37 @@ inside it can use it. Each block is also expanded on its own before any packet i
 a block is reported once, at the block, and a block no packet uses yet is still held to checks 23 to
 25. Expansion is bounded (`COMPOSE_FIELD_MAX`) so that blocks nested two-by-two cannot make loading
 explode.
+
+## Repetition
+
+`name: Block[count];` (#55) lays a named block out `count` times in a row, the count a constant or a
+`valof()` of a field above.
+
+**One field, not many.** `compose_file()` turns a repetition into a single field whose width is
+`count * element_bits` -- with the reservation written on it, when the count is a field's -- and
+marks it with the block it repeats. So the checks, the layout pass, the bytecode, the encoder and the
+decoder see a bit string like any other: a counted repetition is a `valof()`-sized field, bounded by
+its reservation and refused past it, and a constant one is a fixed-width field. Nothing in the walk
+learned anything new. The element is laid out once, apart from the packets, as an `ElementProgram`:
+each of its fields' offset inside an element, width, orders, fixed value and curve.
+
+**Elements are views.** A repetition's slot holds its elements exactly as they are on the wire, one
+after another. A member of element *i* is `i * element_bits + offset` into it, and the accessors read
+and write it there, in its own bit and byte order -- so there is no second copy of anything to keep in
+step, and a decoded frame's elements are readable the moment the bytes are copied in. That is why a
+repeated block must be one size and whole bytes (check 32): it is what makes the offset arithmetic.
+
+**Two ways to one element.** `framedsl_find()` takes `PKT.samples[3].value`, which is what a person
+writes, and `PKT.samples.value`, an id with no element chosen, which `framedsl_element()` turns into
+element *i* without formatting a name per iteration. `FramedslFieldId` grew an `element` and a
+`member` for it; a whole-field id has member 0. `framedsl_count()` answers how many elements a frame
+holds by running the count's width program on the frame's current values -- the arithmetic encode
+itself will do.
+
+**What encode adds.** The run of elements is copied from the slot like any bit string, except that its
+length is not compared against the count: elements are set one member at a time, so there is no length
+to disagree, and an element nobody set is zeros like any unset field. Then every element's fixed values
+are written over it from the definition, as a fixed field's always are.
 
 ## Imports
 

@@ -31,8 +31,8 @@ When a frame changes, the definition file changes. The program does not get rebu
 > **Status: early, and now end to end.** A definition file loads and is checked; a program sets
 > fields by name, encodes a frame, and decodes one back without being told which packet arrived. That
 > is the first milestone in [`docs/scope.md`](docs/scope.md). Signed and floating-point fields, enums,
-> conditionals, repetition, composition, CRC and calibration curves are all still absent, each with
-> its own issue. Nothing here is stable, and nothing is published.
+> conditionals and CRC are still absent, each with its own issue. Nothing here is stable, and nothing
+> is published.
 
 ## The two ways this gets used
 

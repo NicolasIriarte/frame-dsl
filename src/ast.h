@@ -145,6 +145,23 @@ typedef struct {
    */
   bool anonymous;
 
+  /**
+   * @brief For a repeated use, `name: Block[count];`, the count as written: a constant, or an
+   * expression with a valof() in it. NULL for an ordinary use. Only ever set between parse() and
+   * compose_file(), like `block`.
+   */
+  Expr *repeat;
+  int repeat_line;
+  int repeat_column;
+
+  /**
+   * @brief What composition leaves in a repetition's place: one field whose width is the count times
+   * `element_bits`, laid out as a bit string, whose elements are `element`'s fields. NULL for every
+   * other field. `element` is the block, already expanded into ordinary fields.
+   */
+  const struct AstPacket *element;
+  uint64_t element_bits;
+
   Expr *width;
 
   /**
@@ -188,7 +205,7 @@ typedef struct {
   int cal_value_column;
 } AstField;
 
-typedef struct {
+typedef struct AstPacket {
   const char *name;
   int line;
   int column;

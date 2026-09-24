@@ -192,6 +192,21 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
       write_scalar(frame->output, offset, width, instruction->fixed, instruction->bit_order, instruction->byte_order);
     } else if (instruction->is_scalar) {
       write_scalar(frame->output, offset, width, slots[f], instruction->bit_order, instruction->byte_order);
+    } else if (instruction->element != NULL) {
+      /* A repetition (#55): as many elements as the count says, straight from the slot. Unlike a bit
+       * string handed over whole, its elements are set one member at a time, so there is no length to
+       * disagree with -- an element nobody set is zeros, as any field nobody set is. Each element's
+       * fixed values come from the definition, as a fixed field's do, whatever the slot holds. */
+      write_bytes(frame->output, offset, frame->arena + slot->offset, (size_t)(width / 8));
+      const ElementProgram *element = instruction->element;
+      for (uint64_t start = 0; start < width; start += element->bits) {
+        for (size_t m = 0; m < element->member_count; ++m) {
+          const MemberInstruction *member = &element->members[m];
+          if (member->has_fixed) {
+            frame_member_put(frame->output, offset + start + member->offset_bits, member, member->fixed);
+          }
+        }
+      }
     } else {
       /* A variable field's width comes from the expression, and the bytes come from the arena. Those
        * two can disagree -- a caller who sets `len` to 12 and then twenty bytes of `data` has

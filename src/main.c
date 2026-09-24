@@ -281,7 +281,37 @@ static void describe(const FramedslDefinition *definition) {
         snprintf(offset, sizeof(offset), "at %llu", (unsigned long long)field.offset_bits);
       }
 
-      if (field.variable) {
+      if (field.element_bits > 0) {
+        /* A repetition (#55): its elements' fields, each at its place inside an element. */
+        if (field.variable) {
+          log_info(
+            "    %-14s %s, repeated, up to %llu elements of %llu bits",
+            field.name,
+            offset,
+            (unsigned long long)(field.max_bits / field.element_bits),
+            (unsigned long long)field.element_bits
+          );
+        } else {
+          log_info(
+            "    %-14s %s, repeated, %llu elements of %llu bits",
+            field.name,
+            offset,
+            (unsigned long long)(field.width_bits / field.element_bits),
+            (unsigned long long)field.element_bits
+          );
+        }
+        for (size_t m = 0; m < field.member_count; ++m) {
+          FramedslField member;
+          if (framedsl_member(definition, p, f, m, &member)) {
+            log_info(
+              "      .%-12s at +%llu, %llu bits",
+              member.name,
+              (unsigned long long)member.offset_bits,
+              (unsigned long long)member.width_bits
+            );
+          }
+        }
+      } else if (field.variable) {
         /* Reported in the unit it was written in, so the line can be compared with the file. */
         log_info(
           "    %-14s %s, variable, reserves %llu bytes", field.name, offset, (unsigned long long)(field.max_bits / 8)
@@ -438,6 +468,51 @@ static void format_bytes(const uint8_t *bytes, size_t length, char *out, size_t 
 /* Prints every field of the packet that was decoded, to `out`: stdout when decoding, where the report
  * is the answer, and stderr when encoding, where the answer is the hex and the report must not end up
  * in whatever it is piped into. */
+/* One field's value, as report_frame() prints it: a number (and its engineering value), or bytes. */
+static void print_value(
+  FILE *out,
+  const char *label,
+  const FramedslFrame *frame,
+  FramedslFieldId id,
+  const FramedslField *field
+) {
+  if (field->is_scalar) {
+    uint64_t value = 0;
+    double eng = 0;
+    if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
+      return;
+    }
+    /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
+     * value is what anybody reading this actually wants to know. */
+    if (field->cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
+      fprintf(
+        out,
+        "    %-14s %llu (%#llx) = %.10g [%s]\n",
+        label,
+        (unsigned long long)value,
+        (unsigned long long)value,
+        eng,
+        field->cal
+      );
+    } else {
+      fprintf(out, "    %-14s %llu (%#llx)\n", label, (unsigned long long)value, (unsigned long long)value);
+    }
+    return;
+  }
+
+  /* A bit string, including every valof()-sized field. The length is what arrived, not what the
+   * field reserved -- which is the whole point of asking the frame rather than the definition.
+   * Nothing is copied: this tool only prints the bytes, and they are already in the frame. */
+  size_t length = 0;
+  char text[128] = "";
+
+  const uint8_t *bytes = framedsl_get_bytes(frame, id, &length, NULL);
+  if (bytes != NULL) {
+    format_bytes(bytes, length, text, sizeof(text));
+    fprintf(out, "    %-14s [%zu byte%s] %s\n", label, length, length == 1 ? "" : "s", text);
+  }
+}
+
 static void report_frame(
   FILE *out,
   const FramedslDefinition *definition,
@@ -459,41 +534,32 @@ static void report_frame(
     if (!framedsl_field(definition, packet, f, &field) || !framedsl_field_id(definition, packet, f, &id)) {
       continue;
     }
-
-    if (field.is_scalar) {
-      uint64_t value = 0;
-      double eng = 0;
-      if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
-        continue;
-      }
-      /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
-       * value is what anybody reading this actually wants to know. */
-      if (field.cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
-        fprintf(
-          out,
-          "    %-14s %llu (%#llx) = %.10g [%s]\n",
-          field.name,
-          (unsigned long long)value,
-          (unsigned long long)value,
-          eng,
-          field.cal
-        );
-      } else {
-        fprintf(out, "    %-14s %llu (%#llx)\n", field.name, (unsigned long long)value, (unsigned long long)value);
-      }
+    if (field.element_bits == 0) {
+      print_value(out, field.name, frame, id, &field);
       continue;
     }
 
-    /* A bit string, including every valof()-sized field. The length is what arrived, not what the
-     * field reserved -- which is the whole point of asking the frame rather than the definition.
-     * Nothing is copied: this tool only prints the bytes, and they are already in the frame. */
-    size_t length = 0;
-    char text[128] = "";
-
-    const uint8_t *bytes = framedsl_get_bytes(frame, id, &length, NULL);
-    if (bytes != NULL) {
-      format_bytes(bytes, length, text, sizeof(text));
-      fprintf(out, "    %-14s [%zu byte%s] %s\n", field.name, length, length == 1 ? "" : "s", text);
+    /* A repetition (#55): each element's fields, by the name -e and framedsl_find() take. */
+    size_t count = 0;
+    if (framedsl_count(frame, id, &count) != FRAMEDSL_OK) {
+      continue;
+    }
+    fprintf(out, "    %-14s %zu element%s\n", field.name, count, count == 1 ? "" : "s");
+    for (size_t e = 0; e < count; ++e) {
+      for (size_t m = 0; m < field.member_count; ++m) {
+        FramedslField member;
+        FramedslFieldId element;
+        char label[256];
+        char dotted[512];
+        if (!framedsl_member(definition, packet, f, m, &member)) {
+          continue;
+        }
+        snprintf(label, sizeof(label), "%s[%zu].%s", field.name, e, member.name);
+        snprintf(dotted, sizeof(dotted), "%s.%s", name, label);
+        if (framedsl_find(definition, dotted, &element)) {
+          print_value(out, label, frame, element, &member);
+        }
+      }
     }
   }
   fprintf(out, "}\n");
@@ -582,6 +648,79 @@ static bool parse_number(const char *text, uint64_t *out) {
 /* One `field=value` onto the frame. Returns an exit status: 0, 1 when the value does not fit the
  * definition, 2 when the argument itself is malformed -- the same line decoding draws between bytes
  * that are wrong and hex that is not hex. */
+/* `samples[2].value=7` (#55): one field of one element of a repetition, found the way framedsl_find()
+ * finds it. A number for a scalar member, hex for a whole-byte bit-string one. */
+static int assign_member(
+  const FramedslDefinition *definition,
+  FramedslFrame *frame,
+  size_t packet,
+  const char *name,
+  const char *text,
+  bool *given
+) {
+  const char *packet_name = framedsl_packet_name(definition, packet);
+  char dotted[256];
+  FramedslFieldId id;
+  snprintf(dotted, sizeof(dotted), "%s.%s", packet_name, name);
+  const char *close = strchr(name, ']');
+  size_t repetition = 0;
+  char base[128];
+  size_t base_length = (size_t)(strchr(name, '[') - name);
+  if (base_length >= sizeof(base) || close == NULL || close[1] != '.') {
+    log_fail("'%s': expected repetition[index].field=value", name);
+    return 2;
+  }
+  memcpy(base, name, base_length);
+  base[base_length] = '\0';
+  if (!framedsl_find(definition, dotted, &id) || !framedsl_find_field(definition, packet, base, &repetition)) {
+    log_fail("%s has no field '%s', or the element is past what '%s' has room for", packet_name, name, base);
+    return 1;
+  }
+
+  FramedslField field;
+  FramedslField member = { 0 };
+  bool found = false;
+  if (framedsl_field(definition, packet, repetition, &field)) {
+    for (size_t m = 0; m < field.member_count && !found; ++m) {
+      found = framedsl_member(definition, packet, repetition, m, &member) && strcmp(member.name, close + 2) == 0;
+    }
+  }
+  if (!found) {
+    log_fail("%s has no field '%s'", packet_name, name);
+    return 1;
+  }
+  if (member.has_fixed) {
+    log_fail("%s.%s is fixed at %#llx by the definition", packet_name, name, (unsigned long long)member.fixed);
+    return 1;
+  }
+  given[repetition] = true;
+
+  if (member.is_scalar) {
+    uint64_t value = 0;
+    if (!parse_number(text, &value)) {
+      log_fail("%s.%s: '%s' is not a number (decimal, or hex with 0x)", packet_name, name, text);
+      return 2;
+    }
+    if (framedsl_set_u64(frame, id, value) != FRAMEDSL_OK) {
+      log_fail(
+        "%s.%s: %s is too wide for its %llu bits", packet_name, name, text, (unsigned long long)member.width_bits
+      );
+      return 1;
+    }
+    return 0;
+  }
+  static uint8_t bytes[MAX_CAPTURE];
+  size_t length = 0;
+  if (!parse_hex(text, bytes, sizeof(bytes), &length, true)
+      || framedsl_set_bytes(frame, id, bytes, length) != FRAMEDSL_OK) {
+    log_fail(
+      "%s.%s is %llu bits of bytes, and takes that much hex", packet_name, name, (unsigned long long)member.width_bits
+    );
+    return 1;
+  }
+  return 0;
+}
+
 static int assign(
   const FramedslDefinition *definition,
   FramedslFrame *frame,
@@ -605,6 +744,9 @@ static int assign(
   size_t index = 0;
   FramedslField field;
   FramedslFieldId id;
+  if (strchr(name, '[') != NULL) {
+    return assign_member(definition, frame, packet, name, text, given);
+  }
   if (!framedsl_find_field(definition, packet, name, &index)) {
     log_fail("%s has no field '%s'", packet_name, name);
     return 1;
@@ -688,6 +830,20 @@ static void explain_length_mismatch(
     FramedslFieldId id;
     if (!framedsl_field(definition, packet, f, &field) || !field.variable
         || !framedsl_field_id(definition, packet, f, &id)) {
+      continue;
+    }
+
+    /* A repetition has no length of its own to disagree with, only a count to be too big. */
+    if (field.element_bits > 0) {
+      size_t count = 0;
+      if (framedsl_count(frame, id, &count) != FRAMEDSL_OK) {
+        log_fail(
+          "%s.%s has room for %llu elements, and the field that counts them says more",
+          packet_name,
+          field.name,
+          (unsigned long long)(field.max_bits / field.element_bits)
+        );
+      }
       continue;
     }
 

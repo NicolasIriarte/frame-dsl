@@ -1,0 +1,42 @@
+# Repetition: a telemetry packet carrying a list of readings, and a fixed pair of calibration points.
+#
+# `name: Block[count];` lays the block out `count` times, one element after another. The count is a
+# constant, or `valof()` of a field above -- in which case the field reserves its room in bytes, as any
+# field sized by another does, and a frame claiming more elements than that is refused. Each element's
+# fields are reached through the repetition: `TM_SAMPLES.samples[2].reading`, or with framedsl_element()
+# in a loop. A repeated block must be the same size every time and a whole number of bytes.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+# A 12-bit ADC over a 3.3 V reference.
+cal volts(raw) = raw * 3.3 / 4095;
+
+block Header {
+  id:       8;
+  sequence: 16;
+};
+
+# One reading: which channel, and its raw count. The marker is fixed, so every element on the wire
+# carries it whatever the caller set.
+block Sample {
+  marker:  4 = 0xA;
+  channel: 4;
+  [
+    @byte_order: little_endian;
+    @cal:        volts;
+  ]
+  reading: 16;
+};
+
+pkt TM_SAMPLES {
+  hdr:         Header { id = 0x30; };
+  count:       8;
+  # At most 16 readings: 16 elements of 3 bytes.
+  samples[48]: Sample[valof(count)];
+};
+
+pkt TM_CALIBRATION {
+  hdr:    Header { id = 0x31; };
+  points: Sample[2];
+};

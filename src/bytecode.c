@@ -156,6 +156,77 @@ static size_t round_up(size_t value, size_t alignment) {
   return remainder == 0 ? value : value + (alignment - remainder);
 }
 
+/* ---- Repeated blocks (#55) ----------------------------------------------------------------------
+ *
+ * A repetition is walked as one bit string; what is inside it only matters to the accessors, and to the
+ * encoder for the fixed values an element carries. So each repeated block is laid out once here, apart
+ * from the packets, and every repetition of it points at the same element. */
+
+static const ElementProgram *element_of(const Program *program, const AstPacket *block) {
+  for (size_t i = 0; i < program->element_count; ++i) {
+    if (program->elements[i].block == block) {
+      return &program->elements[i];
+    }
+  }
+  return NULL;
+}
+
+static bool compile_element(ElementProgram *element, const AstFile *file, const AstPacket *block) {
+  element->block = block;
+  element->member_count = block->field_count;
+  element->members = calloc(block->field_count == 0 ? 1 : block->field_count, sizeof(MemberInstruction));
+  if (element->members == NULL) {
+    return false;
+  }
+  uint64_t offset = 0;
+  for (size_t f = 0; f < block->field_count; ++f) {
+    const AstField *field = &block->fields[f];
+    /* Constant, and checked sound: composition refuses to repeat a block with any other width. */
+    uint64_t width = fold(field->width);
+    element->members[f] = (MemberInstruction){
+      .name = field->name,
+      .offset_bits = offset,
+      .width_bits = width,
+      .is_scalar = width <= FRAMEDSL_SCALAR_MAX_BITS && field->element == NULL,
+      .has_fixed = field->has_fixed,
+      .fixed = field->fixed,
+      .cal = cal_index(file, field->cal),
+      .bit_order = field->bit_order,
+      .byte_order = field->byte_order,
+    };
+    offset += width;
+  }
+  element->bits = offset;
+  return true;
+}
+
+static bool compile_elements(Program *program, const AstFile *file) {
+  size_t capacity = 0;
+  for (size_t p = 0; p < file->packet_count; ++p) {
+    for (size_t f = 0; f < file->packets[p].field_count; ++f) {
+      const AstPacket *block = file->packets[p].fields[f].element;
+      if (block == NULL || element_of(program, block) != NULL) {
+        continue;
+      }
+      if (program->element_count == capacity) {
+        capacity = capacity == 0 ? 4 : capacity * 2;
+        ElementProgram *grown = realloc(program->elements, capacity * sizeof(*grown));
+        if (grown == NULL) {
+          return false;
+        }
+        program->elements = grown;
+      }
+      ElementProgram *element = &program->elements[program->element_count];
+      *element = (ElementProgram){ 0 };
+      program->element_count += 1;
+      if (!compile_element(element, file, block)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 Program *program_compile(const AstFile *file, const Layout *layout, DiagList *diags) {
   if (file == NULL || layout == NULL) {
     return NULL;
@@ -192,6 +263,11 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 
   program->packets = packets;
   program->packet_count = file->packet_count;
+  if (!compile_elements(program, file)) {
+    diag_add(diags, 1, 1, 0, "out of memory");
+    program_free(program);
+    return NULL;
+  }
 
   size_t next_field = 0;
   for (size_t p = 0; p < file->packet_count; ++p) {
@@ -217,6 +293,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .cal = cal_index(file, field->cal),
         .bit_order = field->bit_order,
         .byte_order = field->byte_order,
+        .element = field->element != NULL ? element_of(program, field->element) : NULL,
       };
 
       if (!slot->variable) {
@@ -252,6 +329,13 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 }
 
 void program_free(Program *program) {
+  if (program == NULL) {
+    return;
+  }
+  for (size_t i = 0; i < program->element_count; ++i) {
+    free(program->elements[i].members);
+  }
+  free(program->elements);
   /* The program *is* the block, so this frees the instructions and the code with it. */
   free(program);
 }

@@ -573,7 +573,9 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     }
 
     slot->reserved_bits = variable ? slot->max_bits : slot->width_bits;
-    slot->is_scalar = !variable && slot->width_bits > 0 && slot->width_bits <= FRAMEDSL_SCALAR_MAX_BITS;
+    /* A repetition is elements, not one number, however few bits two of them come to (#55). */
+    slot->is_scalar =
+      !variable && slot->width_bits > 0 && slot->width_bits <= FRAMEDSL_SCALAR_MAX_BITS && field->element == NULL;
     slot->offset_known = offset_known;
     slot->offset_bits = offset_known ? offset : 0;
 
@@ -944,7 +946,7 @@ static void check_field_cals(Checker *checker, const AstPacket *packet, const Pa
     /* Check 21. Asked of the width directly rather than of is_scalar, which a width that failed
      * check 4 leaves unset -- and that failure has been reported already. */
     const FieldLayout *slot = &layout->fields[f];
-    if (slot->variable || slot->width_bits > FRAMEDSL_SCALAR_MAX_BITS) {
+    if (slot->variable || slot->width_bits > FRAMEDSL_SCALAR_MAX_BITS || field->element != NULL) {
       fail(
         checker,
         field->cal_line,

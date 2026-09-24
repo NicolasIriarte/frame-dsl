@@ -429,7 +429,7 @@ static void anonymous_use(Formatter *f, int depth) {
   end(f);
 }
 
-/* `name: width [= value];`, `name[bytes]: width;` or `name: Block [{ overrides }];` */
+/* `name: width [= value];`, `name[bytes]: width;`, `name: Block [{ overrides }];` or `name: Block[count];` */
 static void field(Formatter *f, int depth) {
   begin(f, LINE_ALIGNED, depth);
   take(f, false); /* name */
@@ -443,6 +443,12 @@ static void field(Formatter *f, int depth) {
 
   if (peek(f)->kind == TOK_IDENT) {
     dotted(f, true);
+    /* `Block[count]`: a repetition's count, against the name like a reservation (#55). */
+    if (peek(f)->kind == TOK_LBRACKET) {
+      take(f, false);
+      expression(f, TOK_RBRACKET, TOK_RBRACKET, false);
+      take(f, false); /* ] */
+    }
     overrides(f);
   } else {
     expression(f, TOK_EQUALS, TOK_SEMICOLON, true);

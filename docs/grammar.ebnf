@@ -5,7 +5,7 @@
  * backtracking needed, and every production decidable from a single lookahead token.
  *
  * What is NOT here is as deliberate as what is. Signed and floating-point fields, enums, conditional
- * fields, repetition and CRC declarations are all deferred,
+ * fields and CRC declarations are all deferred,
  * each to its own issue, so that they are designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
@@ -81,9 +81,15 @@ named_block        = [ attribute_group ] , "block" , identifier , "{" ,
                        declaration , { declaration } ,
                      "}" , ";" ;
 
-use                = [ identifier , ":" ] , dotted_name , [ "{" , { override } , "}" ] , ";" ;
+use                = [ identifier , [ reservation ] , ":" ] , dotted_name , [ repeat ] ,
+                     [ "{" , { override } , "}" ] , ";" ;
 override           = identifier , { "." , identifier } , "=" , integer , ";" ;
 
+(* A repetition, `samples[48]: Sample[valof(count)];` (#55): the block laid out `count` times. Only a
+ * named use repeats, and only it may carry a reservation, which a count with a valof() in it needs
+ * (check 5) and a constant one may not have (check 14). The element must be one size and whole bytes
+ * (check 32), and takes no overrides (check 33). *)
+repeat             = "[" , expression , "]" ;
 (* --- Fields ---------------------------------------------------------------------------------
  * Width is an expression in BITS, always. The bracketed reservation is the one number in the
  * language written in BYTES: it sizes the field's arena slot, which is storage rather than layout,

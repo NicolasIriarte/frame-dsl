@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "bytecode.h"
 #include "framedsl.h"
 
 typedef struct {
@@ -108,3 +109,10 @@ void frame_snapshot_packet(FramedslFrame *frame, size_t packet);
  * @param packet Index of the packet that was snapshotted.
  */
 void frame_restore_packet(FramedslFrame *frame, size_t packet);
+
+/**
+ * @brief Writes one member of a repetition's element into wire bytes at bit `offset`, in its own bit
+ * and byte order, clearing what was there. The encoder uses it for the fixed values an element
+ * carries (#55).
+ */
+void frame_member_put(uint8_t *bytes, uint64_t offset, const MemberInstruction *member, uint64_t value);

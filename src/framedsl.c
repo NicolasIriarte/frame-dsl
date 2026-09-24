@@ -380,6 +380,47 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     out->cal = definition->cals->cals[cal].name;
     out->cal_invertible = definition->cals->cals[cal].invertible;
   }
+  const ElementProgram *element = definition->program->packets[packet].fields[field].element;
+  if (element != NULL) {
+    out->element_bits = element->bits;
+    out->member_count = element->member_count;
+  }
+  return true;
+}
+
+bool framedsl_member(
+  const FramedslDefinition *definition,
+  size_t packet,
+  size_t field,
+  size_t member,
+  FramedslField *out
+) {
+  if (definition == NULL || out == NULL || packet >= definition->program->packet_count
+      || field >= definition->program->packets[packet].field_count) {
+    return false;
+  }
+  const ElementProgram *element = definition->program->packets[packet].fields[field].element;
+  if (element == NULL || member >= element->member_count) {
+    return false;
+  }
+  const MemberInstruction *m = &element->members[member];
+  *out = (FramedslField){
+    .name = m->name,
+    .width_bits = m->width_bits,
+    .reserved_bits = m->width_bits,
+    .offset_known = true,
+    .offset_bits = m->offset_bits,
+    .is_scalar = m->is_scalar,
+    .has_fixed = m->has_fixed,
+    .fixed = m->has_fixed ? m->fixed : 0,
+    .bit_order = m->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST : FRAMEDSL_BIT_ORDER_MSB_FIRST,
+    .byte_order =
+      m->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN : FRAMEDSL_BYTE_ORDER_BIG_ENDIAN,
+  };
+  if (m->cal >= 0) {
+    out->cal = definition->cals->cals[m->cal].name;
+    out->cal_invertible = definition->cals->cals[m->cal].invertible;
+  }
   return true;
 }
 

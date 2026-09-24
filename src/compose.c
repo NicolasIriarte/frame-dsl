@@ -129,6 +129,124 @@ static void suggest_block(Composer *composer, size_t index, const AstField *use)
   free(names);
 }
 
+/* A width's value when it is a constant: what an element's size is made of. False for anything with a
+ * valof() in it, and for arithmetic that goes wrong -- the checks report those at the block itself. */
+static bool constant_width(const Expr *expr, uint64_t *out) {
+  if (expr == NULL) {
+    return false;
+  }
+  if (expr->kind == EXPR_LITERAL) {
+    *out = expr->literal;
+    return true;
+  }
+  uint64_t lhs = 0;
+  uint64_t rhs = 0;
+  if (expr->kind != EXPR_BINARY || !constant_width(expr->lhs, &lhs) || !constant_width(expr->rhs, &rhs)) {
+    return false;
+  }
+  switch (expr->op) {
+  case '+':
+    *out = lhs + rhs;
+    return *out >= lhs;
+  case '-':
+    *out = lhs - rhs;
+    return rhs <= lhs;
+  case '*':
+    *out = lhs * rhs;
+    return lhs == 0 || *out / lhs == rhs;
+  default:
+    *out = rhs == 0 ? 0 : lhs / rhs;
+    return rhs != 0;
+  }
+}
+
+/* `name: Block[count];` (#55) becomes one field: a bit string `count` elements long, each element laid
+ * out as the block's fields are. Everything downstream -- the checks, the layout, the bytecode, the
+ * walk -- sees an ordinary field whose width is `count * element_bits`, with the reservation a
+ * valof() width needs when the count is a field's. Only the accessors look inside, at `element`.
+ *
+ * Every element has to be the same size, and a whole number of bytes: the first so that element i
+ * is at i times that size, the second so that however many elements a frame carries, the packet still
+ * ends on a byte boundary (check 32). */
+static void repeat(
+  Composer *composer,
+  const AstField *use,
+  const AstPacket *block,
+  const char *prefix,
+  FieldList *out
+) {
+  char message[512];
+
+  /* Check 33: an override fixes one field of one instance, and a repetition is many. */
+  if (use->overrides != NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' repeats block '%s', so there is no one instance to fix a field of; fix it in the block",
+      use->name,
+      block->name
+    );
+    fail(composer, use->overrides->line, use->overrides->column, 33, message);
+    return;
+  }
+
+  uint64_t element_bits = 0;
+  for (size_t i = 0; i < block->field_count; ++i) {
+    uint64_t width = 0;
+    if (!constant_width(block->fields[i].width, &width)) {
+      snprintf(
+        message,
+        sizeof(message),
+        "'%s' repeats block '%s', whose field '%s' has no constant width; every element must be the same "
+        "size",
+        use->name,
+        block->name,
+        block->fields[i].name
+      );
+      fail(composer, use->repeat_line, use->repeat_column, 32, message);
+      return;
+    }
+    element_bits += width;
+  }
+  if (element_bits == 0 || element_bits % 8 != 0) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' repeats block '%s', which is %llu bits; a repeated block must be a whole number of bytes, so "
+      "that any number of them is too",
+      use->name,
+      block->name,
+      (unsigned long long)element_bits
+    );
+    fail(composer, use->repeat_line, use->repeat_column, 32, message);
+    return;
+  }
+
+  Expr *count = rename_expr(composer, use->repeat, prefix);
+  Expr *size = region_alloc(composer->file->region, sizeof(Expr));
+  Expr *width = region_alloc(composer->file->region, sizeof(Expr));
+  if (size == NULL || width == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return;
+  }
+  *size =
+    (Expr){ .kind = EXPR_LITERAL, .line = use->repeat_line, .column = use->repeat_column, .literal = element_bits };
+  *width = (Expr){
+    .kind = EXPR_BINARY, .line = use->repeat_line, .column = use->repeat_column, .op = '*', .lhs = count, .rhs = size
+  };
+
+  AstField field = *use;
+  field.name = join(composer, prefix, use->name);
+  field.block = NULL;
+  field.repeat = NULL;
+  field.overrides = NULL;
+  field.element = block;
+  field.element_bits = element_bits;
+  field.width = width;
+  field.reserve = rename_expr(composer, use->reserve, prefix);
+  append(composer, out, &field);
+}
+
 /* Check 25, for one use: each override must name a field of this instance, and only once. */
 static void apply_overrides(
   Composer *composer,
@@ -319,6 +437,11 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
         );
       }
       fail(composer, field->line, field->column, 24, message);
+      continue;
+    }
+
+    if (field->repeat != NULL) {
+      repeat(composer, field, block, prefix, out);
       continue;
     }
 

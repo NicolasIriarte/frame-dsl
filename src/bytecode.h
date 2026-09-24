@@ -64,6 +64,30 @@ typedef struct {
 } WidthProgram;
 
 /**
+ * @brief One field of a repeated block's element (#55): where it sits inside an element, and how to
+ * read it. Every width is constant -- composition refuses to repeat a block whose size varies.
+ */
+typedef struct {
+  const char *name;
+  uint64_t offset_bits;
+  uint64_t width_bits;
+  bool is_scalar;
+  bool has_fixed;
+  uint64_t fixed;
+  int32_t cal;
+  BitOrder bit_order;
+  ByteOrder byte_order;
+} MemberInstruction;
+
+/** @brief A repeated block's element, laid out once however many repetitions use it. */
+typedef struct {
+  const struct AstPacket *block;
+  MemberInstruction *members;
+  size_t member_count;
+  uint64_t bits;
+} ElementProgram;
+
+/**
  * @brief One field. Everything the runtime needs for it, flat.
  *
  * There is no arena offset here. A program describes a definition, not a frame, and several frames
@@ -97,6 +121,13 @@ typedef struct {
   /** @brief Resolved: what applies after file, packet, block and field scope are combined. */
   BitOrder bit_order;
   ByteOrder byte_order;
+
+  /**
+   * @brief For a repetition (#55), what one element is; NULL for any other field. The field itself
+   * is walked as a bit string of `count * element->bits`; this is only for reading inside it, and for
+   * the fixed values its elements carry, which encode writes into every element.
+   */
+  const ElementProgram *element;
 } FieldInstruction;
 
 typedef struct {
@@ -107,6 +138,9 @@ typedef struct {
 typedef struct {
   const PacketProgram *packets;
   size_t packet_count;
+  /** @brief Every repeated block's element, each once. Allocated apart from the rest. */
+  ElementProgram *elements;
+  size_t element_count;
 } Program;
 
 /**

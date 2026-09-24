@@ -181,6 +181,14 @@ typedef struct {
    * `inverse`. False when there is no curve.
    */
   bool cal_invertible;
+
+  /**
+   * @brief For a repetition, `samples[48]: Sample[valof(count)];` (#55): the bits one element takes,
+   * and how many fields it has -- framedsl_member() describes each. Zero for every other field, and for
+   * a member itself.
+   */
+  uint64_t element_bits;
+  size_t member_count;
 } FramedslField;
 
 /** @brief A loaded definition. Valid until its result is freed. */
@@ -205,7 +213,17 @@ typedef struct {
   uint32_t owner;
   uint16_t packet;
   uint16_t field;
+  /** @brief Which element of a repetition, for a member id; FRAMEDSL_NO_ELEMENT when none is chosen. */
+  uint32_t element;
+  /** @brief 0 for a whole field; for a field of a repeated block's element, its index plus one. */
+  uint16_t member;
 } FramedslFieldId;
+
+/**
+ * @brief The `element` of a member id that names no element yet, as framedsl_find() returns for
+ * "PKT.samples.value". framedsl_element() picks one; the accessors refuse it until then.
+ */
+#define FRAMEDSL_NO_ELEMENT UINT32_MAX
 
 /**
  * @brief A calibration, resolved once from its name by framedsl_find_cal().
@@ -365,6 +383,24 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
 
 bool framedsl_find_field(const FramedslDefinition *definition, size_t packet, const char *name, size_t *index);
 
+/**
+ * @brief Describe one field of a repetition's element (#55). `offset_bits` is its place inside an
+ * element, which is always known; element i starts `i * element_bits` into the repetition.
+ * @param definition A loaded definition.
+ * @param packet An index below framedsl_packet_count(definition).
+ * @param field A repetition's index: one whose FramedslField has a nonzero `element_bits`.
+ * @param member An index below that FramedslField's `member_count`.
+ * @param out Set to the member's description on success; untouched otherwise.
+ * @return true if every index is in range and `field` is a repetition, false otherwise.
+ */
+bool framedsl_member(
+  const FramedslDefinition *definition,
+  size_t packet,
+  size_t field,
+  size_t member,
+  FramedslField *out
+);
+
 /* ---- Frames ---------------------------------------------------------------------------------
  *
  * A frame holds the values. Create one from a definition, put values into it by field, read them
@@ -395,12 +431,55 @@ void framedsl_frame_reset(FramedslFrame *frame);
 
 /**
  * @brief Resolve a field from a dotted name, e.g. "TM_DATAGRAM_02.len".
+ *
+ * A field of a repeated block's element (#55) is named through the repetition: "TM.samples[3].value"
+ * for element 3, or "TM.samples.value" with no element chosen yet, for framedsl_element() to pick one
+ * in a loop. "TM.samples" alone is the whole repetition, read and written as bytes.
+ *
  * @param definition A loaded definition.
  * @param dotted A "PACKET.field" name.
  * @param out Set to the field's id on success.
- * @return false if there is no such field, which includes a name with no dot in it.
+ * @return false if there is no such field, which includes a name with no dot in it and an element
+ * past what the repetition reserves.
  */
 bool framedsl_find(const FramedslDefinition *definition, const char *dotted, FramedslFieldId *out);
+
+/**
+ * @brief The same member of element `index` (#55): how a loop walks a repetition without building a
+ * name for each element.
+ *
+ *     FramedslFieldId value, element;
+ *     framedsl_find(definition, "TM_SAMPLES.samples.value", &value);
+ *     framedsl_count(frame, value, &n);
+ *     for (size_t i = 0; i < n; ++i) {
+ *       framedsl_element(definition, value, i, &element);
+ *       framedsl_get_u64(frame, element, &reading);
+ *     }
+ *
+ * @param definition The definition `id` came from.
+ * @param id A member id, with or without an element chosen.
+ * @param index The element, from zero.
+ * @param out Set to the member of that element on success.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if `id` is not a member of a repetition in this
+ * definition; FRAMEDSL_ERROR_RANGE if `index` is past the most elements the repetition has room for.
+ */
+FramedslStatus framedsl_element(
+  const FramedslDefinition *definition,
+  FramedslFieldId id,
+  size_t index,
+  FramedslFieldId *out
+);
+
+/**
+ * @brief How many elements a repetition holds in this frame (#55): the constant it was written with,
+ * or what its count field says now -- as set by the caller, or as decoded.
+ * @param frame A frame.
+ * @param id The repetition, or any member of it.
+ * @param count Set to the number of elements on success.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if `id` is neither; FRAMEDSL_ERROR_RANGE if the count
+ * field holds more elements than the repetition reserves room for, or arithmetic on it fails.
+ */
+FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, size_t *count);
 
 /**
  * @brief The same id framedsl_find() would return, for a field already located by index.

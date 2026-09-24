@@ -670,16 +670,6 @@ static void refuse_attributes_on_use(Parser *parser, const AstField *field, Attr
 
 static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
   refuse_attributes_on_use(parser, field, attrs);
-  if (field->reserve != NULL) {
-    diag_add(
-      parser->diags,
-      field->reserve_line,
-      field->reserve_column,
-      0,
-      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
-      field->name
-    );
-  }
 
   Token first = parser->current;
   field->block_line = first.line;
@@ -688,6 +678,31 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
   field->block = dotted_name(parser, first.text, first.length);
   if (field->block == NULL) {
     return;
+  }
+
+  /* `Block[count]` repeats it (#55): a constant, or a valof() of a field above. */
+  if (check(parser, TOK_LBRACKET)) {
+    field->repeat_line = parser->current.line;
+    field->repeat_column = parser->current.column;
+    advance(parser);
+    field->repeat = parse_expression(parser);
+    if (!expect(parser, TOK_RBRACKET)) {
+      recover_to_field_end(parser);
+      return;
+    }
+  }
+
+  /* A repetition counted by a field reserves its room like any valof()-sized field; a single instance
+   * has none of its own, since its fields reserve what they need. */
+  if (field->reserve != NULL && field->repeat == NULL) {
+    diag_add(
+      parser->diags,
+      field->reserve_line,
+      field->reserve_column,
+      0,
+      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
+      field->name
+    );
   }
   parse_use_rest(parser, field);
 }

@@ -388,6 +388,50 @@ nothing more at run time: blocks are expanded when the file loads, and nothing a
 existed. Checks 23 to 25 in [`docs/design.md`](../docs/design.md) cover an unknown block, one used
 before it is declared, and an override naming no field of its block.
 
+## Repeating a block
+
+A list of readings, a table of channels: a block laid out several times in a row is a **repetition**,
+written with the count in brackets after the block's name:
+
+```
+block Sample {
+  marker:  4 = 0xA;
+  channel: 4;
+  reading: 16;
+};
+
+pkt TM_SAMPLES {
+  id:          8 = 0x30;
+  count:       8;
+  samples[48]: Sample[valof(count)];   # as many as `count` says, at most 16
+  points:      Sample[2];              # always two
+};
+```
+
+**The count** is a constant, or an expression with a `valof()` of a field above it, as a width can be.
+Counted by a field, the repetition reserves its room like any field sized by another -- in bytes,
+`samples[48]` -- and a frame whose count would need more is refused when it is decoded, and when it
+is encoded. A constant count needs no reservation, and may not have one (check 14).
+
+**Names.** An element's fields are reached through the repetition, with the element's index from
+zero: `TM_SAMPLES.samples[2].reading`. That is what `framedsl_find()` and `-e` take, and what `-d`
+prints. In C, a loop finds the field once without an index and picks each element with
+`framedsl_element()`; `framedsl_count()` says how many elements a frame holds. `TM_SAMPLES.samples` on
+its own is the whole run, read as bytes.
+
+**Every element is the same.** A repeated block must be one size every time -- none of its widths may
+come from a `valof()` -- and a whole number of bytes, so that element *i* is always *i* times that size
+in, and any number of them still ends on a byte (check 32). Its fixed values are on every element on
+the wire, whatever the frame's storage holds; its bit order, byte order and calibrations are the
+block's, per element. A repetition takes no overrides, since there is no one instance to fix a field of
+(check 33): fix a value every element carries in the block itself. Those fixed values do not
+identify the packet, though: the discriminator (check 11) must be a fixed field outside any
+repetition.
+
+A repetition may sit in a block like any use, and then counts by that instance's field --
+`hdr.count` for `hdr: Body;`. A repetition inside a *repeated* block is laid out correctly but not
+reachable by name: its elements are bytes of the outer element.
+
 ## Importing from other files
 
 Blocks and calibrations can be declared in one file and used from others. A library of the pieces a
@@ -579,7 +623,7 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-enumerations, conditional fields, repetition, and CRC polynomial and range.
+enumerations, conditional fields, and CRC polynomial and range.
 Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined

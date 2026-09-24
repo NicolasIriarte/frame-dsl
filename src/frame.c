@@ -235,11 +235,20 @@ bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size
   }
   *out = (FramedslFieldId){
     .owner = definition->tag,
-    .packet = (uint32_t)packet,
-    .field = (uint32_t)field,
+    .packet = (uint16_t)packet,
+    .field = (uint16_t)field,
+    .element = FRAMEDSL_NO_ELEMENT,
   };
   return true;
 }
+
+static bool find_member(
+  const FramedslDefinition *definition,
+  size_t packet,
+  size_t field,
+  const char *name,
+  FramedslFieldId *out
+);
 
 bool framedsl_find(const FramedslDefinition *definition, const char *dotted, FramedslFieldId *out) {
   if (definition == NULL || dotted == NULL || out == NULL) {
@@ -266,14 +275,243 @@ bool framedsl_find(const FramedslDefinition *definition, const char *dotted, Fra
         return framedsl_field_id(definition, p, f, out);
       }
     }
+    for (size_t f = 0; f < packet->field_count; ++f) {
+      if (packet->fields[f].element != NULL && find_member(definition, p, f, dot + 1, out)) {
+        return true;
+      }
+    }
     return false;
   }
   return false;
 }
 
+/* ---- Repetitions (#55) ----------------------------------------------------------------------------
+ *
+ * A repetition is one slot holding its elements as they are on the wire, one after another. A member of
+ * element i is `i * element bits + its offset in the element` into those bytes, and is read and written
+ * there, in its own bit and byte order -- so there is no second copy of anything to keep in step, and
+ * encode and decode move the whole run as the bit string it is. */
+
+/* The most elements a repetition has room for: what it reserves, in whole elements. */
+static uint64_t element_capacity(const FramedslDefinition *definition, size_t packet, size_t field) {
+  const FieldLayout *layout = &definition->layout->packets[packet].fields[field];
+  const ElementProgram *element = definition->program->packets[packet].fields[field].element;
+  uint64_t bits = layout->variable ? layout->max_bits : layout->width_bits;
+  return element == NULL || element->bits == 0 ? 0 : bits / element->bits;
+}
+
+/* "samples[3].value" or "samples.value" against repetition `field`: the member id, or false. */
+static bool find_member(
+  const FramedslDefinition *definition,
+  size_t packet,
+  size_t field,
+  const char *name,
+  FramedslFieldId *out
+) {
+  const char *repetition = definition->ast->packets[packet].fields[field].name;
+  size_t length = strlen(repetition);
+  if (strncmp(name, repetition, length) != 0) {
+    return false;
+  }
+  const char *at = name + length;
+
+  uint64_t index = FRAMEDSL_NO_ELEMENT;
+  if (*at == '[') {
+    at += 1;
+    if (*at < '0' || *at > '9') {
+      return false;
+    }
+    index = 0;
+    while (*at >= '0' && *at <= '9') {
+      index = index * 10 + (uint64_t)(*at - '0');
+      if (index >= FRAMEDSL_NO_ELEMENT) {
+        return false;
+      }
+      at += 1;
+    }
+    if (*at != ']') {
+      return false;
+    }
+    at += 1;
+    if (index >= element_capacity(definition, packet, field)) {
+      return false;
+    }
+  }
+  if (*at != '.') {
+    return false;
+  }
+
+  const ElementProgram *element = definition->program->packets[packet].fields[field].element;
+  for (size_t m = 0; m < element->member_count; ++m) {
+    if (strcmp(element->members[m].name, at + 1) == 0) {
+      framedsl_field_id(definition, packet, field, out);
+      out->member = (uint16_t)(m + 1);
+      out->element = (uint32_t)index;
+      return true;
+    }
+  }
+  return false;
+}
+
+FramedslStatus framedsl_element(
+  const FramedslDefinition *definition,
+  FramedslFieldId id,
+  size_t index,
+  FramedslFieldId *out
+) {
+  if (definition == NULL || out == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  if (id.owner != definition->tag || id.member == 0 || id.packet >= definition->program->packet_count
+      || id.field >= definition->program->packets[id.packet].field_count) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  const ElementProgram *element = definition->program->packets[id.packet].fields[id.field].element;
+  if (element == NULL || id.member > element->member_count) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  if (index >= element_capacity(definition, id.packet, id.field)) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  *out = id;
+  out->element = (uint32_t)index;
+  return FRAMEDSL_OK;
+}
+
+FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, size_t *count) {
+  if (frame == NULL || count == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  if (frame_slot(frame, id) == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  const PacketProgram *packet = &frame->definition->program->packets[id.packet];
+  const FieldInstruction *instruction = &packet->fields[id.field];
+  if (instruction->element == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+
+  uint64_t width = instruction->width_bits;
+  if (instruction->variable) {
+    /* The count field's value now, whoever put it there: the same arithmetic encode will do. */
+    uint64_t values[FRAMEDSL_MAX_FIELDS_PER_PACKET];
+    if (packet->field_count > FRAMEDSL_MAX_FIELDS_PER_PACKET) {
+      return FRAMEDSL_ERROR_RANGE;
+    }
+    const size_t base = frame->packet_base[id.packet];
+    for (size_t f = 0; f < packet->field_count; ++f) {
+      const Slot *slot = &frame->slots[base + f];
+      values[f] = 0;
+      if (slot->is_scalar) {
+        memcpy(&values[f], frame->arena + slot->offset, sizeof(uint64_t));
+      }
+    }
+    if (!width_program_eval(&instruction->width, values, &width) || width > instruction->max_bits) {
+      return FRAMEDSL_ERROR_RANGE;
+    }
+  }
+  *count = (size_t)(width / instruction->element->bits);
+  return FRAMEDSL_OK;
+}
+
+/* A member of one element, where it sits in its repetition's slot. */
+typedef struct {
+  Slot *slot;
+  const MemberInstruction *member;
+  uint64_t offset;
+} MemberView;
+
+static bool member_view(const FramedslFrame *frame, FramedslFieldId id, MemberView *view) {
+  Slot *slot = frame_slot(frame, id);
+  if (slot == NULL || id.member == 0 || id.element == FRAMEDSL_NO_ELEMENT) {
+    return false;
+  }
+  const ElementProgram *element = frame->definition->program->packets[id.packet].fields[id.field].element;
+  if (element == NULL || id.member > element->member_count
+      || id.element >= element_capacity(frame->definition, id.packet, id.field)) {
+    return false;
+  }
+  view->slot = slot;
+  view->member = &element->members[id.member - 1];
+  view->offset = (uint64_t)id.element * element->bits + view->member->offset_bits;
+  return true;
+}
+
+/* The bytes a whole-byte member occupies, or NULL for one that does not start and end on a byte. */
+static uint8_t *member_bytes(const FramedslFrame *frame, const MemberView *view) {
+  if (view->offset % 8 != 0 || view->member->width_bits % 8 != 0) {
+    return NULL;
+  }
+  return frame->arena + view->slot->offset + view->offset / 8;
+}
+
+static uint64_t swap_bytes(uint64_t value, uint64_t width) {
+  uint64_t swapped = 0;
+  for (uint64_t byte = 0; byte < width / 8; ++byte) {
+    swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
+  }
+  return swapped;
+}
+
+/* A member's value out of the wire bytes, in the order encode.c lays a field down and decode.c reads it
+ * back. A bit at a time: an element is a handful of bits, and this is an accessor, not the walk. */
+static uint64_t member_get(const uint8_t *bytes, uint64_t offset, const MemberInstruction *member) {
+  uint64_t value = 0;
+  for (uint64_t j = 0; j < member->width_bits; ++j) {
+    uint64_t i = offset + j;
+    uint64_t bit = (uint64_t)(bytes[i / 8] >> (7 - (i % 8))) & 1;
+    if (member->bit_order == BIT_ORDER_MSB_FIRST) {
+      value = (value << 1) | bit;
+    } else {
+      value |= bit << j;
+    }
+  }
+  if (member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0) {
+    value = swap_bytes(value, member->width_bits);
+  }
+  return value;
+}
+
+void frame_member_put(uint8_t *bytes, uint64_t offset, const MemberInstruction *member, uint64_t value) {
+  if (member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0) {
+    value = swap_bytes(value, member->width_bits);
+  }
+  for (uint64_t j = 0; j < member->width_bits; ++j) {
+    uint64_t i = offset + j;
+    uint64_t bit =
+      member->bit_order == BIT_ORDER_MSB_FIRST ? (value >> (member->width_bits - 1 - j)) & 1 : (value >> j) & 1;
+    uint8_t mask = (uint8_t)(1u << (7 - (i % 8)));
+    bytes[i / 8] = bit != 0 ? (uint8_t)(bytes[i / 8] | mask) : (uint8_t)(bytes[i / 8] & ~mask);
+  }
+}
+
+static FramedslStatus member_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64_t value) {
+  MemberView view;
+  if (!member_view(frame, id, &view) || !view.member->is_scalar) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  if (view.member->width_bits < 64 && value >= ((uint64_t)1 << view.member->width_bits)) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  frame_member_put(frame->arena + view.slot->offset, view.offset, view.member, value);
+  return FRAMEDSL_OK;
+}
+
+static FramedslStatus member_get_u64(const FramedslFrame *frame, FramedslFieldId id, uint64_t *out) {
+  MemberView view;
+  if (!member_view(frame, id, &view) || !view.member->is_scalar || out == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  *out = member_get(frame->arena + view.slot->offset, view.offset, view.member);
+  return FRAMEDSL_OK;
+}
+
 FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64_t value) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
+  }
+  if (id.member != 0) {
+    return member_set_u64(frame, id, value);
   }
   Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar) {
@@ -293,6 +531,9 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
+  if (id.member != 0) {
+    return member_get_u64(frame, id, out);
+  }
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
@@ -306,7 +547,12 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
  * The arena holds raw values only; a curve runs on the way out of a get and on the way into a set. */
 
 static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id) {
-  const int32_t cal = frame->definition->program->packets[id.packet].fields[id.field].cal;
+  const FieldInstruction *instruction = &frame->definition->program->packets[id.packet].fields[id.field];
+  int32_t cal = instruction->cal;
+  if (id.member != 0) {
+    MemberView view;
+    cal = member_view(frame, id, &view) ? view.member->cal : -1;
+  }
   return cal < 0 ? NULL : &frame->definition->cals->cals[cal];
 }
 
@@ -349,7 +595,7 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
     return FRAMEDSL_ERROR_MEMORY;
   }
   const Slot *slot = frame_slot(frame, id);
-  if (slot == NULL || !slot->is_scalar) {
+  if (slot == NULL || (id.member == 0 && !slot->is_scalar)) {
     return FRAMEDSL_ERROR_FIELD;
   }
   const CalCompiled *cal = field_cal(frame, id);
@@ -369,6 +615,21 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
 FramedslStatus framedsl_set_bytes(FramedslFrame *frame, FramedslFieldId id, const uint8_t *bytes, size_t length) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
+  }
+  if (id.member != 0) {
+    /* A whole-byte bit string inside an element: exactly its width, nothing to clear past it. */
+    MemberView view;
+    uint8_t *at = member_view(frame, id, &view) && !view.member->is_scalar ? member_bytes(frame, &view) : NULL;
+    if (at == NULL || (bytes == NULL && length > 0)) {
+      return FRAMEDSL_ERROR_FIELD;
+    }
+    if (length != view.member->width_bits / 8) {
+      return FRAMEDSL_ERROR_RANGE;
+    }
+    if (length > 0) {
+      memcpy(at, bytes, length);
+    }
+    return FRAMEDSL_OK;
   }
   Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || (bytes == NULL && length > 0)) {
@@ -410,6 +671,16 @@ const uint8_t *framedsl_get_bytes(
     return NULL;
   }
 
+  if (id.member != 0) {
+    MemberView view;
+    uint8_t *at = member_view(frame, id, &view) && !view.member->is_scalar ? member_bytes(frame, &view) : NULL;
+    if (at == NULL) {
+      *status = FRAMEDSL_ERROR_FIELD;
+      return NULL;
+    }
+    *length = (size_t)(view.member->width_bits / 8);
+    return at;
+  }
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar) {
     *status = FRAMEDSL_ERROR_FIELD;
@@ -434,6 +705,22 @@ FramedslStatus framedsl_get_bytes_into(
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
   }
+  if (id.member != 0) {
+    FramedslStatus status = FRAMEDSL_OK;
+    size_t size = 0;
+    const uint8_t *at = length != NULL ? framedsl_get_bytes(frame, id, &size, &status) : NULL;
+    if (at == NULL) {
+      return FRAMEDSL_ERROR_FIELD;
+    }
+    *length = size;
+    if (capacity < size || (out == NULL && size > 0)) {
+      return FRAMEDSL_ERROR_BUFFER;
+    }
+    if (size > 0) {
+      memcpy(out, at, size);
+    }
+    return FRAMEDSL_OK;
+  }
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || length == NULL) {
     return FRAMEDSL_ERROR_FIELD;
@@ -452,6 +739,11 @@ FramedslStatus framedsl_get_bytes_into(
 }
 
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
+  if (id.member != 0) {
+    size_t length = 0;
+    FramedslStatus status = FRAMEDSL_OK;
+    return framedsl_get_bytes(frame, id, &length, &status) != NULL ? length : 0;
+  }
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar) {
     return 0;

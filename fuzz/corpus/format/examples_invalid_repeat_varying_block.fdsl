@@ -1,0 +1,15 @@
+# REJECTED: check 32 -- a repeated block must be the same size every time, and a whole number of bytes.
+#
+# `Message` carries its own length, so one element could be three bytes and the next thirty: element i
+# would sit somewhere nobody knows until every element before it had been read.
+
+block Message {
+  length:   8;
+  text[32]: valof(length) * 8;
+};
+
+pkt TM_LOG {
+  id:          8 = 0x40;
+  count:       8;
+  entries[64]: Message[valof(count)];
+};

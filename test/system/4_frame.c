@@ -480,7 +480,7 @@ static int us4_tc13_nothing_allocates_after_the_frame_exists(const TestArguments
 static int us4_tc14_null_is_tolerated_everywhere(const TestArguments *args) {
   (void)args;
 
-  FramedslFieldId id = { 0, 0, 0 };
+  FramedslFieldId id = { 0 };
   uint64_t value = 0;
   uint8_t buffer[4] = { 0 };
   size_t length = 0;
