@@ -96,6 +96,12 @@ FUZZ_SECONDS ?= 60
 FUZZ_TIMEOUT ?= 5
 FUZZ_BINS := $(FUZZ_TARGETS:%=$(BUILD)/fuzz/%)
 REPLAY_BINS := $(FUZZ_TARGETS:%=$(BUILD)/replay/%)
+# The most lines one sanitized run may print before it is stopped and failed (#114, see
+# scripts/cap_output.sh). A replay prints one line when it passes and a few hundred at most for a
+# sanitizer report; libFuzzer prints a line for each input that finds something new, so a long `make
+# fuzz` is given far more room. Neither comes anywhere near what the #80 loop printed each second.
+REPLAY_OUTPUT_LINES ?= 10000
+FUZZ_OUTPUT_LINES ?= 100000
 # Non-PIE, because ASan in GCC 12 and clang 14 -- what CI's image has -- fails at random on a kernel
 # with vm.mmap_rnd_bits = 32, which CI's has: wherever ASLR places a position-independent executable,
 # the shadow memory can collide with it, and the program prints AddressSanitizer:DEADLYSIGNAL in a
@@ -198,6 +204,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	test-completion \
 	test-editors \
 	test-fuzz-replay \
+	test-output-cap \
 	test-python \
 	test-system \
 	test-unit \
@@ -319,8 +326,9 @@ fuzz: $(FUZZ_BINS)
 	  mkdir -p $(BUILD)/fuzz/corpus/$$target fuzz/regressions/$$target && \
 	    cp -n fuzz/corpus/$$target/* $(BUILD)/fuzz/corpus/$$target/ ; \
 	  echo "fuzz: $$target for $(FUZZ_SECONDS)s"; \
-	  $(BUILD)/fuzz/$$target -max_total_time=$(FUZZ_SECONDS) -timeout=$(FUZZ_TIMEOUT) -print_final_stats=1 \
-	    -artifact_prefix=$(BUILD)/fuzz/ $(BUILD)/fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
+	  scripts/cap_output.sh $(FUZZ_OUTPUT_LINES) $(BUILD)/fuzz/$$target -max_total_time=$(FUZZ_SECONDS) \
+	    -timeout=$(FUZZ_TIMEOUT) -print_final_stats=1 -artifact_prefix=$(BUILD)/fuzz/ \
+	    $(BUILD)/fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
 	done
 
 # Every seed and every past crash, through each target, under the sanitizers. Fast: a few hundred
@@ -331,12 +339,17 @@ fuzz: $(FUZZ_BINS)
 # That turned out to be ASan faulting in a loop before main was reached, so before the alarm was ever
 # set (#80, see SANITIZE_NO_PIE above). `timeout` is enforced by the kernel from outside the process,
 # so a failure that never gets as far as the alarm still ends the build instead of hanging it.
+#
+# And the output is capped, because that same failure printed AddressSanitizer:DEADLYSIGNAL about
+# 100,000 times a second for as long as the timeout allowed: 12 million lines inside these 120 seconds,
+# and 47 million with it raised to 600 (#114). The cap stops it within a fraction of a second.
 REPLAY_TIMEOUT_SECONDS ?= 120
 test-fuzz-replay: $(REPLAY_BINS)
 	@for target in $(FUZZ_TARGETS); do \
 	  mkdir -p fuzz/regressions/$$target; \
 	  printf "fuzz replay: %s: " $$target; \
-	  timeout $(REPLAY_TIMEOUT_SECONDS) $(BUILD)/replay/$$target fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
+	  scripts/cap_output.sh $(REPLAY_OUTPUT_LINES) timeout $(REPLAY_TIMEOUT_SECONDS) $(BUILD)/replay/$$target \
+	    fuzz/corpus/$$target fuzz/regressions/$$target || exit 1; \
 	done
 
 # Points git at .githooks/ so the pre-commit hook runs without anyone installing it by hand. Silent,
@@ -470,7 +483,8 @@ $(SYSTEM_RUNNER): $(SYSTEM_SRC) $(SYSTEM_REGISTRY) $(LIB_OBJ) $(TESTSUITE_SYSTEM
 	@mkdir -p $(@D)
 	$(CC) $(SYSTEM_FLAGS) $(SYSTEM_SRC) $(LIB_OBJ) $(TESTSUITE_SYSTEM_OBJ) -o $@
 
-test: test-unit test-system test-editors test-fuzz-replay test-changelog test-completion test-python
+test: test-unit test-system test-editors test-fuzz-replay test-changelog test-completion test-python \
+	test-output-cap
 
 # The Python bindings' tests (#98), through python3's own unittest: no pip, no network, nothing to install.
 # FRAMEDSL_LIBRARY points them at this build's library rather than whatever the system has, or a copy
@@ -531,6 +545,11 @@ test-completion: $(TARGET)
 test-changelog:
 	@scripts/test_changelog.sh
 	@scripts/test_conflict_markers.sh
+
+# The cap every sanitized run's output goes through (#114), made to pass something well-behaved and to
+# stop a runaway.
+test-output-cap:
+	@scripts/test_cap_output.sh
 
 # What the next release's section would read like, from changelog.d/ and whatever is still under
 # [Unreleased]. Changes nothing.

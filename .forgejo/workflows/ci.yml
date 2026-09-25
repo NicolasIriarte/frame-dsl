@@ -59,8 +59,13 @@ jobs:
       - name: Build
         run: make
 
+      # Through scripts/cap_output.sh, so that nothing in the suite can print without end (#114). A
+      # passing run prints well under 1,500 lines; before the non-PIE build (#80), a failing one printed
+      # AddressSanitizer:DEADLYSIGNAL until it was killed -- 89 million lines, 5.3 GB of log on the
+      # Forgejo instance from a single job. The Makefile already caps each sanitized run; this covers
+      # whatever loops next, somewhere else. 50,000 lines is a few MB.
       - name: Run the test suite
-        run: make test
+        run: scripts/cap_output.sh 50000 make test
 
       # Built, not run: a timing on a shared runner means nothing, but a benchmark that no longer
       # compiles would only be noticed the next time somebody wanted a number. The same goes for the
@@ -104,7 +109,8 @@ jobs:
             exit 0
           fi
 
-          make fuzz FUZZ_CC=clang FUZZ_FLAGS="$flags" FUZZ_SECONDS=30
+          # Capped like the test suite above (#114): half a minute a target prints nowhere near this.
+          scripts/cap_output.sh 50000 make fuzz FUZZ_CC=clang FUZZ_FLAGS="$flags" FUZZ_SECONDS=30
 
   # Whether this pull request owes the changelog an entry (#90). Its own job because it needs nothing
   # installed and answers in seconds, rather than behind the build. Pull requests only: a push to main is
