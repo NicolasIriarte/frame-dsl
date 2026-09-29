@@ -411,6 +411,21 @@ static int us15_tc14_a_broken_file_is_left_alone(const TestArguments *args) {
   return run.status == 1 && strcmp(run.output, expected) == 0 && file_is(path, broken) ? 0 : __LINE__;
 }
 
+/* A group putting a curve beside both orders (#118) is one attribute a line, aligned on the values like
+ * any other, and stays that way when formatted again. */
+static int us15_tc15_a_curve_beside_the_orders(const TestArguments *args) {
+  (void)args;
+  const char *expected =
+    "cal c(x) = x * 2;\n\npkt TM {\n  id: 8 = 1;\n  [\n    @cal:        c;\n    @bit_order:  lsb_first;\n"
+    "    @byte_order: little_endian;\n  ]\n  v:  16;\n};\n";
+  int failure = expect_format(
+    "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: c; @bit_order: lsb_first; @byte_order: little_endian; ] v: "
+    "16;\n};\n",
+    expected
+  );
+  return failure != 0 ? failure : expect_format(expected, expected);
+}
+
 void register_user_story15(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us15_tc01_indentation_and_spacing, "two spaces a level, and single spaces", false);
@@ -431,4 +446,5 @@ void register_user_story15(void) {
   );
   ADD_TEST_CASE(us15_tc13_standard_input_goes_to_standard_output, "'-' formats stdin to stdout", false);
   ADD_TEST_CASE(us15_tc14_a_broken_file_is_left_alone, "a broken file is left alone, its error printed", false);
+  ADD_TEST_CASE(us15_tc15_a_curve_beside_the_orders, "a curve beside both orders is laid out aligned", false);
 }

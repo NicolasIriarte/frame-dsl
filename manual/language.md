@@ -531,6 +531,21 @@ not inherited: written at file, packet or block scope it is an error rather than
 a curve describes one sensor reading and handing it to every field below would be a guess about the
 others.
 
+Any scalar field may carry one, a fixed-value field included: nothing is set through the curve there,
+since the value is fixed, but the field reads through it like any other. And a curve does not care how
+its field is laid out -- `@bit_order` and `@byte_order` apply where the frame meets the wire, the curve
+to the raw value once it is off it -- so the three may share a group in any order, or the orders may
+come from further out:
+
+```
+[
+  @cal:        volts;
+  @bit_order:  lsb_first;
+  @byte_order: little_endian;
+]
+bus: 16;
+```
+
 **Encoding needs an inverse.** Reading a field through its curve always works. Setting one from an
 engineering value needs the curve run backwards:
 
