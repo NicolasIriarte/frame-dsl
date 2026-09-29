@@ -211,7 +211,8 @@ called `bit_order` if that is what the specification calls it.
 
 Two placements, one job each:
 
-**A bare `@name: value;`** may appear only before the first packet. It is the file default.
+**A bare `@name: value;`** may appear only at the top of the file: after any imports, and before the
+first declaration of any kind -- `pkt`, `block` or `cal`. It is the file default.
 
 **A `[ ... ]` group** attaches to the declaration that follows it -- a packet, a block or a field --
 and applies to that declaration only.

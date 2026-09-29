@@ -243,20 +243,56 @@ static int us7_tc07_resolution_runs_field_block_packet_file(const TestArguments 
 
 static int us7_tc08_a_bare_attribute_inside_a_packet_is_rejected(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying("pkt A { h: 8 = 1; @bit_order: lsb_first; a: 8; };", "[ ... ]")) {
+  const char *source = "pkt A { h: 8 = 1; @bit_order: lsb_first; a: 8; };";
+  if (!rejected_saying(source, "[ ... ]") || !rejected_saying(source, "goes at the top of the file")
+      || rejected_saying(source, "first packet")) {
     FORCE_FAILURE();
   }
   return 0;
 }
 
-static int us7_tc09_a_bare_attribute_after_a_packet_is_rejected(const TestArguments *args) {
+/* The defaults go before every declaration, not only before the first packet (#122): after a packet, a
+ * calibration or a block, the message names the first declaration and where it starts -- at its group,
+ * when it has one, since the defaults go above that too. */
+static int us7_tc09_a_bare_attribute_after_a_declaration_is_rejected(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying(
-        "pkt A { h: 8 = 1; };\n@bit_order: lsb_first;\npkt B { h: 8 = 2; };", "before the first packet"
-      )) {
-    FORCE_FAILURE();
+  const char *sources[] = {
+    "pkt A { h: 8 = 1; };\n@bit_order: lsb_first;\npkt B { h: 8 = 2; };",
+    "cal c(x) = x;\n@bit_order: lsb_first;\npkt A { h: 8 = 1; [ @cal: c; ] v: 8; };",
+    "[ @byte_order: little_endian; ]\nblock B { v: 8; };\n@bit_order: lsb_first;\npkt A { h: 8 = 1; B; };",
+  };
+  const char *expected[] = {
+    "before the first declaration (the 'pkt' starting on line 1)",
+    "before the first declaration (the 'cal' starting on line 1)",
+    "before the first declaration (the 'block' starting on line 1)",
+  };
+  for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
+    if (!rejected_saying(sources[i], expected[i]) || !rejected_saying(sources[i], "for one packet or block")
+        || rejected_saying(sources[i], "first packet")) {
+      return __LINE__ * 10 + (int)i;
+    }
   }
-  return 0;
+
+  /* After a group, the attribute belongs in it; after a misplaced import, there is no declaration to
+   * name. And written where they belong -- after the imports, before everything -- defaults are fine. */
+  if (!rejected_saying(
+        "[ @byte_order: little_endian; ]\n@bit_order: lsb_first;\npkt A { h: 8 = 1; };", "put this one inside the group"
+      )) {
+    return __LINE__;
+  }
+  if (!rejected_saying(
+        "@byte_order: little_endian;\nimport \"x.fdsl\";\n@bit_order: lsb_first;\npkt A { h: 8 = 1; };",
+        "after the imports and before the first declaration"
+      )) {
+    return __LINE__;
+  }
+  Parsed parsed = parse_source(
+    "@byte_order: little_endian;\n@bit_order: lsb_first;\ncal c(x) = x;\nblock B { v: 8; };\n"
+    "pkt A { h: 8 = 1; B; [ @cal: c; ] w: 8; };"
+  );
+  int failure = parsed.diags.count == 0 ? 0 : __LINE__;
+  parsed_free(&parsed);
+  return failure;
 }
 
 /* Reported by name, rather than as a parse failure two tokens further on. */
@@ -325,7 +361,7 @@ void register_user_story7(void) {
     false
   );
   ADD_TEST_CASE(
-    us7_tc09_a_bare_attribute_after_a_packet_is_rejected, "a bare attribute after the first packet is rejected", false
+    us7_tc09_a_bare_attribute_after_a_declaration_is_rejected, "a bare attribute after a declaration names it", false
   );
   ADD_TEST_CASE(us7_tc10_an_unknown_attribute_is_named, "an unknown attribute is named", false);
   ADD_TEST_CASE(us7_tc11_a_bad_value_is_reported_with_what_was_written, "a bad attribute value is quoted back", false);

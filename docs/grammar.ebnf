@@ -28,7 +28,8 @@ dotted_name        = identifier , { "." , identifier } ;
 (* --- Attributes -----------------------------------------------------------------------------
  * One form per job, so nothing is expressible two ways:
  *
- *   - A bare attribute may appear only before the first packet. It is the file default.
+ *   - A bare attribute may appear only after the imports and before the first declaration of any
+ *     kind -- packet, block or calibration. It is the file default.
  *   - A group attaches to the declaration that follows it -- a packet, a block or a field -- and
  *     applies to that declaration only.
  *

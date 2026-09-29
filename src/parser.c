@@ -1011,7 +1011,7 @@ static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scop
       parser->current.column,
       0,
       "an attribute here belongs in a '[ ... ]' group before the declaration it applies to; a "
-      "bare '@' is a file default and may only appear before the first packet"
+      "bare '@' is a file default, and goes at the top of the file"
     );
     recover_to_field_end(parser);
     return;
@@ -1300,9 +1300,10 @@ AstFile *parse(const char *source, DiagList *diags) {
     }
   }
 
-  /* A bare attribute is the file default and may only appear here, before the first packet. Anywhere
-   * else it would have to mean either "from this point on" or "the next declaration only", and having
-   * one spelling mean both depending on nesting is how a reader stops being able to tell. */
+  /* A bare attribute is the file default and may only appear here, after the imports and before the
+   * first declaration of any kind -- packet, block or calibration. Anywhere else it would have to mean
+   * either "from this point on" or "the next declaration only", and having one spelling mean both
+   * depending on nesting is how a reader stops being able to tell. */
   Attributes file_attrs = {
     .bit_order = BIT_ORDER_MSB_FIRST,
     .byte_order = BYTE_ORDER_BIG_ENDIAN,
@@ -1314,6 +1315,10 @@ AstFile *parse(const char *source, DiagList *diags) {
     refuse_cal_here(&parser, &file_attrs, "a whole file");
     file_attrs.cal = NULL;
   }
+
+  /* The first declaration, which a bare attribute written after it is told to move above. */
+  const char *first_kind = NULL;
+  int first_line = 0;
 
   while (!check(&parser, TOK_EOF) && !check(&parser, TOK_INVALID) && !parser.out_of_memory) {
     parser.panicking = false;
@@ -1334,6 +1339,10 @@ AstFile *parse(const char *source, DiagList *diags) {
     /* `cal` is only a word here, where a declaration starts, so it is not reserved and a field may
      * still be called `cal`. */
     if (check(&parser, TOK_IDENT) && word_is(&parser.current, "cal")) {
+      if (first_kind == NULL) {
+        first_kind = "cal";
+        first_line = parser.current.line;
+      }
       parse_cal(&parser);
       continue;
     }
@@ -1341,7 +1350,8 @@ AstFile *parse(const char *source, DiagList *diags) {
     Attributes packet_attrs = inherited(file_attrs);
     const int start_line = parser.current.line;
     const int start_column = parser.current.column;
-    if (check(&parser, TOK_LBRACKET)) {
+    const bool grouped = check(&parser, TOK_LBRACKET);
+    if (grouped) {
       if (!parse_attribute_group(&parser, &packet_attrs)) {
         recover_to_packet_end(&parser);
         continue;
@@ -1351,14 +1361,36 @@ AstFile *parse(const char *source, DiagList *diags) {
 
     const bool is_block = check(&parser, TOK_BLOCK);
     if (!check(&parser, TOK_PKT) && !is_block) {
-      if (check(&parser, TOK_AT)) {
+      if (check(&parser, TOK_AT) && grouped) {
         diag_add(
           parser.diags,
           parser.current.line,
           parser.current.column,
           0,
-          "a bare attribute may only appear before the first packet; to set one for a packet, "
-          "put it in a '[ ... ]' group in front of 'pkt'"
+          "a '[ ... ]' group must be followed by the declaration it applies to, not by a bare attribute; "
+          "put this one inside the group"
+        );
+      } else if (check(&parser, TOK_AT) && first_kind == NULL) {
+        /* Nothing declared yet, so something else -- a misplaced import -- ended the defaults. */
+        diag_add(
+          parser.diags,
+          parser.current.line,
+          parser.current.column,
+          0,
+          "a bare attribute is a file default, and goes at the top of the file, after the imports and "
+          "before the first declaration"
+        );
+      } else if (check(&parser, TOK_AT)) {
+        diag_add(
+          parser.diags,
+          parser.current.line,
+          parser.current.column,
+          0,
+          "a bare attribute is a file default, and goes at the top of the file, before the first "
+          "declaration (the '%s' starting on line %d); for one packet or block, put it in a "
+          "'[ ... ]' group in front of that declaration",
+          first_kind,
+          first_line
         );
       } else {
         error_at_current(&parser, "'pkt', 'block', 'cal' or end of file");
@@ -1367,6 +1399,10 @@ AstFile *parse(const char *source, DiagList *diags) {
       continue;
     }
 
+    if (first_kind == NULL) {
+      first_kind = is_block ? "block" : "pkt";
+      first_line = start_line;
+    }
     int line = parser.current.line;
     int column = parser.current.column;
     advance(&parser);
