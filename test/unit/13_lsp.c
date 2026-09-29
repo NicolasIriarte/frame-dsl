@@ -658,6 +658,49 @@ static int us13_tc14_a_fix_is_offered_as_a_code_action(const TestArguments *args
   return failure;
 }
 
+/* #119 through the protocol: check 34 is published as a warning, and its fix -- removing the earlier of
+ * the two -- is offered at the later one, where the warning is. */
+static int us13_tc15_an_attribute_written_twice_is_a_warning_with_a_fix(const TestArguments *args) {
+  (void)args;
+  const char *const messages[] = {
+    INITIALIZE,
+    DID_OPEN("pkt TM {\\n  id: 8 = 1;\\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\\n  x: 8;\\n};\\n"),
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/codeAction\",\"params\":{\"textDocument\":{\"uri\":"
+    "\"file:///tmp/t.fdsl\"},\"range\":{\"start\":{\"line\":2,\"character\":30},\"end\":{\"line\":2,\"character\":30}},"
+    "\"context\":{\"diagnostics\":[]}}}",
+    EXIT,
+  };
+  Session session;
+  if (!run(&session, messages, 4)) {
+    return __LINE__;
+  }
+
+  int failure = 0;
+  const Json *published = json_get(last_diagnostics(&session), "diagnostics");
+  const Json *warning =
+    published != NULL && published->kind == JSON_ARRAY && published->count == 1 ? published->items[0] : NULL;
+  const Json *actions = json_get(response_to(&session, 2), "result");
+  const Json *action = actions != NULL && actions->kind == JSON_ARRAY && actions->count == 1 ? actions->items[0] : NULL;
+  const Json *edits = json_get(json_get(json_get(action, "edit"), "changes"), "file:///tmp/t.fdsl");
+  const Json *edit = edits != NULL && edits->kind == JSON_ARRAY && edits->count == 1 ? edits->items[0] : NULL;
+  const Json *range = json_get(edit, "range");
+
+  if (warning == NULL || integer_at(warning, "severity") != 2 || integer_at(warning, "code") != 34
+      || integer_at(json_get(json_get(warning, "range"), "start"), "character") != 28) {
+    failure = __LINE__;
+  } else if (action == NULL || strcmp(json_string(json_get(action, "title")), "remove the earlier '@bit_order'") != 0) {
+    failure = __LINE__;
+  } else if (edit == NULL || strcmp(json_string(json_get(edit, "newText")), "") != 0
+             || integer_at(json_get(range, "start"), "line") != 2
+             || integer_at(json_get(range, "start"), "character") != 4
+             || integer_at(json_get(range, "end"), "line") != 2
+             || integer_at(json_get(range, "end"), "character") != 27) {
+    failure = __LINE__;
+  }
+  session_free(&session);
+  return failure;
+}
+
 void register_user_story13(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us13_tc01_initialize_says_what_it_can_do, "initialize announces what the server does", false);
@@ -678,4 +721,7 @@ void register_user_story13(void) {
     us13_tc13_hover_definition_and_completion_are_answered, "hover, definition and completion are answered", false
   );
   ADD_TEST_CASE(us13_tc14_a_fix_is_offered_as_a_code_action, "a fix is offered as a quick-fix code action", false);
+  ADD_TEST_CASE(
+    us13_tc15_an_attribute_written_twice_is_a_warning_with_a_fix, "a repeat in one group is a warning with a fix", false
+  );
 }

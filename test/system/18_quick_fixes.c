@@ -359,6 +359,46 @@ static int us18_tc11_no_fix_makes_an_invalid_example_worse(const TestArguments *
   return failure != 0 ? failure : offered > 0 ? 0 : __LINE__;
 }
 
+/* Check 34's fix removes the earlier of the two, on a shared line or its own, and in the file's defaults.
+ * The later one is what was in effect, so the fixed file loads with the same layout and the same curve,
+ * and without the warning. */
+static int us18_tc12_the_earlier_of_an_attribute_written_twice_is_removed(const TestArguments *args) {
+  (void)args;
+  const char *cases[][2] = {
+    { "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: little_endian; @byte_order: big_endian; ]\n  x: 16;\n};\n",
+     "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: big_endian; ]\n  x: 16;\n};\n"    },
+    { "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [\n    @cal: k;\n    @cal: c;\n  ]\n  x: 8;\n"
+      "  [ @cal: k; ]\n  y: 8;\n};\n",                                                                 "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [\n    @cal: c;\n  ]\n  x: 8;\n"
+      "  [ @cal: k; ]\n  y: 8;\n};\n" },
+    { "@byte_order: little_endian;\n@byte_order: big_endian;\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n",
+     "@byte_order: big_endian;\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n"          },
+  };
+  const char *titles[] = { "remove the earlier '@byte_order'",
+                           "remove the earlier '@cal'",
+                           "remove the earlier '@byte_order'" };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
+    if (!fixes_to(cases[i][0], 34, titles[i], cases[i][1])) {
+      return __LINE__ * 10 + (int)i;
+    }
+    FramedslResult *before = framedsl_load_string(cases[i][0], "t.fdsl");
+    FramedslResult *after = framedsl_load_string(cases[i][1], "t.fdsl");
+    FramedslField was;
+    FramedslField is;
+    bool same = framedsl_ok(after) && find(after, 34) == NULL && count_of(after, FRAMEDSL_SEVERITY_WARNING) == 0
+                && framedsl_field(framedsl_definition(before), 0, 1, &was)
+                && framedsl_field(framedsl_definition(after), 0, 1, &is) && was.byte_order == is.byte_order
+                && was.bit_order == is.bit_order && (was.cal == NULL) == (is.cal == NULL)
+                && (was.cal == NULL || strcmp(was.cal, is.cal) == 0);
+    framedsl_result_free(before);
+    framedsl_result_free(after);
+    if (!same) {
+      return __LINE__ * 10 + (int)i;
+    }
+  }
+  return 0;
+}
+
 void register_user_story18(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us18_tc01_a_misspelt_attribute_is_corrected, "a misspelt attribute name or value is corrected", false);
@@ -396,4 +436,9 @@ void register_user_story18(void) {
     false
   );
   ADD_TEST_CASE(us18_tc11_no_fix_makes_an_invalid_example_worse, "no fix makes an invalid example worse", false);
+  ADD_TEST_CASE(
+    us18_tc12_the_earlier_of_an_attribute_written_twice_is_removed,
+    "of an attribute written twice, the earlier goes",
+    false
+  );
 }

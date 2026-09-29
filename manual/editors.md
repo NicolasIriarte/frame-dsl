@@ -84,6 +84,7 @@ as a quick fix (VS Code's light bulb, `vim.lsp.buf.code_action()`, Eglot's `eglo
 | a missing `;` | **insert `;`** straight after what came before it |
 | an unused block, calibration or import (check 30) | **remove** it, with its attribute group and one of the blank lines around it |
 | a redundant attribute (check 31) | **remove** it, or its whole group when it is the only thing in it |
+| an attribute written twice in one place (check 34) | **remove the earlier** one, which the later already overrides |
 
 "Closest" means within two edits -- a letter added, dropped, changed, or two neighbours swapped -- and
 fewer edits than the name has letters. When two names are equally close nothing is offered: a guess

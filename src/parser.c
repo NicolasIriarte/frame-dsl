@@ -266,6 +266,11 @@ typedef struct {
   int bit_column;
   int byte_line;
   int byte_column;
+  /* Just past the ';' of the one written here, for check 34: the fix for a repeat removes the earlier. */
+  int bit_end_line;
+  int bit_end_column;
+  int byte_end_line;
+  int byte_end_column;
 
   /* `@cal:` names a calibration for one field. It is not inherited -- a curve is a property of one
    * sensor reading, and handing one to every field in a block would be a guess about the others -- so
@@ -275,6 +280,8 @@ typedef struct {
   int cal_column;
   int cal_value_line;
   int cal_value_column;
+  int cal_end_line;
+  int cal_end_column;
 } Attributes;
 
 /* Everything a declaration inherits arrives with the flags cleared: what the enclosing scope said is
@@ -353,6 +360,60 @@ static void redundant(Parser *parser, const Token *value, const char *name, int 
   );
 }
 
+/* Check 34, a warning: an attribute written a second time in one place -- one group, or the file's
+ * defaults. The later one wins, as it always has, so the fix removes the earlier: the file means what
+ * it meant. At the later one's name, the part written twice. */
+static void repeated(
+  Parser *parser,
+  const Token *name,
+  bool same,
+  const char *value,
+  const char *earlier,
+  int line,
+  int column,
+  int end_line,
+  int end_column
+) {
+  size_t index = parser->diags->count;
+  if (same) {
+    diag_warn(
+      parser->diags,
+      name->line,
+      name->column,
+      34,
+      "'@%.*s: %s' is written twice; the one on line %d already says it",
+      (int)name->length,
+      name->text,
+      value,
+      line
+    );
+  } else {
+    diag_warn(
+      parser->diags,
+      name->line,
+      name->column,
+      34,
+      "'@%.*s' is written twice: this '%s' overrides the '%s' on line %d",
+      (int)name->length,
+      name->text,
+      value,
+      earlier,
+      line
+    );
+  }
+  diag_set_removal(
+    parser->diags,
+    index,
+    line,
+    column,
+    end_line,
+    end_column,
+    "remove the earlier '@%.*s'",
+    (int)name->length,
+    name->text
+  );
+}
+
 /* attribute = "@" identifier ":" identifier ";" */
 static bool parse_attribute(Parser *parser, Attributes *attrs) {
   int line = parser->current.line;
@@ -387,6 +448,9 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
   const ByteOrder byte_before = attrs->byte_order;
   const int bit_from = attrs->bit_line;
   const int byte_from = attrs->byte_line;
+  /* Where the one this attribute ends up replacing is written, so the fix can take that one out. */
+  int *end_line = NULL;
+  int *end_column = NULL;
 
   if (word_is(&name, "bit_order")) {
     if (word_is(&value, "msb_first")) {
@@ -410,6 +474,21 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     if (ok && bit_inherited && attrs->bit_order == bit_before) {
       redundant(parser, &value, "bit_order", bit_from);
     }
+    if (ok && attrs->bit_written) {
+      repeated(
+        parser,
+        &name,
+        attrs->bit_order == bit_before,
+        BIT_ORDER_VALUES[attrs->bit_order == BIT_ORDER_LSB_FIRST],
+        BIT_ORDER_VALUES[bit_before == BIT_ORDER_LSB_FIRST],
+        bit_from,
+        attrs->bit_column,
+        attrs->bit_end_line,
+        attrs->bit_end_column
+      );
+    }
+    end_line = &attrs->bit_end_line;
+    end_column = &attrs->bit_end_column;
     attrs->bit_written = ok;
     attrs->bit_explicit = attrs->bit_explicit || ok;
     attrs->bit_line = line;
@@ -436,13 +515,45 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     if (ok && byte_inherited && attrs->byte_order == byte_before) {
       redundant(parser, &value, "byte_order", byte_from);
     }
+    if (ok && attrs->byte_written) {
+      repeated(
+        parser,
+        &name,
+        attrs->byte_order == byte_before,
+        BYTE_ORDER_VALUES[attrs->byte_order == BYTE_ORDER_LITTLE_ENDIAN],
+        BYTE_ORDER_VALUES[byte_before == BYTE_ORDER_LITTLE_ENDIAN],
+        byte_from,
+        attrs->byte_column,
+        attrs->byte_end_line,
+        attrs->byte_end_column
+      );
+    }
+    end_line = &attrs->byte_end_line;
+    end_column = &attrs->byte_end_column;
     attrs->byte_written = ok;
     attrs->byte_explicit = attrs->byte_explicit || ok;
     /* Positioned at the '@', which is what check 10 points the author at. */
     attrs->byte_line = line;
     attrs->byte_column = column;
   } else if (word_is(&name, "cal")) {
+    /* Not inherited, so one already here was written earlier in this same group. */
+    const char *before = attrs->cal;
     attrs->cal = dotted_name(parser, value.text, value.length);
+    if (before != NULL && attrs->cal != NULL) {
+      repeated(
+        parser,
+        &name,
+        strcmp(before, attrs->cal) == 0,
+        attrs->cal,
+        before,
+        attrs->cal_line,
+        attrs->cal_column,
+        attrs->cal_end_line,
+        attrs->cal_end_column
+      );
+    }
+    end_line = &attrs->cal_end_line;
+    end_column = &attrs->cal_end_column;
     attrs->cal_line = line;
     attrs->cal_column = column;
     attrs->cal_value_line = value.line;
@@ -464,6 +575,10 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
 
   if (!expect(parser, TOK_SEMICOLON)) {
     return false;
+  }
+  if (end_line != NULL) {
+    *end_line = parser->previous_end_line;
+    *end_column = parser->previous_end_column;
   }
   return ok;
 }

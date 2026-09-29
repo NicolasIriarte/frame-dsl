@@ -1,9 +1,9 @@
 /* Story 14: warnings (#71) -- what loads fine and is almost certainly not what was meant.
  *
  * Check 30 is a declaration nothing uses, check 31 an attribute repeating what an enclosing scope
- * already wrote. Both are warnings: the file loads, encodes and decodes, and the warning is there to
- * be read. Each case asserts where a warning is and that nothing else was said, since a lint that
- * over-reports is one people learn to ignore. */
+ * already wrote, check 34 an attribute written twice in one place (#119). All are warnings: the file loads, encodes and
+ * decodes, and the warning is there to be read. Each case asserts where a warning is and that nothing else was said,
+ * since a lint that over-reports is one people learn to ignore. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -341,6 +341,141 @@ static int us14_tc11_werror_decides_what_a_warning_costs(const TestArguments *ar
   return 0;
 }
 
+/* Check 34: the same attribute twice in one group, or in the file's defaults, warns at the later one's
+ * name -- whatever the place, whichever the attribute, and whether or not the values agree. */
+static int us14_tc12_an_attribute_written_twice_in_one_place_warns(const TestArguments *args) {
+  (void)args;
+  const char *sources[] = {
+    /* a field's group, the same value */
+    "pkt TM {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @bit_order: lsb_first; ]\n  x: 8;\n};\n",
+    /* a packet's group, a different value */
+    "[ @byte_order: little_endian; @byte_order: big_endian; ]\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n",
+    /* an anonymous block's group */
+    "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: little_endian; @byte_order: little_endian; ]\n"
+    "  block {\n    x: 16;\n  };\n};\n",
+    /* a named block's group, over several lines */
+    "[\n  @bit_order: lsb_first;\n  @bit_order: msb_first;\n]\nblock H {\n  id: 8 = 1;\n};\npkt TM {\n  h: H;\n};\n",
+    /* a calibration, each of the two used somewhere so that check 30 has nothing to say */
+    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [ @cal: k; @cal: c; ]\n  x: 8;\n"
+    "  [ @cal: k; ]\n  y: 8;\n};\n",
+    /* the file's defaults */
+    "@byte_order: little_endian;\n@bit_order: lsb_first;\n@byte_order: little_endian;\npkt TM {\n  id: 8 = 1;\n};\n",
+  };
+  const char *expected[] = { "3:29:34", "1:32:34", "3:34:34", "3:4:34", "5:15:34", "3:2:34" };
+
+  for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
+    int failure = expect_warnings(sources[i], expected[i]);
+    if (failure != 0) {
+      return failure * 100 + (int)i;
+    }
+  }
+  return 0;
+}
+
+/* The message says which case it is, and the file means what it did before the warning existed: the
+ * last one written wins. */
+static int us14_tc13_the_last_of_two_still_wins(const TestArguments *args) {
+  (void)args;
+  FramedslResult *result = framedsl_load_string(
+    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n"
+    "  [ @byte_order: little_endian; @byte_order: big_endian; @cal: k; @cal: c; ]\n  x: 16;\n"
+    "  [ @bit_order: lsb_first; @bit_order: lsb_first; @cal: k; ]\n  y: 8;\n};\n",
+    "t.fdsl"
+  );
+  const char *messages[] = {
+    "'@byte_order' is written twice: this 'big_endian' overrides the 'little_endian' on line 5",
+    "'@cal' is written twice: this 'c' overrides the 'k' on line 5",
+    "'@bit_order: lsb_first' is written twice; the one on line 7 already says it",
+  };
+  int failure = 0;
+  FramedslField field;
+  size_t packet = 0;
+  if (!framedsl_ok(result) || framedsl_diagnostic_count(result) != 3) {
+    failure = __LINE__;
+  } else {
+    for (size_t i = 0; i < 3 && failure == 0; ++i) {
+      const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
+      if (diag->check != 34 || strcmp(diag->message, messages[i]) != 0) {
+        failure = __LINE__ * 10 + (int)i;
+      }
+    }
+  }
+  if (failure == 0
+      && (!framedsl_find_packet(framedsl_definition(result), "TM", &packet)
+          || !framedsl_field(framedsl_definition(result), packet, 1, &field)
+          || field.byte_order != FRAMEDSL_BYTE_ORDER_BIG_ENDIAN || field.cal == NULL || strcmp(field.cal, "c") != 0)) {
+    failure = __LINE__;
+  }
+  if (
+    failure == 0
+    && (!framedsl_field(framedsl_definition(result), packet, 2, &field) || field.bit_order != FRAMEDSL_BIT_ORDER_LSB_FIRST)) {
+    failure = __LINE__;
+  }
+  framedsl_result_free(result);
+  return failure;
+}
+
+/* Different attributes in one group, and one attribute in two groups, are not written twice in one
+ * place. The second of these is check 31's when one group encloses the other, and nothing when not. */
+static int us14_tc14_what_is_not_written_twice(const TestArguments *args) {
+  (void)args;
+  const char *sources[] = {
+    "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n"
+    "  [ @bit_order: lsb_first; @byte_order: little_endian; @cal: c; ]\n  x: 16;\n};\n",
+    "cal c(x) = x * 2;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n"
+    "  [ @byte_order: big_endian; @cal: c; ]\n  x: 16;\n  [ @cal: c; ]\n  y: 8;\n};\n",
+    "@bit_order: lsb_first;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n};\n",
+  };
+  for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
+    int failure = expect_warnings(sources[i], "");
+    if (failure != 0) {
+      return failure * 100 + (int)i;
+    }
+  }
+  return 0;
+}
+
+/* --check prints check 34 like any warning, and --werror refuses the file for it. */
+static int us14_tc15_werror_refuses_an_attribute_written_twice(const TestArguments *args) {
+  char path[1024];
+  if (!write_file(
+        args,
+        "twice.fdsl",
+        "pkt TM {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\n  x: 8;\n};\n",
+        path,
+        sizeof(path)
+      )) {
+    return __LINE__;
+  }
+  char expected[2800];
+  snprintf(
+    expected,
+    sizeof(expected),
+    "%s:3:29: warning: '@bit_order' is written twice: this 'msb_first' overrides the 'lsb_first' on line 3 "
+    "[check 34]\n%s:3:5: note: remove the earlier '@bit_order'\n",
+    path,
+    path
+  );
+
+  for (int werror = 0; werror <= 1; ++werror) {
+    char command[2400];
+    snprintf(command, sizeof(command), "%s %s --check%s 2>/dev/null", FRAMEDSL_BIN, path, werror ? " --werror" : "");
+    FILE *pipe = popen(command, "r");
+    if (pipe == NULL) {
+      return __LINE__;
+    }
+    char output[2048] = { 0 };
+    size_t used = fread(output, 1, sizeof(output) - 1, pipe);
+    output[used] = '\0';
+    int closed = pclose(pipe);
+    int status = WIFEXITED(closed) ? WEXITSTATUS(closed) : -1;
+    if (status != werror || strcmp(output, expected) != 0) {
+      return __LINE__ * 10 + werror;
+    }
+  }
+  return 0;
+}
+
 void register_user_story14(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us14_tc01_an_unused_block_warns_at_its_name, "an unused block warns at its name", false);
@@ -358,4 +493,12 @@ void register_user_story14(void) {
   ADD_TEST_CASE(us14_tc09_a_file_with_warnings_still_works, "a file with warnings loads, encodes and decodes", false);
   ADD_TEST_CASE(us14_tc10_every_example_is_warning_free, "every example is warning-free", false);
   ADD_TEST_CASE(us14_tc11_werror_decides_what_a_warning_costs, "--check exits 0 on a warning, 1 with --werror", false);
+  ADD_TEST_CASE(
+    us14_tc12_an_attribute_written_twice_in_one_place_warns, "an attribute written twice in one place warns", false
+  );
+  ADD_TEST_CASE(us14_tc13_the_last_of_two_still_wins, "of an attribute written twice, the last still wins", false);
+  ADD_TEST_CASE(us14_tc14_what_is_not_written_twice, "other attributes, and other groups, are not twice", false);
+  ADD_TEST_CASE(
+    us14_tc15_werror_refuses_an_attribute_written_twice, "--werror refuses an attribute written twice", false
+  );
 }

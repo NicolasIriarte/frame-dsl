@@ -4,9 +4,9 @@
  * @file
  * @brief Warnings: what loads fine and is almost certainly not what was meant.
  *
- * Nothing here fails a load. The redundant-attribute warning (check 31) is the parser's, since that is
- * where attribute scopes are flattened and the only place both values are still in sight; this is the
- * rest, which needs the whole file and what its imports brought.
+ * Nothing here fails a load. The attribute warnings -- redundant (check 31) and written twice (check 34)
+ * -- are the parser's, since that is where attribute scopes are flattened and the only place both
+ * values are still in sight; this is the rest, which needs the whole file and what its imports brought.
  */
 
 #include "ast.h"

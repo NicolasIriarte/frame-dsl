@@ -293,6 +293,11 @@ the same way.
     repeating its packet's, a packet's repeating the file's. Reported at the inner one, which is the
     one saying nothing new. Only against something written: `@bit_order: msb_first;` at the top of a
     file restates the language's default, and that is documentation.
+34. An attribute written twice in one place: one `[ ... ]` group, or the file's bare defaults. With the
+    same value or another; `@cal` included. The later one is in effect, as it was before this check
+    existed, so it is reported at the later one and the fix removes the earlier -- the file means the
+    same afterwards. Check 31 does not see this case: it compares a scope with the ones *enclosing* it,
+    and a group is one scope repeating itself.
 
 ### Deciding distinguishability
 

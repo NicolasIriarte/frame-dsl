@@ -277,6 +277,17 @@ the attribute says nothing, and usually means the author thought the packet said
 Writing the language's own default at the top of a file is not a repeat of anything written, and is
 silent.
 
+Writing the same attribute twice in *one* place -- one `[ ... ]` group, or the bare defaults at the top
+of the file -- is a warning too (check 34), whether the two values agree or not:
+
+```
+[ @byte_order: little_endian; @cal: raw_counts; @byte_order: big_endian; @cal: volts; ]
+value: 16;                           # big_endian, through volts: the later of each
+```
+
+The later one wins, as it always has, so the file means what it did before the warning existed; but
+one of the two is a mistake, and which one the author meant is exactly what the file no longer says.
+
 ### Where `byte_order` does not apply
 
 `byte_order` only means something for a field that is byte-aligned and a whole number of bytes wide.
