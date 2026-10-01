@@ -77,6 +77,14 @@ typedef enum {
    * frame, which is why it is a different value.
    */
   FRAMEDSL_ERROR_TRUNCATED,
+  /** @brief A field typed by an enum holds a value the enum does not list, or was given a name it does
+   * not list.
+   *
+   * Reading one is not a failed decode: the frame arrived and the raw value is there to read. This is
+   * how a device sending a state the definition does not know about is told apart from one that sent
+   * nothing.
+   */
+  FRAMEDSL_ERROR_UNLISTED,
 } FramedslStatus;
 
 typedef enum {
@@ -189,6 +197,11 @@ typedef struct {
    */
   uint64_t element_bits;
   size_t member_count;
+
+  /** @brief The enum this field is typed by, `level: TxLevel;` (#11), or NULL. It points into the
+   * definition; framedsl_find_enum() resolves it.
+   */
+  const char *enumeration;
 } FramedslField;
 
 /** @brief A loaded definition. Valid until its result is freed. */
@@ -833,7 +846,9 @@ FramedslStatus framedsl_uncalibrate(const FramedslDefinition *definition, Framed
 
 /**
  * @brief Every calibration in the definition as C: a header of `static inline double` functions,
- * `<prefix><name>(double raw)` and, where there is one, `<prefix><name>_inverse(double eng)`.
+ * `<prefix><name>(double raw)` and, where there is one, `<prefix><name>_inverse(double eng)`. Every
+ * enum follows, as `<prefix><name>_<NAME>` constants and a `<prefix><name>_name()` function from a
+ * value to its name, NULL for one the enum does not list.
  *
  * For a program that wants a curve compiled in rather than interpreted. The functions are generated
  * from the compiled curves, not the source, and compute exactly what framedsl_calibrate() and
@@ -851,6 +866,71 @@ FramedslStatus framedsl_uncalibrate(const FramedslDefinition *definition, Framed
  * @return The header's length, not counting the terminator. 0 only if it could not be generated.
  */
 size_t framedsl_emit_c(const FramedslDefinition *definition, const char *prefix, char *out, size_t capacity);
+
+/* ---- Enumerations -----------------------------------------------------------------------------
+ *
+ * An enum names the values of a field typed by it, `level: TxLevel;`. The arena holds the number, as
+ * for any field: framedsl_get_u64() and framedsl_set_u64() read and write it raw, and a raw value the
+ * enum does not list is still a value -- a device reporting a state this definition has not heard of
+ * is exactly what somebody debugging it wants to see. The calls below are the checked path, by name. */
+
+/**
+ * @brief A field's value, by the name its enum gives it.
+ * @param frame The frame to read from.
+ * @param id A field typed by an enum.
+ * @param name Set to the name on success, pointing into the definition; to NULL on
+ * FRAMEDSL_ERROR_UNLISTED.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if the field is not typed by an enum;
+ * FRAMEDSL_ERROR_UNLISTED if the value it holds is not one the enum lists -- framedsl_get_u64() still
+ * reads it.
+ */
+FramedslStatus framedsl_get_name(const FramedslFrame *frame, FramedslFieldId id, const char **name);
+
+/**
+ * @brief Set a field to the value its enum gives `name`.
+ * @param frame The frame to write into.
+ * @param id A field typed by an enum.
+ * @param name One of the enum's names, as the definition writes it: `HIGH`, not `TxLevel.HIGH`.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if the field is not typed by an enum;
+ * FRAMEDSL_ERROR_UNLISTED if the enum has no such name. Nothing is written on failure.
+ */
+FramedslStatus framedsl_set_name(FramedslFrame *frame, FramedslFieldId id, const char *name);
+
+/** @brief How many enums the definition has, imported ones included. */
+size_t framedsl_enum_count(const FramedslDefinition *definition);
+
+/** @brief An enum's name, by index below framedsl_enum_count(), or NULL. An imported one is named
+ * as the definition names it, `vendor.Mode` for one imported `as vendor`. */
+const char *framedsl_enum_name(const FramedslDefinition *definition, size_t index);
+
+/**
+ * @brief Look up an enum by name -- the one FramedslField.enumeration gives, say.
+ * @param definition A loaded definition.
+ * @param name The enum's name.
+ * @param index Set to its index on success.
+ * @return false if the definition has no enum of that name.
+ */
+bool framedsl_find_enum(const FramedslDefinition *definition, const char *name, size_t *index);
+
+/** @brief How many names an enum lists, by index below framedsl_enum_count(); 0 if out of range. */
+size_t framedsl_enum_item_count(const FramedslDefinition *definition, size_t index);
+
+/**
+ * @brief One of an enum's names and its value. In the order written, which is increasing value.
+ * @param definition A loaded definition.
+ * @param index An index below framedsl_enum_count(definition).
+ * @param item An index below framedsl_enum_item_count(definition, index).
+ * @param name Set to the name, pointing into the definition. May be NULL.
+ * @param value Set to its value. May be NULL.
+ * @return false if either index is out of range.
+ */
+bool framedsl_enum_item(
+  const FramedslDefinition *definition,
+  size_t index,
+  size_t item,
+  const char **name,
+  uint64_t *value
+);
 
 #ifdef __cplusplus
 }

@@ -92,6 +92,49 @@ typedef struct {
   int end_column;
 } AstCal;
 
+/** @brief One name of an enum, `NAME [= value];`. */
+typedef struct {
+  const char *name;
+  /** @brief As written, or counted: one more than the name before it, 0 for the first. */
+  uint64_t value;
+  /** @brief Counting went past the largest 64-bit value, so `value` means nothing; check 38 says so. */
+  bool overflowed;
+  int line;
+  int column;
+} AstEnumItem;
+
+/**
+ * @brief `enum Name: width { A; B = 5; C; };` at file level (#11): names for a field's values, and the
+ * width every field of this type has. A field is typed by it the way it uses a block, `level: TxLevel;`,
+ * and composition turns that field into an ordinary one of the enum's width.
+ */
+typedef struct {
+  const char *name;
+  /** @brief Where the `enum` is. */
+  int line;
+  int column;
+  int name_line;
+  int name_column;
+
+  uint64_t width;
+  int width_line;
+  int width_column;
+
+  AstEnumItem *items;
+  size_t item_count;
+  size_t item_capacity;
+
+  /** @brief Where the closing brace is. It counts as declared from here on, as a block does (check 24). */
+  int end_line;
+  int end_column;
+  /** @brief Just past its closing `;`. */
+  int stop_line;
+  int stop_column;
+
+  /** @brief As AstPacket.origin: where an imported enum was declared, or NULL. */
+  const char *origin;
+} AstEnum;
+
 /** @brief `import "path" [as alias];` at the top of a file. */
 typedef struct AstImport {
   const char *path;
@@ -117,8 +160,13 @@ typedef struct AstOverride {
   /** @brief Relative to the instance, and dotted for a field of a nested one: `inner.id`. */
   const char *name;
   uint64_t value;
+  /** @brief The value written as a name of the field's enum, `type = HK;`, or NULL for a number. */
+  const char *value_name;
   int line;
   int column;
+  /** @brief Where the value is. */
+  int value_line;
+  int value_column;
   struct AstOverride *next;
 } AstOverride;
 
@@ -178,6 +226,17 @@ typedef struct {
   uint64_t fixed;
   int fixed_line;
   int fixed_column;
+  /**
+   * @brief A fixed value written as a name, `type: PktType = HK;`, until composition looks it up in the
+   * field's enum and sets `fixed` from it. NULL when the value is a number, or there is none.
+   */
+  const char *fixed_name;
+
+  /**
+   * @brief The enum this field is typed by, as this file names it (`vendor.Mode`), or NULL. Set by
+   * composition, which turns a use of an enum into an ordinary field of the enum's width.
+   */
+  const char *enumeration;
 
   /** @brief Resolved: what applies to this field once file, packet and field scope are combined. */
   BitOrder bit_order;
@@ -247,6 +306,10 @@ typedef struct AstFile {
   size_t cal_count;
   size_t cal_capacity;
 
+  AstEnum *enums;
+  size_t enum_count;
+  size_t enum_capacity;
+
   /** @brief In the order written. Resolved by imports_resolve(), which merges what they bring. */
   AstImport *imports;
 
@@ -288,3 +351,25 @@ AstCal *ast_add_cal(AstFile *file);
  * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
  */
 AstPacket *ast_add_block(AstFile *file);
+
+/**
+ * @brief Add an enum to `file`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
+AstEnum *ast_add_enum(AstFile *file);
+
+/**
+ * @brief Add a name to `enumeration`.
+ * @return NULL on allocation failure. The caller reports it; there is nothing else to do.
+ */
+AstEnumItem *ast_add_enum_item(AstEnum *enumeration);
+
+/** @brief The enum `file` calls `name`, or NULL. */
+const AstEnum *ast_find_enum(const AstFile *file, const char *name);
+
+/** @brief The name `enumeration` gives `value`, or NULL when it lists none. Its values increase, so
+ * this is a binary search. */
+const char *ast_enum_name_of(const AstEnum *enumeration, uint64_t value);
+
+/** @brief The name called `name` in `enumeration`, or NULL. */
+const AstEnumItem *ast_enum_item(const AstEnum *enumeration, const char *name);

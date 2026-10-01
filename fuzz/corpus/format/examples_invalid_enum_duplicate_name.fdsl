@@ -1,0 +1,16 @@
+# REJECTED: check 36 -- an enum's names are unique.
+#
+# Two `LOW`s would leave `level: TxLevel = LOW;` meaning either value, so the second is refused. It is
+# usually a copy-paste of the line above that was meant to be renamed.
+
+enum TxLevel: 3 {
+  OFF;
+  LOW;
+  LOW;
+  HIGH;
+};
+
+pkt TM_ANTENNA {
+  id:    5 = 0x08;
+  level: TxLevel;
+};

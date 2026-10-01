@@ -750,3 +750,52 @@ size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
   }
   return slot->length;
 }
+
+/* ---- Names (#11) ------------------------------------------------------------------------------
+ *
+ * The arena holds the number, as for any field. A name is looked up on the way out of a get and on the
+ * way into a set, the way an engineering value is. */
+
+/* The enum a field is typed by, or NULL. Only asked once the id has been found to address a field. */
+static const AstEnum *field_enum(const FramedslFrame *frame, FramedslFieldId id) {
+  int32_t enumeration = frame->definition->program->packets[id.packet].fields[id.field].enumeration;
+  if (id.member != 0) {
+    MemberView view;
+    enumeration = member_view(frame, id, &view) ? view.member->enumeration : -1;
+  }
+  return enumeration < 0 ? NULL : &frame->definition->ast->enums[enumeration];
+}
+
+FramedslStatus framedsl_get_name(const FramedslFrame *frame, FramedslFieldId id, const char **name) {
+  uint64_t value = 0;
+  FramedslStatus status = framedsl_get_u64(frame, id, &value);
+  if (status != FRAMEDSL_OK) {
+    return status;
+  }
+  const AstEnum *enumeration = field_enum(frame, id);
+  if (enumeration == NULL || name == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  *name = ast_enum_name_of(enumeration, value);
+  return *name != NULL ? FRAMEDSL_OK : FRAMEDSL_ERROR_UNLISTED;
+}
+
+FramedslStatus framedsl_set_name(FramedslFrame *frame, FramedslFieldId id, const char *name) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  const Slot *slot = frame_slot(frame, id);
+  if (slot == NULL || (id.member == 0 && !slot->is_scalar)) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  const AstEnum *enumeration = field_enum(frame, id);
+  if (enumeration == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  const AstEnumItem *item = ast_enum_item(enumeration, name);
+  if (item == NULL) {
+    return FRAMEDSL_ERROR_UNLISTED;
+  }
+  /* The width check, and the write, are set_u64()'s; the enum's values all fit its width (check 38). */
+  return framedsl_set_u64(frame, id, item->value);
+}

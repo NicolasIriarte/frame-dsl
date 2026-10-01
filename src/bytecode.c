@@ -151,6 +151,19 @@ static int32_t cal_index(const AstFile *file, const char *name) {
   return -1;
 }
 
+/* The enum a field is typed by, by index. Composition resolved it by the same name. */
+static int32_t enum_index(const AstFile *file, const char *name) {
+  if (name == NULL) {
+    return -1;
+  }
+  for (size_t i = 0; i < file->enum_count; ++i) {
+    if (strcmp(file->enums[i].name, name) == 0) {
+      return (int32_t)i;
+    }
+  }
+  return -1;
+}
+
 static size_t round_up(size_t value, size_t alignment) {
   size_t remainder = value % alignment;
   return remainder == 0 ? value : value + (alignment - remainder);
@@ -191,6 +204,7 @@ static bool compile_element(ElementProgram *element, const AstFile *file, const 
       .has_fixed = field->has_fixed,
       .fixed = field->fixed,
       .cal = cal_index(file, field->cal),
+      .enumeration = enum_index(file, field->enumeration),
       .bit_order = field->bit_order,
       .byte_order = field->byte_order,
     };
@@ -291,6 +305,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .has_fixed = field->has_fixed,
         .fixed = field->has_fixed ? field->fixed : 0,
         .cal = cal_index(file, field->cal),
+        .enumeration = enum_index(file, field->enumeration),
         .bit_order = field->bit_order,
         .byte_order = field->byte_order,
         .element = field->element != NULL ? element_of(program, field->element) : NULL,

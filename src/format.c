@@ -450,6 +450,11 @@ static void field(Formatter *f, int depth) {
       take(f, false); /* ] */
     }
     overrides(f);
+    /* A field typed by an enum, fixed by one of its names: `type: PktType = HK;` (#11). */
+    if (peek(f)->kind == TOK_EQUALS) {
+      take(f, true);
+      take(f, true);
+    }
   } else {
     expression(f, TOK_EQUALS, TOK_SEMICOLON, true);
     if (peek(f)->kind == TOK_EQUALS) {
@@ -525,6 +530,58 @@ static void calibration(Formatter *f) {
   end(f);
 }
 
+/* The kind of the second token ahead that is not a comment: what follows the name about to be read. */
+static TokenKind second_kind(const Formatter *f) {
+  size_t at = f->pos;
+  int seen = 0;
+  for (; at < f->count; ++at) {
+    if (f->tokens[at].kind == TOK_COMMENT) {
+      continue;
+    }
+    if (seen++ == 1) {
+      return f->tokens[at].kind;
+    }
+  }
+  return TOK_EOF;
+}
+
+/* `enum Name: width {`, one name to a line a level in, and `};` (#11). A name given a value aligns on
+ * its `=` with the others that have one; a counted name is only itself. */
+static void enumeration(Formatter *f) {
+  begin(f, LINE_PLAIN, 0);
+  take(f, false); /* enum */
+  take(f, true); /* name */
+  take(f, false); /* : */
+  take(f, true); /* width */
+  take(f, true); /* { */
+  end(f);
+
+  unsigned outer = f->run;
+  new_run(f);
+  f->suppress_blank = true;
+  while (peek(f)->kind == TOK_IDENT && !f->failed) {
+    const bool valued = second_kind(f) == TOK_EQUALS;
+    begin(f, valued ? LINE_ALIGNED : LINE_PLAIN, 1);
+    take(f, false); /* name */
+    if (valued) {
+      to_tail(f);
+      take(f, false); /* = */
+      take(f, true); /* value */
+    }
+    take(f, false); /* ; */
+    end(f);
+  }
+  begin(f, LINE_PLAIN, 1);
+  take_comments(f);
+  f->run = outer;
+
+  begin(f, LINE_PLAIN, 0);
+  f->suppress_blank = true;
+  take(f, false); /* } */
+  take(f, false); /* ; */
+  end(f);
+}
+
 static void import(Formatter *f) {
   begin(f, LINE_PLAIN, 0);
   take(f, false); /* import */
@@ -570,6 +627,8 @@ static void file(Formatter *f) {
       attribute(f, 0);
     } else if (is_word(token, "cal")) {
       calibration(f);
+    } else if (is_word(token, "enum")) {
+      enumeration(f);
     } else {
       if (token->kind == TOK_LBRACKET) {
         group(f, 0);

@@ -380,6 +380,10 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     out->cal = definition->cals->cals[cal].name;
     out->cal_invertible = definition->cals->cals[cal].invertible;
   }
+  const int32_t enumeration = definition->program->packets[packet].fields[field].enumeration;
+  if (enumeration >= 0) {
+    out->enumeration = definition->ast->enums[enumeration].name;
+  }
   const ElementProgram *element = definition->program->packets[packet].fields[field].element;
   if (element != NULL) {
     out->element_bits = element->bits;
@@ -420,6 +424,9 @@ bool framedsl_member(
   if (m->cal >= 0) {
     out->cal = definition->cals->cals[m->cal].name;
     out->cal_invertible = definition->cals->cals[m->cal].invertible;
+  }
+  if (m->enumeration >= 0) {
+    out->enumeration = definition->ast->enums[m->enumeration].name;
   }
   return true;
 }
@@ -498,5 +505,59 @@ size_t framedsl_emit_c(const FramedslDefinition *definition, const char *prefix,
     }
     return 0;
   }
-  return cal_emit_c(definition->cals, prefix == NULL ? "fdsl_" : prefix, out, capacity);
+  return cal_emit_c(definition->cals, definition->ast, prefix == NULL ? "fdsl_" : prefix, out, capacity);
+}
+
+/* ---- Enumerations (#11) ---------------------------------------------------------------------- */
+
+size_t framedsl_enum_count(const FramedslDefinition *definition) {
+  return definition == NULL ? 0 : definition->ast->enum_count;
+}
+
+const char *framedsl_enum_name(const FramedslDefinition *definition, size_t index) {
+  if (definition == NULL || index >= definition->ast->enum_count) {
+    return NULL;
+  }
+  return definition->ast->enums[index].name;
+}
+
+bool framedsl_find_enum(const FramedslDefinition *definition, const char *name, size_t *index) {
+  if (definition == NULL || name == NULL) {
+    return false;
+  }
+  const AstEnum *enumeration = ast_find_enum(definition->ast, name);
+  if (enumeration == NULL) {
+    return false;
+  }
+  if (index != NULL) {
+    *index = (size_t)(enumeration - definition->ast->enums);
+  }
+  return true;
+}
+
+size_t framedsl_enum_item_count(const FramedslDefinition *definition, size_t index) {
+  if (definition == NULL || index >= definition->ast->enum_count) {
+    return 0;
+  }
+  return definition->ast->enums[index].item_count;
+}
+
+bool framedsl_enum_item(
+  const FramedslDefinition *definition,
+  size_t index,
+  size_t item,
+  const char **name,
+  uint64_t *value
+) {
+  if (definition == NULL || index >= definition->ast->enum_count || item >= definition->ast->enums[index].item_count) {
+    return false;
+  }
+  const AstEnumItem *found = &definition->ast->enums[index].items[item];
+  if (name != NULL) {
+    *name = found->name;
+  }
+  if (value != NULL) {
+    *value = found->value;
+  }
+  return true;
 }

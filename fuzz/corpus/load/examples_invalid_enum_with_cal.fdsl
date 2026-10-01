@@ -1,0 +1,18 @@
+# REJECTED: check 40 -- a field typed by an enum takes no calibration.
+#
+# An enum makes a field's value a name, and a calibration makes it a number in engineering units; one
+# field cannot read as both.
+
+cal dbm(raw) = raw * 3 + 10;
+
+enum TxLevel: 3 {
+  OFF;
+  LOW;
+  HIGH;
+};
+
+pkt TM_ANTENNA {
+  id:    5 = 0x08;
+  [ @cal: dbm; ]
+  level: TxLevel;
+};

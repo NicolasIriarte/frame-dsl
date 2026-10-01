@@ -66,7 +66,8 @@ static int us1_tc01_parses_every_valid_example(const TestArguments *args) {
 
   const char *names[] = { "tm_datagram.fdsl",     "ccsds_space_packet.fdsl", "packet_family.fdsl",
                           "bit_order.fdsl",       "calibrated_sensor.fdsl",  "composed_packets.fdsl",
-                          "imported_device.fdsl", "common/link.fdsl",        "common/sensors.fdsl" };
+                          "imported_device.fdsl", "common/link.fdsl",        "common/sensors.fdsl",
+                          "radio_status.fdsl" };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     int failure = expect_parses(names[i]);
     if (failure != 0) {
@@ -116,6 +117,13 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
     { "invalid/import_cycle_back.fdsl",          27 },
     { "invalid/import_clash.fdsl",               28 },
     { "invalid/pasted_field_clash.fdsl",         2  },
+    { "invalid/enum_width_out_of_range.fdsl",    35 },
+    { "invalid/enum_duplicate_name.fdsl",        36 },
+    { "invalid/enum_values_out_of_order.fdsl",   37 },
+    { "invalid/enum_value_too_wide.fdsl",        38 },
+    { "invalid/enum_unknown_name.fdsl",          39 },
+    { "invalid/enum_with_cal.fdsl",              40 },
+    { "invalid/enum_pasted.fdsl",                41 },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {

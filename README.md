@@ -30,7 +30,7 @@ When a frame changes, the definition file changes. The program does not get rebu
 
 > **Status: early, and now end to end.** A definition file loads and is checked; a program sets
 > fields by name, encodes a frame, and decodes one back without being told which packet arrived. That
-> is the first milestone in [`docs/scope.md`](docs/scope.md). Signed and floating-point fields, enums,
+> is the first milestone in [`docs/scope.md`](docs/scope.md). Signed and floating-point fields,
 > conditionals and CRC are still absent, each with its own issue. Nothing here is stable, and nothing
 > is published.
 
@@ -96,7 +96,16 @@ pkt TC_PING  { hdr: Header { id = 0x01; }; };
 pkt TM_REPLY { hdr: Header { id = 0x81; }; status: 8; };   # fields: hdr.id, hdr.sequence, status
 ```
 
-Headers, trailers and calibrations shared by several files live in a library that each of them
+A field whose values mean something is typed by an enum, and a discriminator reads as what it means:
+
+```
+enum PktType: 4 { HK = 0x1; EVENT; };
+enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };
+
+pkt TM_ANTENNA { type: PktType = HK; level: TxLevel; pad: 1; };   # level is 3 bits
+```
+
+Headers, trailers, calibrations and enums shared by several files live in a library that each of them
 imports -- `import "common/link.fdsl";`, or `import "vendor.fdsl" as vendor;` to keep two libraries'
 names apart. See [`examples/imported_device.fdsl`](examples/imported_device.fdsl).
 
@@ -161,7 +170,9 @@ $ frame-dsl examples/calibrated_sensor.fdsl -d "10 80 07 FF 03 20 07 FF"
 $ frame-dsl examples/calibrated_sensor.fdsl --emit-c > curves.h
 ```
 
-See [Calibrations](manual/language.md#calibrations) for how a curve is written.
+See [Calibrations](manual/language.md#calibrations) for how a curve is written. A field typed by an
+[enum](manual/language.md#enumerations) shows its name the same way -- `level 3 (0x3) = HIGH
+[TxLevel]` -- and one the enum does not list as `<unlisted>`, rather than failing the frame.
 
 Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
 invocation is.
@@ -236,7 +247,9 @@ reply.decode(wire)                                          # 'TC_WRITE'
 reply["TC_WRITE.size"]                                      # 2
 ```
 
-`frame.eng["PKT.field"]` reads and writes a calibrated field in engineering units. A repetition's
+`frame.eng["PKT.field"]` reads and writes a calibrated field in engineering units, and
+`frame.names["PKT.field"]` a field typed by an enum by its names -- `UnlistedError` for a value the enum
+does not list, which `frame[...]` still reads as a number. A repetition's
 elements are `frame["TM_SAMPLES.samples[3].reading"]`, `frame.count("TM_SAMPLES.samples")`, or all of one
 member at once with `frame.elements("TM_SAMPLES.samples.reading")`. `frame.decode_prefix(data)` returns
 the packet and how many bytes it took, for walking a stream. Each error the library reports is its own

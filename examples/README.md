@@ -56,6 +56,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`packet_family.fdsl`](packet_family.fdsl) | several packets in one file, told apart by a shared type field |
 | [`bit_order.fdsl`](bit_order.fdsl) | attributes at every scope: file, packet, field and `block` |
 | [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
+| [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
 
 ## Should be rejected
 
@@ -72,6 +73,13 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/reservation_on_fixed_width.fdsl`](invalid/reservation_on_fixed_width.fdsl) | 14 -- a reservation on a constant-width field |
 | [`invalid/order_on_a_bit_string.fdsl`](invalid/order_on_a_bit_string.fdsl) | 15 -- an ordering attribute written on a bit string |
 | [`invalid/valof_on_a_bit_string.fdsl`](invalid/valof_on_a_bit_string.fdsl) | 16 -- `valof()` naming a field that is not a scalar |
+| [`invalid/enum_width_out_of_range.fdsl`](invalid/enum_width_out_of_range.fdsl) | 35 -- an enum wider than 64 bits |
+| [`invalid/enum_duplicate_name.fdsl`](invalid/enum_duplicate_name.fdsl) | 36 -- one name twice in an enum |
+| [`invalid/enum_values_out_of_order.fdsl`](invalid/enum_values_out_of_order.fdsl) | 37 -- an enum's values not increasing |
+| [`invalid/enum_value_too_wide.fdsl`](invalid/enum_value_too_wide.fdsl) | 38 -- an enum's value that does not fit its width |
+| [`invalid/enum_unknown_name.fdsl`](invalid/enum_unknown_name.fdsl) | 39 -- a value that is not one of the field's enum's names |
+| [`invalid/enum_with_cal.fdsl`](invalid/enum_with_cal.fdsl) | 40 -- a calibration on a field typed by an enum |
+| [`invalid/enum_pasted.fdsl`](invalid/enum_pasted.fdsl) | 41 -- an enum written without a field name |
 
 Each of these fails the one check it is named for and no other. That is worth keeping true: a fixture
 that trips two checks stops proving which one is working.

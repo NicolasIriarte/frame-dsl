@@ -1,0 +1,16 @@
+# REJECTED: check 38 -- every value of an enum fits its width.
+#
+# `MAX = 7` is three bits, and `TxLevel` is two. A name no field of the enum can ever hold is a mistake
+# in the width or in the value, and a field reading it would never match.
+
+enum TxLevel: 2 {
+  OFF;
+  LOW;
+  HIGH;
+  MAX = 7;
+};
+
+pkt TM_ANTENNA {
+  id:    6 = 0x08;
+  level: TxLevel;
+};

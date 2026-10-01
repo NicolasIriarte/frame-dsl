@@ -112,11 +112,12 @@ bool cal_backward(const CalCompiled *cal, double eng, double *out);
 
 /**
  * @brief Writes a C header of `static inline double` functions, one per calibration and one per
- * inverse, snprintf-style.
+ * inverse, then each enum's names and a function from a value to its name, snprintf-style.
  * @param table The compiled calibrations.
+ * @param file The checked file, for its enums; NULL for none.
  * @param prefix Put in front of every function name.
  * @param out Written up to `capacity`, always terminated when `capacity` is not zero.
  * @param capacity Size of `out`.
  * @return The length of the whole header, not counting the terminator, whatever `capacity` was.
  */
-size_t cal_emit_c(const CalTable *table, const char *prefix, char *out, size_t capacity);
+size_t cal_emit_c(const CalTable *table, const AstFile *file, const char *prefix, char *out, size_t capacity);

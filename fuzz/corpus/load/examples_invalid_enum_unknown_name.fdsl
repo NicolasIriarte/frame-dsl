@@ -1,0 +1,19 @@
+# REJECTED: check 39 -- a value on a field typed by an enum is one of its names.
+#
+# `PktType` has no `EVNT`: a typo for `EVENT`. The value is looked up in the field's own enum, so the
+# message can name the one it meant.
+
+enum PktType: 4 {
+  HK = 0x1;
+  EVENT;
+};
+
+block Header {
+  type: PktType;
+  seq:  12;
+};
+
+pkt TM_EVENT {
+  hdr:  Header { type = EVNT; };
+  code: 8;
+};

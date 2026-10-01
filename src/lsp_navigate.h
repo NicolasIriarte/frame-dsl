@@ -40,6 +40,8 @@ typedef enum {
   NAV_ATTRIBUTE,
   NAV_VALUE,
   NAV_NAMESPACE,
+  /** @brief An enum, as a field's type (#11). Its names are offered as NAV_VALUE. */
+  NAV_ENUM,
 } NavKind;
 
 typedef struct {

@@ -21,6 +21,7 @@ syntax keyword fdslAttributeValue msb_first lsb_first big_endian little_endian c
 " Words that are words only where they stand: a field may still be called `import' or `inverse'.
 syntax match fdslContextual "^\s*\<import\>"
 syntax match fdslContextual "^\s*\<cal\>"
+syntax match fdslContextual "^\s*\<enum\>\ze\s\+\a"
 syntax match fdslContextual "\<as\>\ze\s*\w*\s*;"
 syntax match fdslContextual "\<inverse\>\ze\s*("
 
@@ -35,14 +36,16 @@ syntax match fdslAttributeColon ":" contained nextgroup=fdslAttributeValue,fdslC
 syntax region fdslAttribute start="@" end=";" keepend
       \ contains=fdslAttributeSigil,fdslAttributeName,fdslAttributeUnknown,fdslAttributeColon,fdslComment
 
-" The name a calibration is given, and the name a use refers to: `@cal: volts;' and `hdr: Header;'.
+" The name a calibration is given, and the name a use refers to: `@cal: volts;', `hdr: Header;' and
+" `level: TxLevel = HIGH;'.
 " Look-behind rather than \zs: a match may not start where a keyword has already matched, and every
 " one of these follows a keyword.
 syntax match fdslCalName "\a\w*\%(\.\w\+\)*" contained
 syntax match fdslCalDecl "\%(^\s*cal\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(\<\%(pkt\|block\)\>\s\+\)\@<=\a\w*"
+syntax match fdslPacketName "\%(^\s*enum\s\+\)\@<=\a\w*"
 syntax match fdslFieldName "^\s*\zs\w\+\ze\s*\%(\[[^]]*\]\)\?\s*:"
-syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*[;{]"
+syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*[;{=]"
 " A block pasted in without an instance name, `Header { ... };` or `Header;`, alone on its line. The
 " `block {' of an attribute scope has the same shape, and stays a keyword: a keyword always wins.
 syntax match fdslTypeName "^\s*\zs\a\w*\%(\.\w\+\)*\ze\s*[;{]"

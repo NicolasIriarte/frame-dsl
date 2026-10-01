@@ -193,25 +193,16 @@ static int us15_tc09_a_file_that_does_not_parse_is_refused(const TestArguments *
 /* ---- Every definition file in the repository ----------------------------------------------------- */
 
 static const char *const FILES[] = {
-  "examples/bit_order.fdsl",
-  "examples/calibrated_sensor.fdsl",
-  "examples/ccsds_space_packet.fdsl",
-  "examples/composed_packets.fdsl",
-  "examples/imported_device.fdsl",
-  "examples/packet_family.fdsl",
-  "examples/tm_datagram.fdsl",
-  "examples/uart_device.fdsl",
-  "examples/common/link.fdsl",
-  "examples/common/sensors.fdsl",
-  "test/corpus/bit_order.fdsl",
-  "test/corpus/bit_string.fdsl",
-  "test/corpus/bit_string_offset.fdsl",
-  "test/corpus/byte_aligned.fdsl",
-  "test/corpus/byte_order.fdsl",
-  "test/corpus/family.fdsl",
-  "test/corpus/fixed_over.fdsl",
-  "test/corpus/sub_byte.fdsl",
-  "test/corpus/variable.fdsl",
+  "examples/bit_order.fdsl",          "examples/calibrated_sensor.fdsl",
+  "examples/ccsds_space_packet.fdsl", "examples/composed_packets.fdsl",
+  "examples/imported_device.fdsl",    "examples/packet_family.fdsl",
+  "examples/radio_status.fdsl",       "examples/tm_datagram.fdsl",
+  "examples/uart_device.fdsl",        "examples/common/link.fdsl",
+  "examples/common/sensors.fdsl",     "test/corpus/bit_order.fdsl",
+  "test/corpus/bit_string.fdsl",      "test/corpus/bit_string_offset.fdsl",
+  "test/corpus/byte_aligned.fdsl",    "test/corpus/byte_order.fdsl",
+  "test/corpus/family.fdsl",          "test/corpus/fixed_over.fdsl",
+  "test/corpus/sub_byte.fdsl",        "test/corpus/variable.fdsl",
 };
 
 static char *read_file(const char *path) {

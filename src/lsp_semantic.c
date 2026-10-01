@@ -8,7 +8,7 @@
 
 const char *const SEMANTIC_TYPE_NAMES[SEM_TYPE_COUNT] = {
   "keyword",   "type",       "struct", "property", "function", "parameter", "namespace",
-  "decorator", "enumMember", "number", "string",   "comment",  "operator",
+  "decorator", "enumMember", "number", "string",   "comment",  "operator",  "enum",
 };
 
 /* Every token, comments included, gathered first so a name can be classified by what follows it. */
@@ -68,7 +68,22 @@ static bool is(const Token *token, TokenKind kind) {
 typedef enum {
   BRACE_BODY,
   BRACE_OVERRIDES,
+  /** @brief An enum's names (#11). */
+  BRACE_ENUM,
 } BraceKind;
+
+/* Whether `name` is an enum this file declares, `enum NAME:` -- which is what tells `level: TxLevel;`
+ * from `hdr: Header;`, the same shape. One imported under a namespace is not known here, and reads as
+ * a block would. */
+static bool declares_enum(const Token *tokens, size_t count, const Token *name) {
+  for (size_t i = 0; i + 2 < count; ++i) {
+    if (is_word(&tokens[i], "enum") && tokens[i + 1].kind == TOK_IDENT && tokens[i + 2].kind == TOK_COLON
+        && tokens[i + 1].length == name->length && memcmp(tokens[i + 1].text, name->text, name->length) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 typedef enum {
   ATTRIBUTE_NONE,
@@ -96,6 +111,8 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
   int parens = 0;
   bool in_width = false;
   bool in_cal = false;
+  /* Between `enum` and the `{` of its names. */
+  bool in_enum_header = false;
   AttributeState attribute = ATTRIBUTE_NONE;
   bool attribute_is_cal = false;
 
@@ -148,8 +165,9 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
       break;
     case TOK_LBRACE:
       if (depth < (int)(sizeof(braces) / sizeof(*braces))) {
-        braces[depth] = in_width ? BRACE_OVERRIDES : BRACE_BODY;
+        braces[depth] = in_enum_header ? BRACE_ENUM : in_width ? BRACE_OVERRIDES : BRACE_BODY;
       }
+      in_enum_header = false;
       depth += 1;
       break;
     case TOK_RBRACE:
@@ -191,6 +209,12 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
         } else if (is_word(previous, "as") && is(before_previous, TOK_STRING)) {
           type = SEM_NAMESPACE;
           declaration = true;
+        } else if (statement_start && is_word(token, "enum") && is(next, TOK_IDENT)) {
+          type = SEM_KEYWORD;
+          in_enum_header = true;
+        } else if (in_enum_header && is_word(previous, "enum")) {
+          type = SEM_ENUM;
+          declaration = true;
         } else if (statement_start && is_word(token, "cal")) {
           type = SEM_KEYWORD;
           in_cal = true;
@@ -219,13 +243,21 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
           type = SEM_STRUCT;
           declaration = true;
         }
+      } else if (inside == BRACE_ENUM) {
+        type = SEM_ENUM_MEMBER;
+        declaration = true;
       } else if (inside == BRACE_OVERRIDES) {
-        type = SEM_PROPERTY;
+        /* `{ type = HK; }`: the field fixed, and the name of its enum it is fixed to. */
+        type = is(previous, TOK_EQUALS) ? SEM_ENUM_MEMBER : SEM_PROPERTY;
       } else if (in_width) {
         if (is(previous, TOK_LPAREN) && is(before_previous, TOK_VALOF)) {
           type = SEM_PROPERTY;
+        } else if (is(previous, TOK_EQUALS)) {
+          type = SEM_ENUM_MEMBER; /* `level: TxLevel = HIGH;` */
+        } else if (is(next, TOK_DOT)) {
+          type = SEM_NAMESPACE;
         } else {
-          type = is(next, TOK_DOT) ? SEM_NAMESPACE : SEM_STRUCT;
+          type = declares_enum(tokens, token_count, token) ? SEM_ENUM : SEM_STRUCT;
         }
       } else if (is(next, TOK_COLON) || is(next, TOK_LBRACKET)) {
         type = SEM_PROPERTY;

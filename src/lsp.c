@@ -811,7 +811,7 @@ static void handle_completion(Server *server, const Json *id, const Json *params
   /* CompletionItemKind, as the protocol numbers them. */
   static const int KINDS[] = {
     [NAV_KEYWORD] = 14,   [NAV_BLOCK] = 22, [NAV_CAL] = 3,       [NAV_FIELD] = 5,
-    [NAV_ATTRIBUTE] = 10, [NAV_VALUE] = 20, [NAV_NAMESPACE] = 9,
+    [NAV_ATTRIBUTE] = 10, [NAV_VALUE] = 20, [NAV_NAMESPACE] = 9, [NAV_ENUM] = 13,
   };
 
   JsonWriter writer;

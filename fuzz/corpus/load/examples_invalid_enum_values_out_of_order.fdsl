@@ -1,0 +1,17 @@
+# REJECTED: check 37 -- an enum's values increase.
+#
+# `ERROR = 2` comes after `READY`, which counted to 2 already: two names for one value, which a decoded
+# frame could not tell apart. Keeping the values increasing is what makes that impossible, and makes the
+# list read in the order a value would be looked up in.
+
+enum State: 4 {
+  IDLE;
+  BUSY;
+  READY;
+  ERROR = 2;
+};
+
+pkt TM_STATE {
+  id:    4 = 0x3;
+  state: State;
+};

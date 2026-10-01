@@ -75,6 +75,8 @@ typedef struct {
   bool has_fixed;
   uint64_t fixed;
   int32_t cal;
+  /** @brief As FieldInstruction.enumeration. */
+  int32_t enumeration;
   BitOrder bit_order;
   ByteOrder byte_order;
 } MemberInstruction;
@@ -117,6 +119,9 @@ typedef struct {
   /** @brief Index into the definition's calibrations, or -1. Resolved here so that reading an
    * engineering value never searches by name. */
   int32_t cal;
+
+  /** @brief Index into the definition's enums, or -1: what names this field's values (#11). */
+  int32_t enumeration;
 
   /** @brief Resolved: what applies after file, packet, block and field scope are combined. */
   BitOrder bit_order;

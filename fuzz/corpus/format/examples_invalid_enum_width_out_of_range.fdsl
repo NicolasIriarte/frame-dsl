@@ -1,0 +1,14 @@
+# REJECTED: check 35 -- an enum's width is 1 to 64 bits.
+#
+# A field typed by an enum is a number, and a number in this language is a scalar of at most 64 bits.
+# `Checksum` was meant to name a 128-bit field's values, which no enum can.
+
+enum Checksum: 128 {
+  NONE;
+  CRC;
+};
+
+pkt TM_BLOCK {
+  id:  8 = 0x51;
+  sum: Checksum;
+};

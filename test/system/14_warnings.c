@@ -294,7 +294,7 @@ static int us14_tc10_every_example_is_warning_free(const TestArguments *args) {
   const char *names[] = { "tm_datagram.fdsl",     "ccsds_space_packet.fdsl", "packet_family.fdsl",
                           "bit_order.fdsl",       "calibrated_sensor.fdsl",  "composed_packets.fdsl",
                           "imported_device.fdsl", "common/link.fdsl",        "common/sensors.fdsl",
-                          "uart_device.fdsl" };
+                          "uart_device.fdsl",     "radio_status.fdsl" };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", EXAMPLES_DIR, names[i]);

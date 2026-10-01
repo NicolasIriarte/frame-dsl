@@ -1,4 +1,4 @@
-"""The public API: loading, the three kinds of value, repetition, and one exception per status."""
+"""The public API: loading, the kinds of value, repetition, and one exception per status."""
 
 import os
 import tempfile
@@ -204,6 +204,46 @@ class Engineering(unittest.TestCase):
         self.assertIn("my_volts", self.definition.emit_c("my_"))
         with self.assertRaises(framedsl.FieldError):
             self.definition.calibrate("nope", 1)
+
+
+class Names(unittest.TestCase):
+    def setUp(self):
+        self.definition = example("radio_status.fdsl")
+        self.frame = self.definition.frame()
+
+    def test_names_read_and_write_and_the_number_stays_the_number(self):
+        frame = self.frame
+        frame.names["TM_ANTENNA.power"] = "ON"
+        frame.names["TM_ANTENNA.level"] = "HIGH"
+        frame.names["TM_ANTENNA.mode"] = "TRANSMIT"
+        self.assertEqual(frame["TM_ANTENNA.level"], 3)
+        self.assertEqual(frame.encode("TM_ANTENNA").hex(" "), "10 00 b0 02 01")
+        frame["TM_ANTENNA.level"] = 7
+        self.assertEqual(frame.names["TM_ANTENNA.level"], "MAX")
+
+    def test_an_unlisted_value_decodes_and_reads_as_a_number(self):
+        frame = self.frame
+        self.assertEqual(frame.decode(bytes.fromhex("10 00 d0 00 01")), "TM_ANTENNA")
+        self.assertEqual(frame["TM_ANTENNA.level"], 5)
+        with self.assertRaises(framedsl.UnlistedError):
+            frame.names["TM_ANTENNA.level"]
+
+    def test_an_unknown_name_is_refused_and_nothing_is_written(self):
+        self.frame.names["TM_ANTENNA.level"] = "LOW"
+        with self.assertRaises(framedsl.UnlistedError):
+            self.frame.names["TM_ANTENNA.level"] = "LOUD"
+        self.assertEqual(self.frame.names["TM_ANTENNA.level"], "LOW")
+        with self.assertRaises(framedsl.FieldError):
+            self.frame.names["TM_ANTENNA.spare"]
+        with self.assertRaises(TypeError):
+            self.frame.names["TM_ANTENNA.level"] = 3
+
+    def test_every_enum_and_its_names(self):
+        enums = self.definition.enums
+        self.assertEqual(list(enums), ["PktType", "PowerState", "TxLevel", "Mode"])
+        self.assertEqual(enums["TxLevel"], {"OFF": 0, "LOW": 1, "MID": 2, "HIGH": 3, "MAX": 7})
+        self.assertEqual(enums["Mode"], {"IDLE": 0x100, "RECEIVE": 0x101, "TRANSMIT": 0x102})
+        self.assertIn("fdsl_TxLevel_name", self.definition.emit_c())
 
 
 class Repetition(unittest.TestCase):

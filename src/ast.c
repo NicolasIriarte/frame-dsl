@@ -29,6 +29,10 @@ void ast_free(AstFile *file) {
   }
   free(file->blocks);
   free(file->cals);
+  for (size_t i = 0; i < file->enum_count; ++i) {
+    free(file->enums[i].items);
+  }
+  free(file->enums);
   for (size_t i = 0; i < file->imported_count; ++i) {
     ast_free(file->imported[i]);
   }
@@ -96,4 +100,65 @@ AstPacket *ast_add_block(AstFile *file) {
   AstPacket *block = &file->blocks[file->block_count++];
   memset(block, 0, sizeof(*block));
   return block;
+}
+
+AstEnum *ast_add_enum(AstFile *file) {
+  AstEnum *enums = grow(file->enums, &file->enum_capacity, file->enum_count, sizeof(AstEnum));
+  if (enums == NULL) {
+    return NULL;
+  }
+  file->enums = enums;
+
+  AstEnum *enumeration = &file->enums[file->enum_count++];
+  memset(enumeration, 0, sizeof(*enumeration));
+  return enumeration;
+}
+
+AstEnumItem *ast_add_enum_item(AstEnum *enumeration) {
+  AstEnumItem *items =
+    grow(enumeration->items, &enumeration->item_capacity, enumeration->item_count, sizeof(AstEnumItem));
+  if (items == NULL) {
+    return NULL;
+  }
+  enumeration->items = items;
+
+  AstEnumItem *item = &enumeration->items[enumeration->item_count++];
+  memset(item, 0, sizeof(*item));
+  return item;
+}
+
+const AstEnum *ast_find_enum(const AstFile *file, const char *name) {
+  for (size_t i = 0; file != NULL && name != NULL && i < file->enum_count; ++i) {
+    if (file->enums[i].name != NULL && strcmp(file->enums[i].name, name) == 0) {
+      return &file->enums[i];
+    }
+  }
+  return NULL;
+}
+
+const char *ast_enum_name_of(const AstEnum *enumeration, uint64_t value) {
+  size_t low = 0;
+  size_t high = enumeration->item_count;
+  while (low < high) {
+    size_t middle = low + (high - low) / 2;
+    uint64_t here = enumeration->items[middle].value;
+    if (here == value) {
+      return enumeration->items[middle].name;
+    }
+    if (here < value) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return NULL;
+}
+
+const AstEnumItem *ast_enum_item(const AstEnum *enumeration, const char *name) {
+  for (size_t i = 0; enumeration != NULL && name != NULL && i < enumeration->item_count; ++i) {
+    if (enumeration->items[i].name != NULL && strcmp(enumeration->items[i].name, name) == 0) {
+      return &enumeration->items[i];
+    }
+  }
+  return NULL;
 }

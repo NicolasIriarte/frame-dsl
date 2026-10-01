@@ -143,7 +143,8 @@ pkt E { hdr: 8 = 0xAA; n: 16; };
 pkt F { hdr: 8 = 0xAA; m: 32; };           # REJECTED: nothing separates them
 ```
 
-A fixed value must fit in its field's width: `x: 4 = 0xFF;` is an error.
+A fixed value must fit in its field's width: `x: 4 = 0xFF;` is an error. On a field typed by an enum,
+a fixed value is one of the enum's names -- see [Enumerations](#enumerations).
 
 ## Fields whose length comes from another field
 
@@ -212,7 +213,7 @@ called `bit_order` if that is what the specification calls it.
 Two placements, one job each:
 
 **A bare `@name: value;`** may appear only at the top of the file: after any imports, and before the
-first declaration of any kind -- `pkt`, `block` or `cal`. It is the file default.
+first declaration of any kind -- `pkt`, `block`, `cal` or `enum`. It is the file default.
 
 **A `[ ... ]` group** attaches to the declaration that follows it -- a packet, a block or a field --
 and applies to that declaration only.
@@ -446,7 +447,7 @@ reachable by name: its elements are bytes of the outer element.
 
 ## Importing from other files
 
-Blocks and calibrations can be declared in one file and used from others. A library of the pieces a
+Blocks, calibrations and enums can be declared in one file and used from others. A library of the pieces a
 bus or a vendor shares is written once:
 
 ```
@@ -477,9 +478,10 @@ pkt TM_TEMPERATURE {
 - **Flat or named.** `import "path";` brings the file's names in as they are. `import "path" as name;`
   brings them in as `name.X` instead, and only that way -- the form for two libraries that both
   declare a `Header`. Two *different* declarations of one name reaching a file flat is an error.
-- **Blocks and calibrations only.** An imported file's packets are checked but not imported, so
+- **Blocks, calibrations and enums only.** An imported file's packets are checked but not imported, so
   importing a file never changes which packets a definition decodes. A file can be a library and a
-  protocol at once.
+  protocol at once. An imported enum is a type like a local one, `mode: vendor.Mode = TX;`: the type is
+  qualified, its names never are.
 - **Paths are relative to the importing file**, so a tree of definition files can be moved as a
   whole. A definition loaded from a string with `framedsl_load_string()` resolves them from the
   working directory.
@@ -497,8 +499,8 @@ to 28 in [`docs/design.md`](../docs/design.md) cover a file that cannot be read,
 
 ### Declarations nothing uses
 
-A block, calibration or import that nothing in the file uses is a **warning** (check 30) -- in a file
-with at least one packet. A file with no packets is a library, and everything in it is there for
+A block, calibration, enum or import that nothing in the file uses is a **warning** (check 30) -- in a
+file with at least one packet. A file with no packets is a library, and everything in it is there for
 somebody else to use. Something used only by an unused block does not warn: the unused block does,
 and removing it is what brings the next one up.
 
@@ -565,6 +567,96 @@ Six checks apply, 17 to 22 in [`docs/design.md`](../docs/design.md): calibration
 every calibration named must exist, a bare name must be the parameter, no calibration may call
 itself, `@cal:` may only go on a scalar field, and no calibration may divide by a constant zero.
 
+## Enumerations
+
+A field like `level: 3;` carries values that mean something -- off, low, high -- and without a name
+for each, the meaning lives in a comment. An **enum** names them, once, at file level, and a field is
+typed by it:
+
+```
+enum TxLevel: 3 {
+  OFF;   # 0
+  LOW;   # 1
+  MID;   # 2
+  HIGH;  # 3
+  MAX = 7;
+};
+
+enum PktType: 4 {
+  HK = 0x1;
+  EVENT;  # 0x2
+};
+
+block Header {
+  type: PktType;
+  seq:  12;
+};
+
+pkt TM_ANTENNA {
+  hdr:   Header { type = HK; };
+  level: TxLevel;
+  pad:   5;
+};
+
+pkt TM_EVENT {
+  hdr:  Header { type = EVENT; };
+  code: PktType = EVENT;
+  pad:  4;
+};
+```
+
+**The width is the enum's.** `enum TxLevel: 3` says every field of this type is 3 bits, and a field
+typed by it, `level: TxLevel;`, is written like a use of a block -- a name where a width goes. It is a
+constant, from 1 to 64 bits (check 35), since such a field is a number.
+
+**A name without a value counts on.** It is one more than the name before it, and the first is 0.
+Values must increase (check 37) -- so the list reads in order, and no value can have two names -- and
+each must fit the width, written or counted (check 38). Names are unique within one enum (check 36);
+two enums may both have an `OFF`.
+
+**A value is a name.** A fixed value or an override on a field typed by an enum is one of that enum's
+names, written bare -- `code: PktType = EVENT;`, `Header { type = HK; }` -- since the field's type
+already says which enum it is from. A number there is refused, and so is another enum's name (check 39);
+so is a name on a field that is not typed by an enum. That is what makes a discriminator read as what it
+means, and the checks that tell packets apart see the number behind it like any other fixed value.
+
+**An enum is names and a width, not layout.** A field typed by one takes its bit and byte order from
+where it is used, as any field does, and a `[ ... ]` group in front of it applies:
+
+```
+enum Mode: 16 { IDLE = 0x0100; RUN; };
+
+[ @byte_order: little_endian; ]
+pkt TM_MODE {
+  id:   8 = 0x40;
+  mode: Mode;                               # little-endian, from the packet
+};
+```
+
+What else a field typed by an enum is not: it has no calibration (check 40) -- one would make it a number
+in engineering units, when it reads as a name; and it is a named field, with nothing inside to paste in,
+fix with `{ ... }` or repeat (check 41). An enum is a field's type as a block is, so the two share one
+set of names (check 1), and an enum is declared above everything that uses it (check 24). `enum` is a
+word only where a declaration starts, so a field may still be called `enum`.
+
+**A value the enum does not list** still decodes. A device reporting a state the definition has not
+heard of is what somebody debugging it most wants to see, so it is flagged rather than refused:
+
+```
+$ frame-dsl radio.fdsl -d 1000a0
+# Decoded 3 bytes
+pkt TM_ANTENNA {
+    hdr.type       1 (0x1) = HK [PktType]
+    hdr.seq        0 (0)
+    level          5 (0x5) = <unlisted> [TxLevel]
+    pad            0 (0)
+}
+```
+
+The raw value is the field's value in the frame, as always: `framedsl_get_u64()` and
+`framedsl_set_u64()` read and write it whatever it is, and `framedsl_get_name()` and
+`framedsl_set_name()` are the checked path, by name -- see [the API](api.md#enumerations).
+
 ## Comments
 
 ```
@@ -612,6 +704,8 @@ pkt TM_STATUS {
 - **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
   parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
   on its line: `hdr: Header { id = 0x02; flags = 0x3; };`. A calibration is one line.
+- **An enum** has one name to a line, a level in, like a block's fields; the names with a value align on
+  their `=`, and a counted name is only itself.
 - **Blank lines**: at most one in a row, none just inside a brace, exactly one between top-level
   declarations -- a comment right in front of one stays with it. Imports stay together, and so do
   file settings. The file ends in exactly one newline.
@@ -650,7 +744,7 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-enumerations, conditional fields, and CRC polynomial and range.
+conditional fields, CRC polynomial and range, and repeating a field typed by an enum.
 Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined

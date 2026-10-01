@@ -406,6 +406,45 @@ static const AstField *override_at(const AstPacket *container, int line, int col
   return NULL;
 }
 
+/* The enum a field is typed by (#11): named by the use before composition, `level: TxLevel;`, or
+ * recorded by it in an imported block, which was composed in its own file. NULL for any other field. */
+static const AstEnum *enum_of(const AstFile *ast, const AstField *field) {
+  if (field == NULL) {
+    return NULL;
+  }
+  return ast_find_enum(ast, field->enumeration != NULL ? field->enumeration : field->block);
+}
+
+/* This file's enum whose braces hold (line, column), or NULL. */
+static const AstEnum *enum_around(const AstFile *ast, int line, int column) {
+  for (size_t i = 0; ast != NULL && i < ast->enum_count; ++i) {
+    const AstEnum *enumeration = &ast->enums[i];
+    if (enumeration->origin == NULL && at_or_before(enumeration->line, enumeration->column, line, column)
+        && at_or_before(line, column, enumeration->end_line, enumeration->end_column)) {
+      return enumeration;
+    }
+  }
+  return NULL;
+}
+
+/* The enum whose name is written as a value at (line, column) -- `= HIGH` after a field typed by it, or
+ * in an override of one -- or NULL. */
+static const AstEnum *enum_of_value(const AstFile *ast, const AstPacket *container, int line, int column) {
+  for (size_t i = 0; container != NULL && i < container->field_count; ++i) {
+    const AstField *field = &container->fields[i];
+    if (field->fixed_name != NULL && field->fixed_line == line && field->fixed_column == column) {
+      return enum_of(ast, field);
+    }
+    for (const AstOverride *override = field->overrides; override != NULL; override = override->next) {
+      if (override->value_name != NULL && override->value_line == line && override->value_column == column) {
+        const AstPacket *owner = NULL;
+        return enum_of(ast, resolve_path(ast, find_block(ast, field->block), override->name, &owner));
+      }
+    }
+  }
+  return NULL;
+}
+
 /* ---- Facts ----------------------------------------------------------------------------------- */
 
 static bool fold(const Expr *expr, uint64_t *out) {
@@ -642,8 +681,8 @@ static void describe_block(Buffer *buffer, const AstPacket *block) {
     uint64_t width = 0;
     if (field->block != NULL && field->anonymous) {
       put(buffer, "%s;\n", field->block);
-    } else if (field->block != NULL) {
-      put(buffer, "%s: %s;\n", field->name, field->block);
+    } else if (field->block != NULL || field->enumeration != NULL) {
+      put(buffer, "%s: %s;\n", field->name, field->block != NULL ? field->block : field->enumeration);
     } else if (fold(field->width, &width)) {
       put(buffer, "%s: %llu", field->name, (unsigned long long)width);
       if (field->has_fixed) {
@@ -655,6 +694,29 @@ static void describe_block(Buffer *buffer, const AstPacket *block) {
     }
   }
   put(buffer, "```\n");
+}
+
+static void describe_enum(Buffer *buffer, const AstEnum *enumeration) {
+  put(buffer, "**enum %s** -- %llu bits", enumeration->name, (unsigned long long)enumeration->width);
+  if (enumeration->origin != NULL) {
+    put(buffer, ", from `%s`", enumeration->origin);
+  }
+  put(buffer, "\n\n```fdsl\n");
+  for (size_t i = 0; i < enumeration->item_count; ++i) {
+    put(buffer, "%s = %llu;\n", enumeration->items[i].name, (unsigned long long)enumeration->items[i].value);
+  }
+  put(buffer, "```\n");
+}
+
+static void describe_item(Buffer *buffer, const AstEnum *enumeration, const AstEnumItem *item) {
+  put(
+    buffer,
+    "**%s** = %llu (0x%llX) -- in enum `%s`\n",
+    item->name,
+    (unsigned long long)item->value,
+    (unsigned long long)item->value,
+    enumeration->name
+  );
 }
 
 static void describe_cal(Buffer *buffer, const Navigator *navigator, const AstCal *cal) {
@@ -733,6 +795,8 @@ typedef enum {
   TARGET_FIELD,
   TARGET_INSTANCE,
   TARGET_ATTRIBUTE,
+  TARGET_ENUM,
+  TARGET_ENUM_ITEM,
 } TargetKind;
 
 /* What a name under the cursor refers to, worked out once for hover and definition alike. */
@@ -742,6 +806,9 @@ typedef struct {
   const AstPacket *packet; /* TARGET_PACKET, TARGET_BLOCK */
   const AstCal *cal;
   const AstImport *import;
+  /* TARGET_ENUM, TARGET_ENUM_ITEM */
+  const AstEnum *enumeration;
+  const AstEnumItem *item;
   /* TARGET_FIELD / TARGET_INSTANCE: where the name is used, and the declaration it means. */
   const AstPacket *container;
   bool container_is_block;
@@ -778,9 +845,20 @@ static Target find_target(const Navigator *navigator, int line, int column) {
         target.packet = &ast->packets[i];
       }
     }
-  } else if (type == SEM_STRUCT) {
+  } else if (type == SEM_STRUCT || type == SEM_ENUM) {
+    /* An imported enum reads as a block would, `ns.Mode`, since nothing in the text says otherwise. */
     target.packet = find_block(ast, dotted);
-    target.kind = target.packet != NULL ? TARGET_BLOCK : TARGET_NONE;
+    target.enumeration = target.packet == NULL ? ast_find_enum(ast, dotted) : NULL;
+    target.kind = target.packet != NULL ? TARGET_BLOCK : target.enumeration != NULL ? TARGET_ENUM : TARGET_NONE;
+  } else if (type == SEM_ENUM_MEMBER) {
+    /* A name in an enum's own braces, or one written as a field's value; not an attribute's value. */
+    target.container = container_at(navigator, here->line, here->column, &target.container_is_block);
+    target.enumeration = enum_around(ast, here->line, here->column);
+    if (target.enumeration == NULL && is(token(navigator, index - 1), TOK_EQUALS)) {
+      target.enumeration = enum_of_value(ast, target.container, here->line, here->column);
+    }
+    target.item = ast_enum_item(target.enumeration, dotted);
+    target.kind = target.item != NULL ? TARGET_ENUM_ITEM : TARGET_NONE;
   } else if (type == SEM_FUNCTION) {
     target.cal = find_cal(ast, dotted);
     target.kind = target.cal != NULL ? TARGET_CAL : TARGET_NONE;
@@ -857,6 +935,12 @@ char *nav_hover(const Navigator *navigator, int line, int column, NavLocation *r
   case TARGET_ATTRIBUTE:
     describe_attribute(&buffer, target.token);
     break;
+  case TARGET_ENUM:
+    describe_enum(&buffer, target.enumeration);
+    break;
+  case TARGET_ENUM_ITEM:
+    describe_item(&buffer, target.enumeration, target.item);
+    break;
   case TARGET_NONE:
     break;
   }
@@ -897,6 +981,16 @@ bool nav_definition(const Navigator *navigator, int line, int column, NavLocatio
     return locate(target.cal->origin, target.cal->name_line, target.cal->name_column, target.cal->name, out);
   case TARGET_IMPORT:
     return locate(NULL, target.import->line, target.import->column, "import", out);
+  case TARGET_ENUM:
+    return locate(
+      target.enumeration->origin,
+      target.enumeration->name_line,
+      target.enumeration->name_column,
+      target.enumeration->name,
+      out
+    );
+  case TARGET_ENUM_ITEM:
+    return locate(target.enumeration->origin, target.item->line, target.item->column, target.item->name, out);
   case TARGET_FIELD:
   case TARGET_INSTANCE:
     return locate(
@@ -966,6 +1060,40 @@ static void offer_blocks(Completions *completions, const AstFile *ast) {
     if (block->name != NULL) {
       offer(completions, block->name, NAV_BLOCK, block->origin);
     }
+  }
+}
+
+static const AstPacket *override_block(const Navigator *navigator, long index);
+
+static void offer_enums(Completions *completions, const AstFile *ast) {
+  for (size_t i = 0; ast != NULL && i < ast->enum_count; ++i) {
+    if (ast->enums[i].name != NULL) {
+      offer(completions, ast->enums[i].name, NAV_ENUM, ast->enums[i].origin);
+    }
+  }
+}
+
+/* The names of the enum the value being typed at the token `before` is for: `level: TxLevel = ` or an
+ * override `{ type = `. */
+static void offer_values(Completions *completions, const Navigator *navigator, long before) {
+  /* Back over the `=` to the field or override it belongs to. */
+  const Token *name = token(navigator, before - 1);
+  if (!is(name, TOK_IDENT)) {
+    return;
+  }
+  char *dotted = dotted_at(navigator, before - 1);
+  const AstEnum *enumeration = dotted != NULL ? ast_find_enum(navigator->ast, dotted) : NULL;
+  if (enumeration == NULL && dotted != NULL) {
+    /* An override: the name is a field of the block the braces belong to. */
+    const AstPacket *block = override_block(navigator, before);
+    const AstPacket *owner = NULL;
+    enumeration = enum_of(navigator->ast, resolve_path(navigator->ast, block, dotted, &owner));
+  }
+  free(dotted);
+  for (size_t i = 0; enumeration != NULL && i < enumeration->item_count; ++i) {
+    char detail[64];
+    snprintf(detail, sizeof(detail), "%llu", (unsigned long long)enumeration->items[i].value);
+    offer(completions, enumeration->items[i].name, NAV_VALUE, detail);
   }
 }
 
@@ -1067,12 +1195,23 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
                           && is(token(navigator, before - 4), TOK_AT);
     for (size_t i = 0; import != NULL && i < import->brought_count; ++i) {
       bool block = find_block(navigator->ast, import->brought[i]) != NULL;
-      if (block != want_cal) {
-        offer(&completions, last_segment(import->brought[i]), block ? NAV_BLOCK : NAV_CAL, import->path);
+      bool enumeration = ast_find_enum(navigator->ast, import->brought[i]) != NULL;
+      if ((block || enumeration) != want_cal) {
+        offer(
+          &completions,
+          last_segment(import->brought[i]),
+          block         ? NAV_BLOCK
+          : enumeration ? NAV_ENUM
+                        : NAV_CAL,
+          import->path
+        );
       }
     }
+  } else if (is(previous, TOK_EQUALS) && depth > 0) {
+    offer_values(&completions, navigator, before);
   } else if (is(previous, TOK_COLON) && depth > 0) {
     offer_blocks(&completions, navigator->ast);
+    offer_enums(&completions, navigator->ast);
     offer(&completions, "valof", NAV_KEYWORD, NULL);
   } else if (
     depth > 0
@@ -1089,7 +1228,7 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
       offer(&completions, "block", NAV_KEYWORD, NULL);
     }
   } else if (depth == 0 && (previous == NULL || is(previous, TOK_SEMICOLON) || is(previous, TOK_RBRACKET))) {
-    static const char *const TOP[] = { "pkt", "block", "cal", "import", NULL };
+    static const char *const TOP[] = { "pkt", "block", "cal", "enum", "import", NULL };
     offer_list(&completions, TOP, NAV_KEYWORD);
   }
 

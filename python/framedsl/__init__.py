@@ -16,8 +16,8 @@ frame a C program builds: there is no second parser or runtime to keep agreeing 
 
 A field's value is an int when the field is a scalar (64 bits or fewer) and bytes otherwise -- which
 one is decided by the field, as it is in C. `frame.eng[...]` reads and writes a calibrated field in
-engineering units. Every error the C API reports becomes an exception of its own, all of them under
-`framedsl.Error`.
+engineering units, and `frame.names[...]` a field typed by an enum by its names. Every error the C API
+reports becomes an exception of its own, all of them under `framedsl.Error`.
 """
 
 import ctypes
@@ -38,6 +38,7 @@ __all__ = [
     "BufferSizeError",
     "UnrecognisedError",
     "TruncatedError",
+    "UnlistedError",
 ]
 
 # ---- Exceptions -------------------------------------------------------------------------------
@@ -100,12 +101,23 @@ class TruncatedError(Error, ValueError):
     status = _native.ERROR_TRUNCATED
 
 
+class UnlistedError(Error, ValueError):
+    """FRAMEDSL_ERROR_UNLISTED: a value, or a name, that the field's enum does not list.
+
+    Reading a field whose value is unlisted raises this from frame.names[...] only; frame[...] still
+    reads the number, which is what arrived.
+    """
+
+    status = _native.ERROR_UNLISTED
+
+
 _BY_STATUS = {
     _native.ERROR_FIELD: FieldError,
     _native.ERROR_RANGE: RangeError,
     _native.ERROR_BUFFER: BufferSizeError,
     _native.ERROR_UNRECOGNISED: UnrecognisedError,
     _native.ERROR_TRUNCATED: TruncatedError,
+    _native.ERROR_UNLISTED: UnlistedError,
 }
 
 
@@ -257,6 +269,20 @@ class Definition:
         count = _native.framedsl_cal_count(self._handle)
         return [_text(_native.framedsl_cal_name(self._handle, i)) for i in range(count)]
 
+    @property
+    def enums(self):
+        """Every enum, in declaration order: {enum name: {name: value}}, each in increasing value."""
+        enums = {}
+        for i in range(_native.framedsl_enum_count(self._handle)):
+            names = {}
+            for j in range(_native.framedsl_enum_item_count(self._handle, i)):
+                name = ctypes.c_char_p()
+                value = ctypes.c_uint64()
+                _native.framedsl_enum_item(self._handle, i, j, ctypes.byref(name), ctypes.byref(value))
+                names[_text(name.value)] = value.value
+            enums[_text(_native.framedsl_enum_name(self._handle, i))] = names
+        return enums
+
     def calibrate(self, name, raw):
         """Run calibration `name` forward: raw value in, engineering value out."""
         out = ctypes.c_double()
@@ -314,7 +340,7 @@ class Frame:
 
     frame["PKT.field"] is the raw value: an int for a scalar, bytes for anything wider. Elements of a
     repetition are "PKT.samples[3].reading". frame.eng["PKT.field"] is a calibrated field's value in
-    engineering units.
+    engineering units, and frame.names["PKT.field"] a field typed by an enum, by name.
     """
 
     def __init__(self, definition):
@@ -336,6 +362,11 @@ class Frame:
     def eng(self):
         """Calibrated fields in engineering units: frame.eng["PKT.field"], read and written."""
         return _Engineering(self)
+
+    @property
+    def names(self):
+        """Fields typed by an enum, by name: frame.names["PKT.field"], read and written."""
+        return _Names(self)
 
     def reset(self):
         """Every field back to zero, as a new frame is."""
@@ -439,3 +470,29 @@ class _Engineering:
         frame = self._frame
         field_id, _ = frame._definition._field(dotted)
         _check(_native.framedsl_set_eng(frame._handle, field_id, float(value)), f"{dotted} = {value}")
+
+
+class _Names:
+    """frame.names: fields typed by an enum, by name, through framedsl_get_name() and _set_name().
+
+    Reading a value the enum does not list raises UnlistedError; frame[...] still reads the number.
+    """
+
+    __slots__ = ("_frame",)
+
+    def __init__(self, frame):
+        self._frame = frame
+
+    def __getitem__(self, dotted):
+        frame = self._frame
+        field_id, _ = frame._definition._field(dotted)
+        name = ctypes.c_char_p()
+        _check(_native.framedsl_get_name(frame._handle, field_id, ctypes.byref(name)), dotted)
+        return _text(name.value)
+
+    def __setitem__(self, dotted, name):
+        frame = self._frame
+        field_id, _ = frame._definition._field(dotted)
+        if not isinstance(name, str):
+            raise TypeError(f"{dotted} takes a name, not {type(name).__name__}")
+        _check(_native.framedsl_set_name(frame._handle, field_id, name.encode("utf-8")), f"{dotted} = {name}")

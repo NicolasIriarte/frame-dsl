@@ -1,0 +1,14 @@
+# REJECTED: check 41 -- an enum is the type of a named field, and nothing else.
+#
+# Written without a name, `PowerState;` would paste an enum's fields in, as `Header;` pastes a block's --
+# but an enum has none. A field typed by it needs a name of its own.
+
+enum PowerState: 1 {
+  OFF;
+  ON;
+};
+
+pkt TM_POWER {
+  id: 7 = 0x21;
+  PowerState;
+};

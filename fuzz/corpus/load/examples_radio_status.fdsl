@@ -1,0 +1,59 @@
+# Enumerations: names for the values a field carries.
+#
+# An `enum` is declared at file level with its width and its names, and a field is typed by it the way
+# it would use a block: `level: TxLevel;`. A name without a value is one more than the name before it,
+# and the first is 0; the values must increase, so an enum reads in order. A fixed value, or an
+# override, on a field typed by an enum is one of its names, written bare -- the field's type already
+# says which enum it is from.
+#
+# `frame-dsl <file> -d <hex>` prints each such field's name. A value the enum does not list is marked
+# `<unlisted>` rather than refused: a device reporting a state this file has not heard of is exactly
+# what somebody debugging it wants to see.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+enum PktType: 4 {
+  HK = 0x1;
+  EVENT;
+};
+
+enum PowerState: 1 {
+  OFF;
+  ON;
+};
+
+# A transmit level: three steps, and the maximum the radio reports as 7.
+enum TxLevel: 3 {
+  OFF;
+  LOW;
+  MID;
+  HIGH;
+  MAX = 7;
+};
+
+enum Mode: 16 {
+  IDLE = 0x0100;
+  RECEIVE;
+  TRANSMIT;
+};
+
+block Header {
+  type: PktType;  # left open: every packet fixes its own
+  seq:  12;
+};
+
+pkt TM_ANTENNA {
+  hdr:   Header { type = HK; };
+  power: PowerState;
+  level: TxLevel;
+  spare: 4;
+  # An enum decides a field's width and names, not its layout: this one is little-endian.
+  [ @byte_order: little_endian; ]
+  mode:  Mode;
+};
+
+pkt TM_EVENT {
+  hdr:  Header { type = EVENT; };
+  mode: Mode = TRANSMIT;
+};

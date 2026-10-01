@@ -105,6 +105,9 @@ typedef struct {
   AstCal *cals;
   size_t cal_count;
   size_t cal_capacity;
+  AstEnum *enums;
+  size_t enum_count;
+  size_t enum_capacity;
 } Merged;
 
 static bool grow(void **items, size_t *capacity, size_t count, size_t size) {
@@ -170,7 +173,9 @@ static bool merge(
   /* Everything the imported file offers counts as brought by this import, admitted or not: a name
    * skipped as a diamond is still one this import makes available. */
   import->brought_count = 0;
-  import->brought = region_alloc(file->region, (imported->block_count + imported->cal_count + 1) * sizeof(char *));
+  import->brought = region_alloc(
+    file->region, (imported->block_count + imported->cal_count + imported->enum_count + 1) * sizeof(char *)
+  );
   if (import->brought == NULL) {
     return false;
   }
@@ -184,6 +189,11 @@ static bool merge(
     bool admitted = true;
     for (size_t i = 0; i < merged->block_count && admitted; ++i) {
       admitted = admit("block", name, origin, merged->blocks[i].name, merged->blocks[i].origin, import, diags, &failed);
+    }
+    /* A block and an enum are both a field's type, so one name cannot come as each (#11). One file
+     * cannot declare both, so the two always have different origins and this only ever refuses. */
+    for (size_t i = 0; i < merged->enum_count && admitted; ++i) {
+      admitted = admit("block", name, origin, merged->enums[i].name, merged->enums[i].origin, import, diags, &failed);
     }
     if (!admitted) {
       continue;
@@ -212,7 +222,46 @@ static bool merge(
     copy->field_capacity = block->field_count;
     for (size_t f = 0; f < copy->field_count; ++f) {
       copy->fields[f].cal = prefixed(file, prefix, copy->fields[f].cal);
+      copy->fields[f].enumeration = prefixed(file, prefix, copy->fields[f].enumeration);
     }
+  }
+
+  for (size_t e = 0; e < imported->enum_count; ++e) {
+    const AstEnum *enumeration = &imported->enums[e];
+    const char *name = prefixed(file, prefix, enumeration->name);
+    import->brought[import->brought_count++] = name;
+    const char *origin = enumeration->origin != NULL ? enumeration->origin : keep(file, real);
+
+    bool admitted = true;
+    for (size_t i = 0; i < merged->enum_count && admitted; ++i) {
+      admitted = admit("enum", name, origin, merged->enums[i].name, merged->enums[i].origin, import, diags, &failed);
+    }
+    for (size_t i = 0; i < merged->block_count && admitted; ++i) {
+      admitted = admit("enum", name, origin, merged->blocks[i].name, merged->blocks[i].origin, import, diags, &failed);
+    }
+    if (!admitted) {
+      continue;
+    }
+
+    if (!grow((void **)&merged->enums, &merged->enum_capacity, merged->enum_count, sizeof(AstEnum))) {
+      return false;
+    }
+    AstEnum *copy = &merged->enums[merged->enum_count++];
+    *copy = *enumeration;
+    copy->name = name;
+    copy->origin = origin;
+    /* Declared from the top, like an imported block. */
+    copy->end_line = 0;
+    copy->end_column = 0;
+    /* The names are the file's to free, so it gets its own array of them; the strings stay in the
+     * imported tree, which the file keeps. */
+    copy->items = malloc((enumeration->item_count == 0 ? 1 : enumeration->item_count) * sizeof(AstEnumItem));
+    if (copy->items == NULL) {
+      merged->enum_count -= 1;
+      return false;
+    }
+    memcpy(copy->items, enumeration->items, enumeration->item_count * sizeof(AstEnumItem));
+    copy->item_capacity = enumeration->item_count;
   }
 
   for (size_t c = 0; c < imported->cal_count; ++c) {
@@ -394,8 +443,27 @@ static bool resolve(AstFile *file, const char *base_dir, Chain *chain, DiagList 
       file->cal_capacity = file->cal_count;
     }
   }
+  if (merged.enum_count > 0) {
+    AstEnum *enums = malloc((merged.enum_count + file->enum_count) * sizeof(AstEnum));
+    if (enums == NULL) {
+      for (size_t i = 0; i < merged.enum_count; ++i) {
+        free(merged.enums[i].items);
+      }
+      ok = false;
+    } else {
+      memcpy(enums, merged.enums, merged.enum_count * sizeof(AstEnum));
+      if (file->enum_count > 0) {
+        memcpy(enums + merged.enum_count, file->enums, file->enum_count * sizeof(AstEnum));
+      }
+      free(file->enums);
+      file->enums = enums;
+      file->enum_count += merged.enum_count;
+      file->enum_capacity = file->enum_count;
+    }
+  }
   free(merged.blocks);
   free(merged.cals);
+  free(merged.enums);
 
   if (!ok && diag_error_count(diags) == 0) {
     diag_add(diags, 1, 1, 0, "out of memory");

@@ -588,7 +588,52 @@ static void emit_c_function(
   append(text, "}\n\n");
 }
 
-size_t cal_emit_c(const CalTable *table, const char *prefix, char *out, size_t capacity) {
+/* An imported declaration is called `vendor.celsius`; in C it is `vendor_celsius`. */
+static void c_identifier(char *out, size_t capacity, const char *name) {
+  snprintf(out, capacity, "%s", name);
+  for (char *dot = strchr(out, '.'); dot != NULL; dot = strchr(dot, '.')) {
+    *dot = '_';
+  }
+}
+
+/* One enum (#11): its names as constants, and a function from a value to its name. A C enum when
+ * every value fits an int, which is what an enumeration constant is; `#define`s otherwise, since a
+ * 64-bit field's names may not. Either way a constant is usable in a `case`. */
+static void emit_c_enum(Text *text, const char *prefix, const AstEnum *enumeration) {
+  char c_name[256];
+  c_identifier(c_name, sizeof(c_name), enumeration->name);
+
+  bool fits_int = true;
+  for (size_t i = 0; i < enumeration->item_count; ++i) {
+    fits_int = fits_int && enumeration->items[i].value <= 0x7FFFFFFF;
+  }
+
+  append(text, "/* enum %s: %llu bits */\n", enumeration->name, (unsigned long long)enumeration->width);
+  if (fits_int) {
+    append(text, "enum %s%s {\n", prefix, c_name);
+    for (size_t i = 0; i < enumeration->item_count; ++i) {
+      const AstEnumItem *item = &enumeration->items[i];
+      append(text, "  %s%s_%s = %llu,\n", prefix, c_name, item->name, (unsigned long long)item->value);
+    }
+    append(text, "};\n\n");
+  } else {
+    for (size_t i = 0; i < enumeration->item_count; ++i) {
+      const AstEnumItem *item = &enumeration->items[i];
+      append(text, "#define %s%s_%s %lluULL\n", prefix, c_name, item->name, (unsigned long long)item->value);
+    }
+    append(text, "\n");
+  }
+
+  append(text, "static inline const char *%s%s_name(unsigned long long value) {\n", prefix, c_name);
+  append(text, "  switch (value) {\n");
+  for (size_t i = 0; i < enumeration->item_count; ++i) {
+    const AstEnumItem *item = &enumeration->items[i];
+    append(text, "  case %lluULL:\n    return \"%s\";\n", (unsigned long long)item->value, item->name);
+  }
+  append(text, "  default:\n    return (const char *)0;\n  }\n}\n\n");
+}
+
+size_t cal_emit_c(const CalTable *table, const AstFile *file, const char *prefix, char *out, size_t capacity) {
   Text text = { 0 };
 
   append(
@@ -604,12 +649,8 @@ size_t cal_emit_c(const CalTable *table, const char *prefix, char *out, size_t c
   for (size_t i = 0; i < table->count; ++i) {
     const CalCompiled *cal = &table->cals[i];
 
-    /* An imported calibration is called `vendor.celsius`; in C it is `vendor_celsius`. */
     char c_name[256];
-    snprintf(c_name, sizeof(c_name), "%s", cal->name);
-    for (char *dot = strchr(c_name, '.'); dot != NULL; dot = strchr(dot, '.')) {
-      *dot = '_';
-    }
+    c_identifier(c_name, sizeof(c_name), cal->name);
 
     emit_c_function(&text, prefix, c_name, &cal->forward, "raw");
 
@@ -630,6 +671,10 @@ size_t cal_emit_c(const CalTable *table, const char *prefix, char *out, size_t c
     } else {
       emit_c_function(&text, prefix, inverse_name, &cal->inverse, "eng");
     }
+  }
+
+  for (size_t i = 0; file != NULL && i < file->enum_count; ++i) {
+    emit_c_enum(&text, prefix, &file->enums[i]);
   }
 
   size_t length = text.failed ? 0 : text.length;

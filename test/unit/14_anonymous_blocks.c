@@ -191,17 +191,17 @@ static int us14_tc07_a_name_that_is_not_a_block(const TestArguments *args) {
   return failure;
 }
 
+/* Refused by composition rather than the parser: until every declaration is read, the name could be an
+ * enum's, and a field typed by an enum does take a group (#11). */
 static int us14_tc08_attributes_in_front_are_refused(const TestArguments *args) {
   (void)args;
-  DiagList diags;
-  diag_init(&diags);
-  AstFile *file = parse(HEADER "pkt P { [ @byte_order: little_endian; ] Header { id = 1; }; };\n", &diags);
+  Composed composed;
+  compose_source(HEADER "pkt P { [ @byte_order: little_endian; ] Header { id = 1; }; };\n", &composed);
   bool found = false;
-  for (size_t i = 0; i < diags.count; ++i) {
-    found |= strstr(diags.items[i].message, "layout is fixed where the block is declared") != NULL;
+  for (size_t i = 0; i < composed.diags.count; ++i) {
+    found |= strstr(composed.diags.items[i].message, "layout is fixed where the block is declared") != NULL;
   }
-  ast_free(file);
-  diag_free(&diags);
+  release(&composed);
   return found ? 0 : __LINE__;
 }
 

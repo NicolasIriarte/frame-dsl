@@ -70,6 +70,7 @@ ERROR_RANGE = 5
 ERROR_BUFFER = 6
 ERROR_UNRECOGNISED = 7
 ERROR_TRUNCATED = 8
+ERROR_UNLISTED = 9
 
 BIT_ORDER_MSB_FIRST = 0
 BIT_ORDER_LSB_FIRST = 1
@@ -120,6 +121,7 @@ class Field(ctypes.Structure):
         ("cal_invertible", ctypes.c_bool),
         ("element_bits", ctypes.c_uint64),
         ("member_count", ctypes.c_size_t),
+        ("enumeration", ctypes.c_char_p),
     ]
 
 
@@ -221,6 +223,23 @@ _declare("framedsl_find_cal", ctypes.c_bool, Definition, ctypes.c_char_p, ctypes
 _declare("framedsl_calibrate", ctypes.c_int, Definition, CalId, ctypes.c_double, ctypes.POINTER(ctypes.c_double))
 _declare("framedsl_uncalibrate", ctypes.c_int, Definition, CalId, ctypes.c_double, ctypes.POINTER(ctypes.c_double))
 _declare("framedsl_emit_c", ctypes.c_size_t, Definition, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t)
+
+# Enumerations.
+_declare("framedsl_get_name", ctypes.c_int, Frame, FieldId, ctypes.POINTER(ctypes.c_char_p))
+_declare("framedsl_set_name", ctypes.c_int, Frame, FieldId, ctypes.c_char_p)
+_declare("framedsl_enum_count", ctypes.c_size_t, Definition)
+_declare("framedsl_enum_name", ctypes.c_char_p, Definition, ctypes.c_size_t)
+_declare("framedsl_find_enum", ctypes.c_bool, Definition, ctypes.c_char_p, _size_p)
+_declare("framedsl_enum_item_count", ctypes.c_size_t, Definition, ctypes.c_size_t)
+_declare(
+    "framedsl_enum_item",
+    ctypes.c_bool,
+    Definition,
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_uint64),
+)
 
 # framedsl_format() returns memory the caller frees with free(), so the C library's own free() is
 # declared too: releasing it through anything else is undefined.

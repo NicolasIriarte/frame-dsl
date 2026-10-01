@@ -314,6 +314,15 @@ static bool word_is(const Token *token, const char *spelling) {
   return token->length == length && memcmp(token->text, spelling, length) == 0;
 }
 
+static const char *take_name(Parser *parser) {
+  const char *name = region_strndup(parser->file->region, parser->current.text, parser->current.length);
+  if (name == NULL) {
+    parser->out_of_memory = true;
+  }
+  advance(parser);
+  return name;
+}
+
 /* The rest of a dotted name whose first part, `first`, has just been read: `vendor.Header`. What an
  * `as` import brings in is named this way. */
 static const char *dotted_name(Parser *parser, const char *first, size_t first_length) {
@@ -672,6 +681,40 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
  * Only recorded here. compose_file() does the work once every block has been read, since a use and the
  * declaration it names are checked against each other there (checks 23 to 25). */
 
+/* What follows the `=` of a fixed value or an override: a number, or a name of the field's enum (#11).
+ * Which enum is composition's business, since only the field's type says; here a name is a name. A
+ * dotted one is refused, because the type already says which enum and the name is written bare. */
+static bool parse_value(Parser *parser, uint64_t *value, const char **name, int *line, int *column) {
+  *line = parser->current.line;
+  *column = parser->current.column;
+  if (check(parser, TOK_INT)) {
+    *value = parser->current.value;
+    *name = NULL;
+    advance(parser);
+    return true;
+  }
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "a number, or a name of the field's enum");
+    return false;
+  }
+  Token written = parser->current;
+  *value = 0;
+  *name = take_name(parser);
+  if (check(parser, TOK_DOT) && !parser->panicking) {
+    parser->panicking = true;
+    diag_add(
+      parser->diags,
+      written.line,
+      written.column,
+      0,
+      "a value is written as a bare name, '= HK', since the field's type already says which enum it "
+      "is from"
+    );
+    return false;
+  }
+  return *name != NULL;
+}
+
 static bool parse_override(Parser *parser, AstField *field) {
   int line = parser->current.line;
   int column = parser->current.column;
@@ -706,10 +749,6 @@ static bool parse_override(Parser *parser, AstField *field) {
   if (!expect(parser, TOK_EQUALS)) {
     return false;
   }
-  if (!check(parser, TOK_INT)) {
-    error_at_current(parser, "a number; an override fixes a field's value");
-    return false;
-  }
 
   AstOverride *override = region_alloc(parser->file->region, sizeof(AstOverride));
   if (override == NULL) {
@@ -718,10 +757,11 @@ static bool parse_override(Parser *parser, AstField *field) {
   }
   memset(override, 0, sizeof(*override));
   override->name = region_strndup(parser->file->region, path, used);
-  override->value = parser->current.value;
   override->line = line;
   override->column = column;
-  advance(parser);
+  if (!parse_value(parser, &override->value, &override->value_name, &override->value_line, &override->value_column)) {
+    return false;
+  }
 
   /* Kept in the order written, so diagnostics come out in it too. */
   AstOverride **tail = &field->overrides;
@@ -748,17 +788,18 @@ static void parse_use_rest(Parser *parser, AstField *field) {
     }
   }
 
-  if (check(parser, TOK_EQUALS)) {
-    diag_add(
-      parser->diags,
-      parser->current.line,
-      parser->current.column,
-      0,
-      "'%s' uses a block, and a block has no single value to fix; fix its fields in '{ ... }' instead",
-      field->name
-    );
-    recover_to_field_end(parser);
-    return;
+  /* A value, `= HK`, is what a field typed by an enum takes. Recorded whatever the name turns out to
+   * be: composition knows whether it is an enum's or a block's, and refuses one for a block. */
+  if (match(parser, TOK_EQUALS)) {
+    uint64_t value = 0;
+    const char *name = NULL;
+    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
+      recover_to_field_end(parser);
+      return;
+    }
+    field->has_fixed = name == NULL;
+    field->fixed = value;
+    field->fixed_name = name;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -766,26 +807,10 @@ static void parse_use_rest(Parser *parser, AstField *field) {
   }
 }
 
-/* A group in front of a use would have to reach inside the block and change its layout, which is
- * settled where the block is declared so that the same block reads the same everywhere. */
-static void refuse_attributes_on_use(Parser *parser, const AstField *field, Attributes attrs) {
-  if (attrs.bit_written || attrs.byte_written || attrs.cal != NULL) {
-    int line = attrs.bit_written ? attrs.bit_line : attrs.byte_written ? attrs.byte_line : attrs.cal_line;
-    int column = attrs.bit_written ? attrs.bit_column : attrs.byte_written ? attrs.byte_column : attrs.cal_column;
-    diag_add(
-      parser->diags,
-      line,
-      column,
-      0,
-      "'%s' uses a block, whose layout is fixed where the block is declared; put the attribute there",
-      field->name
-    );
-  }
-}
-
-static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
-  refuse_attributes_on_use(parser, field, attrs);
-
+/* A name where a width goes: a named block, or an enum (#11). Which is not known until every
+ * declaration has been read, so a group in front of it, a reservation and a value are all recorded
+ * here and judged in compose_file(): an enum's field takes them, a block's use does not. */
+static void parse_block_use(Parser *parser, AstField *field) {
   Token first = parser->current;
   field->block_line = first.line;
   field->block_column = first.column;
@@ -807,23 +832,11 @@ static void parse_block_use(Parser *parser, AstField *field, Attributes attrs) {
     }
   }
 
-  /* A repetition counted by a field reserves its room like any valof()-sized field; a single instance
-   * has none of its own, since its fields reserve what they need. */
-  if (field->reserve != NULL && field->repeat == NULL) {
-    diag_add(
-      parser->diags,
-      field->reserve_line,
-      field->reserve_column,
-      0,
-      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
-      field->name
-    );
-  }
   parse_use_rest(parser, field);
 }
 
 /* `Header { ... };` or `Header;`: the name just read, `first`, was a block's and not a field's. */
-static void parse_anonymous_use(Parser *parser, AstField *field, Token first, Attributes attrs) {
+static void parse_anonymous_use(Parser *parser, AstField *field, Token first) {
   field->anonymous = true;
   field->block_line = first.line;
   field->block_column = first.column;
@@ -832,7 +845,6 @@ static void parse_anonymous_use(Parser *parser, AstField *field, Token first, At
     return;
   }
   field->name = field->block;
-  refuse_attributes_on_use(parser, field, attrs);
   parse_use_rest(parser, field);
 }
 
@@ -876,7 +888,7 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   /* A field's name is followed by `:` or `[`; a block's, used without naming the instance, by `{`, `;`
    * or the `.` of an imported namespace. One token decides. */
   if (check(parser, TOK_LBRACE) || check(parser, TOK_SEMICOLON) || check(parser, TOK_DOT)) {
-    parse_anonymous_use(parser, field, first, attrs);
+    parse_anonymous_use(parser, field, first);
     return;
   }
 
@@ -903,23 +915,25 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   /* A name where a width would be is an instance of a named block. A width never starts with a name
    * -- it is a number, a valof() or a parenthesis -- so one token decides. */
   if (check(parser, TOK_IDENT)) {
-    parse_block_use(parser, field, attrs);
+    parse_block_use(parser, field);
     return;
   }
 
   field->width = parse_expression(parser);
 
+  /* A name here is refused by composition (check 39): only a field typed by an enum has names for its
+   * values. Parsed rather than refused on the spot, so the message can say that instead of "expected a
+   * number". */
   if (match(parser, TOK_EQUALS)) {
-    if (!check(parser, TOK_INT)) {
-      error_at_current(parser, "a number");
+    uint64_t value = 0;
+    const char *name = NULL;
+    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
       recover_to_field_end(parser);
       return;
     }
-    field->has_fixed = true;
-    field->fixed = parser->current.value;
-    field->fixed_line = parser->current.line;
-    field->fixed_column = parser->current.column;
-    advance(parser);
+    field->has_fixed = name == NULL;
+    field->fixed = value;
+    field->fixed_name = name;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -1048,15 +1062,6 @@ static CalExpr *cal_new(Parser *parser, CalExprKind kind, int line, int column) 
   expr->line = line;
   expr->column = column;
   return expr;
-}
-
-static const char *take_name(Parser *parser) {
-  const char *name = region_strndup(parser->file->region, parser->current.text, parser->current.length);
-  if (name == NULL) {
-    parser->out_of_memory = true;
-  }
-  advance(parser);
-  return name;
 }
 
 static CalExpr *parse_cal_expr(Parser *parser);
@@ -1230,6 +1235,121 @@ static void parse_cal(Parser *parser) {
   cal->end_column = parser->previous_end_column;
 }
 
+/* ---- Enumerations (#11) ---------------------------------------------------------------------
+ *
+ * enum      = "enum" identifier ":" integer "{" enum_item { enum_item } "}" ";"
+ * enum_item = identifier [ "=" integer ] ";"
+ *
+ * A name without a value is one more than the name before it, and the first is 0. That is worked out
+ * here, as the names are read; whether the values increase and fit the width is checked by
+ * composition (checks 35 to 38), which is also where a field typed by the enum is resolved. */
+
+static void parse_enum(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* 'enum' */
+
+  AstEnum *enumeration = ast_add_enum(parser->file);
+  if (enumeration == NULL) {
+    parser->out_of_memory = true;
+    return;
+  }
+  enumeration->line = line;
+  enumeration->column = column;
+
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "an enum name");
+    parser->file->enum_count -= 1;
+    recover_to_packet_end(parser);
+    return;
+  }
+  enumeration->name_line = parser->current.line;
+  enumeration->name_column = parser->current.column;
+  enumeration->name = take_name(parser);
+
+  /* The width is part of the type, since every field of it has the same one -- and a number, not an
+   * expression: an enum's width does not depend on anything. */
+  if (!expect(parser, TOK_COLON)) {
+    parser->file->enum_count -= 1;
+    recover_to_packet_end(parser);
+    return;
+  }
+  if (!check(parser, TOK_INT)) {
+    error_at_current(parser, "the enum's width in bits");
+    parser->file->enum_count -= 1;
+    recover_to_packet_end(parser);
+    return;
+  }
+  enumeration->width = parser->current.value;
+  enumeration->width_line = parser->current.line;
+  enumeration->width_column = parser->current.column;
+  advance(parser);
+
+  if (!expect(parser, TOK_LBRACE)) {
+    parser->file->enum_count -= 1;
+    recover_to_packet_end(parser);
+    return;
+  }
+
+  /* The value the next name gets unless it says otherwise, and whether counting has already gone past
+   * the largest 64-bit value -- in which case every counted name after it is reported (check 38). */
+  uint64_t next = 0;
+  bool past_the_end = false;
+  while (!check(parser, TOK_RBRACE) && !check(parser, TOK_EOF) && !check(parser, TOK_INVALID)
+         && !parser->out_of_memory) {
+    parser->panicking = false;
+    if (!check(parser, TOK_IDENT)) {
+      error_at_current(parser, "a name");
+      recover_to_field_end(parser);
+      continue;
+    }
+    AstEnumItem *item = ast_add_enum_item(enumeration);
+    if (item == NULL) {
+      parser->out_of_memory = true;
+      return;
+    }
+    item->line = parser->current.line;
+    item->column = parser->current.column;
+    item->name = take_name(parser);
+
+    if (match(parser, TOK_EQUALS)) {
+      if (!check(parser, TOK_INT)) {
+        error_at_current(parser, "a number");
+        enumeration->item_count -= 1;
+        recover_to_field_end(parser);
+        continue;
+      }
+      next = parser->current.value;
+      past_the_end = false;
+      advance(parser);
+    }
+    item->value = next;
+    item->overflowed = past_the_end;
+    if (next == UINT64_MAX) {
+      past_the_end = true;
+    } else {
+      next += 1;
+    }
+
+    if (!expect(parser, TOK_SEMICOLON)) {
+      recover_to_field_end(parser);
+    }
+  }
+
+  if (enumeration->item_count == 0 && !parser->panicking) {
+    diag_add(parser->diags, line, column, 0, "an enum must name at least one value");
+  }
+
+  enumeration->end_line = parser->current.line;
+  enumeration->end_column = parser->current.column;
+  if (!expect(parser, TOK_RBRACE) || !expect(parser, TOK_SEMICOLON)) {
+    recover_to_packet_end(parser);
+    return;
+  }
+  enumeration->stop_line = parser->previous_end_line;
+  enumeration->stop_column = parser->previous_end_column;
+}
+
 /* import = "import" string [ "as" identifier ] ";" */
 static AstImport *parse_import(Parser *parser) {
   int line = parser->current.line;
@@ -1347,6 +1467,16 @@ AstFile *parse(const char *source, DiagList *diags) {
       continue;
     }
 
+    /* `enum` likewise (#11). */
+    if (check(&parser, TOK_IDENT) && word_is(&parser.current, "enum")) {
+      if (first_kind == NULL) {
+        first_kind = "enum";
+        first_line = parser.current.line;
+      }
+      parse_enum(&parser);
+      continue;
+    }
+
     Attributes packet_attrs = inherited(file_attrs);
     const int start_line = parser.current.line;
     const int start_column = parser.current.column;
@@ -1361,6 +1491,20 @@ AstFile *parse(const char *source, DiagList *diags) {
 
     const bool is_block = check(&parser, TOK_BLOCK);
     if (!check(&parser, TOK_PKT) && !is_block) {
+      if (grouped && check(&parser, TOK_IDENT) && word_is(&parser.current, "enum")) {
+        /* An enum is names and a width, and the order its fields' bits go in is theirs, taken from
+         * where each is used. */
+        diag_add(
+          parser.diags,
+          start_line,
+          start_column,
+          0,
+          "an enum has no layout for a '[ ... ]' group to set; a field typed by it takes its bit and byte "
+          "order from where it is used, and a group goes in front of that field"
+        );
+        recover_to_packet_end(&parser);
+        continue;
+      }
       if (check(&parser, TOK_AT) && grouped) {
         diag_add(
           parser.diags,
@@ -1393,7 +1537,7 @@ AstFile *parse(const char *source, DiagList *diags) {
           first_line
         );
       } else {
-        error_at_current(&parser, "'pkt', 'block', 'cal' or end of file");
+        error_at_current(&parser, "'pkt', 'block', 'cal', 'enum' or end of file");
       }
       recover_to_packet_end(&parser);
       continue;

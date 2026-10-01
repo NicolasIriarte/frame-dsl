@@ -9,6 +9,7 @@
 
 #include "diag.h"
 #include "lsp_navigate.h"
+#include "lsp_semantic.h"
 #include "parser.h"
 #include "testsuite.h"
 
@@ -270,16 +271,17 @@ static int us15_tc07_a_broken_file_is_answered_with_what_can_be_said(const TestA
     "import \"missing.fdsl\" as n;\n"
     "cal f(x) = x * 2;\n"
     "block H {\n  id: 8 = 1;\n  inner: n.X { a.b = 1; };\n};\n"
-    "pkt TM {\n  h: H { id = 2; };\n  [ @cal: f; ]\n  v[2]: valof(v) * 8;\n  H;\n};\n";
+    "enum E: 2 {\n  A;\n  B = 2;\n};\n"
+    "pkt TM {\n  h: H { id = 2; };\n  e: E = B;\n  [ @cal: f; ]\n  v[2]: valof(v) * 8;\n  H;\n};\n";
   size_t length = strlen(typed);
-  char buffer[512];
+  char buffer[1024];
   for (size_t prefix = 0; prefix <= length; prefix += 3) {
     snprintf(buffer, sizeof(buffer), "%.*s", (int)prefix, typed);
     Navigator *navigator = nav_open(buffer, NULL);
     if (navigator == NULL) {
       return __LINE__;
     }
-    for (int line = 1; line <= 14; ++line) {
+    for (int line = 1; line <= 19; ++line) {
       for (int column = 1; column <= 30; ++column) {
         NavLocation where = { 0 };
         free(nav_hover(navigator, line, column, &where));
@@ -309,6 +311,135 @@ static int us15_tc07_a_broken_file_is_answered_with_what_can_be_said(const TestA
   return failure;
 }
 
+/* ---- Enumerations (#11) ------------------------------------------------------------------------ */
+
+static const char *const RADIO =
+  "import \"modes.fdsl\" as vendor;\n" /* 1 */
+  "enum PktType: 4 {\n" /* 2 */
+  "  HK = 0x1;\n" /* 3 */
+  "  EVENT;\n" /* 4 */
+  "};\n" /* 5 */
+  "block Header {\n" /* 6 */
+  "  type: PktType;\n" /* 7 */
+  "  seq:  12;\n" /* 8 */
+  "};\n" /* 9 */
+  "pkt TM {\n" /* 10 */
+  "  hdr:  Header { type = EVENT; };\n" /* 11 */
+  "  kind: PktType = HK;\n" /* 12 */
+  "  mode: vendor.Mode = TX;\n" /* 13 */
+  "  pad:  6;\n" /* 14 */
+  "};\n";
+
+static int us15_tc08_an_enum_and_its_names_are_navigable(const TestArguments *args) {
+  char path[1024];
+  if (!write_file(args, "modes.fdsl", "enum Mode: 2 {\n  RX = 1;\n  TX;\n};\n", path, sizeof(path))
+      || !write_file(args, "radio.fdsl", RADIO, path, sizeof(path))) {
+    FORCE_FAILURE();
+  }
+  Navigator *navigator = nav_open(RADIO, path);
+  NavLocation range;
+  char *type = navigator != NULL ? nav_hover(navigator, 12, 9, &range) : NULL; /* `PktType` */
+  char *named = navigator != NULL ? nav_hover(navigator, 12, 20, &range) : NULL; /* `HK` */
+  char *override = navigator != NULL ? nav_hover(navigator, 11, 26, &range) : NULL; /* `EVENT` */
+  char *imported = navigator != NULL ? nav_hover(navigator, 13, 16, &range) : NULL; /* `Mode` */
+  char *attribute = navigator != NULL ? nav_hover(navigator, 1, 1, &range) : NULL;
+  int failure = 0;
+  if (!contains(type, "**enum PktType** -- 4 bits") || !contains(type, "EVENT = 2;")) {
+    failure = __LINE__;
+  } else if (!contains(named, "**HK** = 1") || !contains(named, "enum `PktType`")) {
+    failure = __LINE__;
+  } else if (!contains(override, "**EVENT** = 2")) {
+    failure = __LINE__; /* looked up in the enum of the block's field */
+  } else if (!contains(imported, "**enum vendor.Mode**") || !contains(imported, "modes.fdsl")) {
+    failure = __LINE__;
+  } else if (!lands_on(navigator, 12, 9, NULL, 2, 6)) {
+    failure = __LINE__; /* a field's enum, to its declaration */
+  } else if (!lands_on(navigator, 12, 20, NULL, 3, 3)) {
+    failure = __LINE__; /* a value, to its name in the enum */
+  } else if (!lands_on(navigator, 11, 26, NULL, 4, 3)) {
+    failure = __LINE__; /* an override's value, through the block's field */
+  } else if (!lands_on(navigator, 13, 24, "modes.fdsl", 3, 3)) {
+    failure = __LINE__; /* an imported enum's name, in its own file */
+  }
+  free(type);
+  free(named);
+  free(override);
+  free(imported);
+  free(attribute);
+  nav_close(navigator);
+  return failure;
+}
+
+static int us15_tc09_completion_offers_enums_and_their_names(const TestArguments *args) {
+  (void)args;
+  const char *types = "enum PowerState: 1 {\n  OFF;\n  ON;\n};\nblock Header {\n  id: 8;\n};\npkt P {\n  p: \n";
+  static const char *const TYPES[] = { "PowerState", "Header", "valof", NULL };
+  Navigator *navigator = nav_open(types, NULL);
+  int failure = navigator == NULL || !completes_to(navigator, 9, 6, TYPES) ? __LINE__ : 0;
+  nav_close(navigator);
+
+  static const char *const NAMES[] = { "OFF", "ON", NULL };
+  const char *value = "enum PowerState: 1 {\n  OFF;\n  ON;\n};\npkt P {\n  p: PowerState = \n";
+  navigator = failure == 0 ? nav_open(value, NULL) : NULL;
+  if (failure == 0 && (navigator == NULL || !completes_to(navigator, 6, 19, NAMES))) {
+    failure = __LINE__;
+  }
+  nav_close(navigator);
+
+  const char *override =
+    "enum PowerState: 1 {\n  OFF;\n  ON;\n};\nblock B {\n  p: PowerState;\n};\npkt P {\n  b: B { p = \n";
+  navigator = failure == 0 ? nav_open(override, NULL) : NULL;
+  if (failure == 0 && (navigator == NULL || !completes_to(navigator, 9, 15, NAMES))) {
+    failure = __LINE__;
+  }
+  nav_close(navigator);
+
+  static const char *const TOP[] = { "pkt", "block", "cal", "enum", "import", NULL };
+  navigator = failure == 0 ? nav_open("", NULL) : NULL;
+  if (failure == 0 && (navigator == NULL || !completes_to(navigator, 1, 1, TOP))) {
+    failure = __LINE__;
+  }
+  nav_close(navigator);
+  return failure;
+}
+
+/* What each word of an enum and its uses is, before anything is compiled. */
+static int us15_tc10_semantic_tokens_know_an_enum_from_a_block(const TestArguments *args) {
+  (void)args;
+  size_t count = 0;
+  SemanticToken *tokens = semantic_tokens(RADIO, &count);
+  const struct {
+    int line;
+    int column;
+    SemanticType type;
+    bool declaration;
+  } want[] = {
+    { 2,  1,  SEM_KEYWORD,     false }, /* enum */
+    { 2,  6,  SEM_ENUM,        true  }, /* PktType */
+    { 3,  3,  SEM_ENUM_MEMBER, true  }, /* HK */
+    { 4,  3,  SEM_ENUM_MEMBER, true  }, /* EVENT */
+    { 7,  9,  SEM_ENUM,        false }, /* type: PktType */
+    { 11, 9,  SEM_STRUCT,      false }, /* Header, a block */
+    { 11, 18, SEM_PROPERTY,    false }, /* type = */
+    { 11, 25, SEM_ENUM_MEMBER, false }, /* = EVENT */
+    { 12, 9,  SEM_ENUM,        false }, /* kind: PktType */
+    { 12, 19, SEM_ENUM_MEMBER, false }, /* = HK */
+    { 13, 23, SEM_ENUM_MEMBER, false }, /* = TX */
+  };
+  int failure = tokens == NULL ? __LINE__ : 0;
+  for (size_t w = 0; failure == 0 && w < sizeof(want) / sizeof(*want); ++w) {
+    bool found = false;
+    for (size_t i = 0; i < count; ++i) {
+      if (tokens[i].line == want[w].line && tokens[i].column == want[w].column) {
+        found = tokens[i].type == want[w].type && tokens[i].declaration == want[w].declaration;
+      }
+    }
+    failure = found ? 0 : __LINE__ * 100 + (int)w;
+  }
+  free(tokens);
+  return failure;
+}
+
 void register_user_story15(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us15_tc01_hover_shows_where_a_field_lands, "hover shows width, offset and the orders in force", true);
@@ -327,5 +458,10 @@ void register_user_story15(void) {
   ADD_TEST_CASE(us15_tc06_a_namespace_offers_what_its_import_brings, "ns. offers what that import brings", false);
   ADD_TEST_CASE(
     us15_tc07_a_broken_file_is_answered_with_what_can_be_said, "a broken file is answered, never crashed on", false
+  );
+  ADD_TEST_CASE(us15_tc08_an_enum_and_its_names_are_navigable, "an enum and its names hover and lead home", false);
+  ADD_TEST_CASE(us15_tc09_completion_offers_enums_and_their_names, "completion offers enums and their names", false);
+  ADD_TEST_CASE(
+    us15_tc10_semantic_tokens_know_an_enum_from_a_block, "semantic tokens know an enum from a block", false
   );
 }

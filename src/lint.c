@@ -97,6 +97,33 @@ void lint_unused(const AstFile *file, DiagList *diags) {
     }
   }
 
+  for (size_t e = 0; e < file->enum_count; ++e) {
+    const AstEnum *enumeration = &file->enums[e];
+    if (enumeration->origin == NULL && enumeration->name != NULL && !is_used(&uses, enumeration->name)) {
+      size_t index = diags->count;
+      diag_warn(
+        diags,
+        enumeration->name_line,
+        enumeration->name_column,
+        30,
+        "enum '%s' is not used by anything",
+        enumeration->name
+      );
+      if (enumeration->stop_line > 0) {
+        diag_set_removal(
+          diags,
+          index,
+          enumeration->line,
+          enumeration->column,
+          enumeration->stop_line,
+          enumeration->stop_column,
+          "remove the unused enum '%s'",
+          enumeration->name
+        );
+      }
+    }
+  }
+
   for (const AstImport *import = file->imports; import != NULL; import = import->next) {
     bool used = false;
     for (size_t n = 0; n < import->brought_count && !used; ++n) {
@@ -111,7 +138,7 @@ void lint_unused(const AstFile *file, DiagList *diags) {
         30,
         "nothing '%s' brings in is used%s",
         import->path,
-        import->brought_count == 0 ? " -- it declares no blocks or calibrations" : ""
+        import->brought_count == 0 ? " -- it declares no blocks, calibrations or enums" : ""
       );
       if (import->end_line > 0) {
         diag_set_removal(

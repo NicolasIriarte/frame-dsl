@@ -259,6 +259,21 @@ static int check_files(const char **paths, size_t count, const char *stdin_name,
   return status;
 }
 
+/* The name enum `enumeration` gives `value`: what a fixed value is written as in the file. */
+static const char *enum_name_of(const FramedslDefinition *definition, const char *enumeration, uint64_t value) {
+  size_t index = 0;
+  if (framedsl_find_enum(definition, enumeration, &index)) {
+    for (size_t i = 0; i < framedsl_enum_item_count(definition, index); ++i) {
+      const char *name = NULL;
+      uint64_t listed = 0;
+      if (framedsl_enum_item(definition, index, i, &name, &listed) && listed == value) {
+        return name;
+      }
+    }
+  }
+  return "?";
+}
+
 static void describe(const FramedslDefinition *definition) {
   for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
     size_t fields = framedsl_field_count(definition, p);
@@ -319,20 +334,25 @@ static void describe(const FramedslDefinition *definition) {
         );
       } else if (field.has_fixed) {
         log_info(
-          "    %-14s %s, %llu bits = %#llx",
+          "    %-14s %s, %llu bits = %#llx%s%s%s",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
-          (unsigned long long)field.fixed
+          (unsigned long long)field.fixed,
+          field.enumeration != NULL ? " (" : "",
+          field.enumeration != NULL ? enum_name_of(definition, field.enumeration, field.fixed) : "",
+          field.enumeration != NULL ? ")" : ""
         );
       } else {
         log_info(
-          "    %-14s %s, %llu bits%s%s",
+          "    %-14s %s, %llu bits%s%s%s%s",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
           field.cal != NULL ? ", cal " : "",
-          field.cal != NULL ? field.cal : ""
+          field.cal != NULL ? field.cal : "",
+          field.enumeration != NULL ? ", enum " : "",
+          field.enumeration != NULL ? field.enumeration : ""
         );
       }
     }
@@ -467,6 +487,22 @@ static void print_value(
     uint64_t value = 0;
     double eng = 0;
     if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
+      return;
+    }
+    /* A field typed by an enum shows its name -- or that it has none, which is the reading somebody
+     * debugging a device most wants to see, so it is marked rather than left out (#11). */
+    if (field->enumeration != NULL) {
+      const char *name = NULL;
+      bool listed = framedsl_get_name(frame, id, &name) == FRAMEDSL_OK;
+      fprintf(
+        out,
+        "    %-14s %llu (%#llx) = %s [%s]\n",
+        label,
+        (unsigned long long)value,
+        (unsigned long long)value,
+        listed ? name : "<unlisted>",
+        field->enumeration
+      );
       return;
     }
     /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
@@ -605,13 +641,13 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   return status;
 }
 
-/* The calibrations as a C header, on stdout, for a program that wants them compiled in. */
+/* The calibrations and enums as a C header, on stdout, for a program that wants them compiled in. */
 static int emit_c(const FramedslDefinition *definition) {
   size_t length = framedsl_emit_c(definition, NULL, NULL, 0);
   char *header = malloc(length + 1);
   if (length == 0 || header == NULL) {
     free(header);
-    log_fail("the calibrations could not be written as C");
+    log_fail("the calibrations and enums could not be written as C");
     return 2;
   }
   framedsl_emit_c(definition, NULL, header, length + 1);
@@ -653,7 +689,7 @@ typedef struct {
  * completion, a test) can read the flags back out of --help and trust the list is whole. */
 static const Option OPTIONS[] = {
   { OPTION_DECODE,       "-d", "--decode",       "<hex>",  "decode bytes into packets and their fields"         },
-  { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,     "write the calibrations to stdout as C"              },
+  { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,     "write the calibrations and enums to stdout as C"    },
   { OPTION_CHECK,        NULL, "--check",        NULL,     "only report problems; with --format, write nothing" },
   { OPTION_WERROR,       NULL, "--werror",       NULL,     "with --check: fail on a warning too"                },
   { OPTION_FORMAT,       NULL, "--format",       NULL,     "rewrite files in place, in the standard layout"     },
@@ -686,7 +722,7 @@ static void help(void) {
     "usage:\n"
     "  frame-dsl <file.fdsl>                                describe its packets and fields\n"
     "  frame-dsl <file.fdsl> -d <hex>                       decode bytes\n"
-    "  frame-dsl <file.fdsl> --emit-c                       write the calibrations out as C\n"
+    "  frame-dsl <file.fdsl> --emit-c                       write the calibrations and enums out as C\n"
     "  frame-dsl <file.fdsl> --list-packets                 print the packet names, one per line\n"
     "  frame-dsl <file.fdsl>... --check [--werror]          report problems as path:line:col: message\n"
     "  frame-dsl <file.fdsl>... --format [--check]          rewrite in the standard layout, or only\n"
@@ -853,7 +889,7 @@ int main(int argc, char **argv) {
   } else if (lsp && (path_count > 0 || check || format || emit || hex != NULL || werror)) {
     conflict = "--lsp talks to an editor on stdin and stdout, and takes nothing else";
   } else if (emit && hex != NULL) {
-    conflict = "--emit-c writes the calibrations out; it does not decode as well";
+    conflict = "--emit-c writes the calibrations and enums out; it does not decode as well";
   } else if (format && (emit || hex != NULL)) {
     conflict = "--format rewrites the definition; it does not decode or emit as well";
   } else if (format && werror) {

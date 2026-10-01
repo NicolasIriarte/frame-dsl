@@ -63,6 +63,30 @@ class Structs(unittest.TestCase):
         self.assertTrue(reading.cal_invertible)
         self.assertEqual(reading.element_bits, 0)
         self.assertEqual(reading.member_count, 0)
+        self.assertIsNone(reading.enumeration)
+        _native.framedsl_result_free(result)
+
+    def test_a_field_typed_by_an_enum_names_it_last(self):
+        # The member added last, so a Field missing it or holding it out of order reads it wrong.
+        result = _native.framedsl_load_file(os.path.join(EXAMPLES, "radio_status.fdsl").encode())
+        self.assertTrue(_native.framedsl_ok(result))
+        definition = _native.framedsl_definition(result)
+        level = _native.Field()
+        self.assertTrue(_native.framedsl_field(definition, 0, 3, ctypes.byref(level)))
+        self.assertEqual(level.name, b"level")
+        self.assertEqual(level.width_bits, 3)
+        self.assertIsNone(level.cal)
+        self.assertEqual(level.enumeration, b"TxLevel")
+
+        frame = _native.framedsl_frame_new(definition)
+        field = _native.FieldId()
+        self.assertTrue(_native.framedsl_find(definition, b"TM_ANTENNA.level", ctypes.byref(field)))
+        self.assertEqual(_native.framedsl_set_name(frame, field, b"MAX"), _native.OK)
+        name = ctypes.c_char_p()
+        self.assertEqual(_native.framedsl_get_name(frame, field, ctypes.byref(name)), _native.OK)
+        self.assertEqual(name.value, b"MAX")
+        self.assertEqual(_native.framedsl_set_name(frame, field, b"LOUD"), _native.ERROR_UNLISTED)
+        _native.framedsl_frame_free(frame)
         _native.framedsl_result_free(result)
 
     def test_a_diagnostic_reads_back_every_member(self):

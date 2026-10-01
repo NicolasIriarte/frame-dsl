@@ -166,7 +166,8 @@ alternative is finding out on a live link.
 
 **Naming**
 
-1. Packet names are unique in a file, and so are named block names.
+1. Packet names are unique in a file, and so are the names of named blocks and enums -- together,
+   since both are a field's type and `x: Name;` must mean one of them.
 2. Field names are unique within a packet.
 3. Reserved words are not usable as identifiers.
 
@@ -238,9 +239,9 @@ alternative is finding out on a live link.
 
 **Composition**
 
-23. A field whose width is a name must name a block.
-24. A block must be declared above everything that uses it, packet or block. The same rule makes a
-    block containing itself, directly or through another, impossible to write.
+23. A field whose width is a name must name a block or an enum.
+24. A block or an enum must be declared above everything that uses it, packet or block. The same rule
+    makes a block containing itself, directly or through another, impossible to write.
 25. An override must name a field of the block it is used with, and name it once. An instance's name
     is subject to check 2 like any field's, so `hdr: 8;` beside `hdr: Header;` is a duplicate even
     though `hdr` and `hdr.id` would not collide. A use with no instance name, `Header;`, pastes the
@@ -251,9 +252,26 @@ alternative is finding out on a live link.
 
 26. An import must name a file that can be read. Its own problems are reported in it, by name.
 27. Imports may not form a cycle, including a file importing itself.
-28. Two different declarations of one name may not reach a file through flat imports. The same
+28. Two different declarations of one name may not reach a file through flat imports -- a block and an
+    enum of one name included. The same
     declaration reached twice -- two libraries importing a third -- is not a clash. A local
     declaration of an imported name is check 1 or 17, reported where it is written.
+
+**Enumerations**
+
+35. An enum's width is a constant from 1 to 64 bits. A field typed by it is a number, and a number is a
+    scalar.
+36. An enum's names are unique within it. Two enums may share one.
+37. An enum's values strictly increase, counted ones included. Two names for one value would make a
+    decoded value's name a guess, and an increasing list reads in the order a value is looked up in.
+38. Every value of an enum fits its width, written or counted -- and counting past the largest 64-bit
+    value is refused rather than wrapped round.
+39. A fixed value or an override on a field typed by an enum is one of that enum's names; a number, or
+    another enum's name, is refused. A name is a value only on a field typed by an enum.
+40. `@cal:` may not go on a field typed by an enum: a curve makes the value a number in engineering
+    units, and the enum makes it a name.
+41. An enum is used only as the type of a named field: not pasted in without a name, given overrides,
+    or repeated. A reservation on one is check 14, its width being constant.
 
 **Repetition**
 
@@ -283,7 +301,7 @@ warning is there for whoever is editing it, and `frame-dsl --check --werror` is 
 one. They share the numbering because they share the diagnostic, and a test asserts on the number
 the same way.
 
-30. A block, calibration or import declared in a file and used by nothing in it. Only in a file that
+30. A block, calibration, enum or import declared in a file and used by nothing in it. Only in a file that
     declares at least one packet: a file of blocks and calibrations alone is a library, and its
     declarations -- what it imports included, since that is merged into what it offers -- are its
     exports. Anything declared in the file that names something counts as a use, even if it is itself
@@ -612,5 +630,48 @@ A decode also reports how many bytes the frame occupied. A packet with a `valof(
 until it has been decoded, so without that a caller reading a stream would have to re-implement the
 length field's arithmetic to find where one frame ended and the next began -- which is precisely the
 duplication this library exists to remove. Bytes past the frame are left alone.
+
+## Enumerations
+
+An enum names the values of a field (#11): `enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };` at file
+level, and `level: TxLevel;` in a packet or a block.
+
+**Declared apart and used as a type.** The alternative -- names written on the field, or an `@enum:`
+attribute naming one -- was weighed and rejected. Declared apart, one enum serves every field that
+carries the same states and is imported like a block. Used as a type, it is the same syntax as using a
+block, which is the one thing the reader already knows a name in a width means: "go and look at its
+declaration". That is also why the enum carries the width: every field of the type is that wide, so
+writing it at each field would only be another place for it to disagree.
+
+**Resolved by composition, and gone after it.** A name in a width is a block's or an enum's, and only
+the full set of declarations says which -- an imported one, or one declared further down. So the parser
+accepts what either would take, and composition decides: an enum's field becomes an ordinary field of
+the enum's width that remembers its type, its value looked up in that type. The checks, the layout and
+the bytecode see `level: 3;` with a name attached, and a field typed by an enum costs nothing at run
+time a plain one does not. What composition refuses on a block's use -- a value, a reservation, a
+group -- moved there from the parser, since until then it is not known to be a block's.
+
+**Values are bare names.** `type: PktType = HK;` -- the type already says which enum, and qualifying the
+name would say it twice. A name is looked up only in the field's own enum, so two enums may share one,
+and a number there is refused: the point of naming a discriminator is that it reads as what it means.
+
+**Counting, and increasing values.** A name without a value counts on from the one before, as C does --
+most enums are 0, 1, 2. Unlike C, values must strictly increase. That rules out the trap counting sets
+(inserting a line renumbering the ones after it into a collision) by making a collision an error, and
+makes the name of a value a binary search over the list as written.
+
+**Not layout.** Byte and bit order are the field's, from where it is used. An enum is a set of numbers,
+and a 16-bit status in a little-endian payload is the same set of numbers as in a big-endian one.
+
+**An unlisted value is flagged, not refused.** A decode that carries a value the enum does not list
+succeeds; `framedsl_get_name()` reports `FRAMEDSL_ERROR_UNLISTED`, and `-d` prints `<unlisted>`. A device
+sending a state the definition does not know is exactly what somebody debugging it wants to see, and
+refusing the frame would hide it. The raw accessors stay raw in both directions, so a program can still
+build the frame that tests how a device handles a bad value. #61 asks the same question of a range, and
+should answer it the same way.
+
+**At run time** an enum is the parsed declaration, kept with the definition: its names in increasing
+order, looked up by binary search for a decode and by name for a set. A field instruction carries the
+enum's index, resolved when the file loads, as it does a calibration's.
 
 ## Deliberately unsettled

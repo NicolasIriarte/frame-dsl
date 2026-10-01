@@ -4,8 +4,8 @@
  * written to be turned directly into a recursive-descent parser: one function per production, no
  * backtracking needed, and every production decidable from a single lookahead token.
  *
- * What is NOT here is as deliberate as what is. Signed and floating-point fields, enums, conditional
- * fields and CRC declarations are all deferred,
+ * What is NOT here is as deliberate as what is. Signed and floating-point fields, conditional fields
+ * and CRC declarations are all deferred,
  * each to its own issue, so that they are designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
@@ -15,7 +15,7 @@
  * checked when a definition file loads.
  *)
 
-definition_file    = { import } , { attribute } , { packet | named_block | calibration } ;
+definition_file    = { import } , { attribute } , { packet | named_block | calibration | enumeration } ;
 
 (* --- Imports --------------------------------------------------------------------------------
  * Blocks and calibrations from another file, flat or under `as name`. The path is relative to the
@@ -29,7 +29,7 @@ dotted_name        = identifier , { "." , identifier } ;
  * One form per job, so nothing is expressible two ways:
  *
  *   - A bare attribute may appear only after the imports and before the first declaration of any
- *     kind -- packet, block or calibration. It is the file default.
+ *     kind -- packet, block, calibration or enum. It is the file default.
  *   - A group attaches to the declaration that follows it -- a packet, a block or a field -- and
  *     applies to that declaration only.
  *
@@ -83,8 +83,15 @@ named_block        = [ attribute_group ] , "block" , identifier , "{" ,
                      "}" , ";" ;
 
 use                = [ identifier , [ reservation ] , ":" ] , dotted_name , [ repeat ] ,
-                     [ "{" , { override } , "}" ] , ";" ;
-override           = identifier , { "." , identifier } , "=" , integer , ";" ;
+                     [ "{" , { override } , "}" ] , [ "=" , value ] , ";" ;
+override           = identifier , { "." , identifier } , "=" , value , ";" ;
+
+(* A value is a number, or -- on a field typed by an enum -- one of that enum's names, written bare
+ * (#11). Which a name is is settled by composition, not the grammar: the same `name: Name` is a block's
+ * use or an enum-typed field depending on what `Name` was declared as, and a group, a reservation and
+ * a value are accepted here on both and refused by composition on a block's (check 39 for a name
+ * where no enum gives one). *)
+value              = integer | identifier ;
 
 (* A repetition, `samples[48]: Sample[valof(count)];` (#55): the block laid out `count` times. Only a
  * named use repeats, and only it may carry a reservation, which a count with a valof() in it needs
@@ -106,7 +113,7 @@ repeat             = "[" , expression , "]" ;
  *)
 
 field              = identifier , [ reservation ] , ":" , width ,
-                     [ "=" , integer ] , ";" ;
+                     [ "=" , value ] , ";" ;
 
 reservation        = "[" , expression , "]" ;
 
@@ -144,6 +151,18 @@ cal_unary          = "-" , cal_unary | cal_factor ;
 cal_factor         = integer | real
                    | dotted_name , [ "(" , cal_expression , ")" ]
                    | "(" , cal_expression , ")" ;
+
+(* --- Enumerations (#11) ----------------------------------------------------------------------
+ * Names for the values of a field typed by the enum, `level: TxLevel;`, which is the enum's width. A
+ * name without a value is one more than the name before it, and the first is 0. The width is 1 to 64
+ * (check 35), names are unique (36), values increase (37) and fit the width (38).
+ *
+ * "enum" is recognised only where a declaration starts, so it is not reserved and a field may be
+ * called `enum`. No attribute group goes in front of one: an enum sets no layout.
+ *)
+
+enumeration        = "enum" , identifier , ":" , integer , "{" , enum_item , { enum_item } , "}" , ";" ;
+enum_item          = identifier , [ "=" , integer ] , ";" ;
 
 (* --- Lexical --------------------------------------------------------------------------------
  * Whitespace and comments separate tokens and are otherwise discarded. A comment runs from "#" to

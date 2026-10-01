@@ -34,6 +34,15 @@ static const char *const DEFINITIONS[] = {
   "block H { id: 8; seq: 16; };\n"
   "pkt W { h: H { id = 0x20; }; pad: 5; blob: 72; big: 64; tail: 3; };\n"
   "pkt X { h: H { id = 0x21; }; [ @cal: volts; ] v: 12; [ @cal: ohms; ] r: 12; n: 8; d[16]: valof(n) * 8; };\n",
+
+  /* Enums (#11): a discriminator fixed by name, sub-byte and little-endian fields, and names that leave
+   * most values unlisted -- which must decode, and read back as unlisted rather than as anything. */
+  "enum T: 4 { HK = 0x1; EVENT; STATUS = 0x8; };\n"
+  "enum Level: 3 { OFF; LOW; MAX = 7; };\n"
+  "enum Mode: 16 { IDLE = 0x0100; RUN; };\n"
+  "block Hdr { type: T; seq: 12; };\n"
+  "pkt E1 { h: Hdr { type = HK; }; level: Level; pad: 5; [ @byte_order: little_endian; ] mode: Mode; };\n"
+  "pkt E2 { h: Hdr { type = EVENT; }; mode: Mode = RUN; };\n",
 };
 
 #define DEFINITION_COUNT (sizeof(DEFINITIONS) / sizeof(*DEFINITIONS))
@@ -83,6 +92,17 @@ static void check_round_trip(size_t d, const char *name, const uint8_t *bytes, s
       double eng;
       if (field.cal != NULL) {
         (void)framedsl_get_eng(frames[d], id, &eng); /* may legitimately be RANGE; must not crash */
+      }
+      const char *named = NULL;
+      if (field.enumeration != NULL) {
+        FramedslStatus status = framedsl_get_name(frames[d], id, &named);
+        if ((status == FRAMEDSL_OK) != (named != NULL)
+            || (status != FRAMEDSL_OK && status != FRAMEDSL_ERROR_UNLISTED)) {
+          abort();
+        }
+        if (named != NULL && !field.has_fixed && framedsl_set_name(checks[d], id, named) != FRAMEDSL_OK) {
+          abort(); /* a name read back sets the same value; set_u64 below then writes it again */
+        }
       }
       if (!field.has_fixed && framedsl_set_u64(checks[d], id, value) != FRAMEDSL_OK) {
         abort();

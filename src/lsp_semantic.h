@@ -29,6 +29,8 @@ typedef enum {
   SEM_STRING,
   SEM_COMMENT,
   SEM_OPERATOR,
+  /** @brief An enum's name, where it is declared and where a field is typed by it (#11). */
+  SEM_ENUM,
   SEM_TYPE_COUNT,
 } SemanticType;
 

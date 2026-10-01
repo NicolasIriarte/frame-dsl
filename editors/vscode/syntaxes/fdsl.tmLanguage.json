@@ -10,6 +10,7 @@
     { "include": "#attribute" },
     { "include": "#cal-declaration" },
     { "include": "#cal-decl-name" },
+    { "include": "#enum-declaration" },
     { "include": "#packet-block-name" },
     { "include": "#field-name" },
     { "include": "#type-name" },
@@ -80,6 +81,15 @@
       "name": "entity.name.function.fdsl"
     },
 
+    "enum-declaration": {
+      "_comment": "'enum Name: width {' at the start of a line. 'enum' is not reserved, so a field may still be called 'enum'.",
+      "match": "^\\s*\\b(enum)\\s+([A-Za-z_]\\w*)",
+      "captures": {
+        "1": { "name": "keyword.control.fdsl" },
+        "2": { "name": "entity.name.type.fdsl" }
+      }
+    },
+
     "packet-block-name": {
       "match": "(?<=\\b(?:pkt|block)\\b\\s)\\s*[A-Za-z_]\\w*",
       "name": "entity.name.type.fdsl"
@@ -89,7 +99,7 @@
       "captures": { "1": { "name": "variable.other.member.fdsl" } }
     },
     "type-name": {
-      "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*[;{])",
+      "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*[;{=])",
       "name": "entity.name.type.fdsl"
     },
     "pasted-block-name": {

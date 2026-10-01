@@ -94,7 +94,12 @@ something, which is why the patterns below anchor on the `@'.")
       ;; `block NAME {' at file level -- a block being declared to be reused -- and `name: NAME'
       ;; where a field uses one: a name where a width would be can only be a block.
       (,(concat "\\_<block\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
-      (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\)[ \t]*[{;]") 1 font-lock-type-face)
+      (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\(?:\\." name "\\)*\\)[ \t]*[{;=]") 1 font-lock-type-face)
+
+      ;; `enum NAME: width {' -- not reserved either, so matched only in that shape at file level.
+      (,(concat "^[ \t]*\\(enum\\)[ \t]+\\(" name "\\)[ \t]*:")
+       (1 font-lock-keyword-face)
+       (2 font-lock-type-face))
 
             ;; `cal NAME(param) = ...' and its `inverse (param) = ...'.  Neither word is reserved -- each
       ;; means something only where a calibration is declared -- so both are matched in that shape

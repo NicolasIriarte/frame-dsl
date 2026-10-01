@@ -67,6 +67,25 @@ each call would otherwise land in the middle of `make test' once per example fil
     (should (eq major-mode 'frame-dsl-mode))
     (setq buffer-file-name nil)))
 
+(ert-deftest frame-dsl-tests-an-enum-and-its-uses-are-types ()
+  "An enum's name is a type where it is declared and where a field is typed by it, with or without a
+value; the word `enum' is a keyword only where it declares one."
+  (let ((sample (concat "enum TxLevel: 3 {\n"
+                        "  OFF;\n"
+                        "  MAX = 7;\n"
+                        "};\n"
+                        "\n"
+                        "pkt TM {\n"
+                        "  level: TxLevel = MAX;\n"
+                        "  mode:  vendor.Mode;\n"
+                        "  enum:  8;\n"
+                        "};\n")))
+    (should (eq (frame-dsl-tests--face-of sample "enum Tx") 'font-lock-keyword-face))
+    (should (eq (frame-dsl-tests--face-of sample "TxLevel:") 'font-lock-type-face))
+    (should (eq (frame-dsl-tests--face-of sample "TxLevel =") 'font-lock-type-face))
+    (should (eq (frame-dsl-tests--face-of sample "vendor.Mode") 'font-lock-type-face))
+    (should-not (eq (frame-dsl-tests--face-of sample "enum:") 'font-lock-keyword-face))))
+
 (ert-deftest frame-dsl-tests-each-kind-of-thing-looks-different ()
   "The six things a reader has to tell apart are told apart."
   (let ((sample (concat "@bit_order: msb_first;\n"

@@ -84,11 +84,12 @@ bool framedsl_ok(const FramedslResult *result);
 | `FRAMEDSL_ERROR_BUFFER` | a buffer you supplied is too small; the call reports the size needed |
 | `FRAMEDSL_ERROR_UNRECOGNISED` | nothing in the definition matches the frame you handed over |
 | `FRAMEDSL_ERROR_TRUNCATED` | a packet matched and then the bytes ran out |
+| `FRAMEDSL_ERROR_UNLISTED` | a field typed by an enum holds a value its enum does not list, or was given a name it does not list |
 
 `IO` and `INVALID` are separate on purpose. A file that is not there is a different problem from a
 file that is wrong, and a caller should not have to read the message to tell them apart.
 
-The last four belong to the frame half below. They are in the same enum rather than one of their
+The last five belong to the frame half below. They are in the same enum rather than one of their
 own, so a caller that prints a status has one function to write -- and "which call failed" never
 needs asking, because it is the one that returned something other than `FRAMEDSL_OK`.
 
@@ -162,6 +163,9 @@ a zeroed struct that looks like a real field.
 | `is_scalar` | 64 bits or fewer: read as an integer, not as bytes |
 | `has_fixed`, `fixed` | the value that identifies the packet, if this field carries one |
 | `bit_order`, `byte_order` | **resolved** |
+| `cal`, `cal_invertible` | the calibration `@cal:` names, or `NULL`, and whether it can be set -- see [Calibrations](#calibrations) |
+| `element_bits`, `member_count` | for a repetition, its element's size and fields; `0` otherwise |
+| `enumeration` | the enum the field is typed by, or `NULL` -- see [Enumerations](#enumerations) |
 
 "Resolved" matters: these are what actually applies to the field after file, packet and field scope
 are combined -- not what was written at any one of them. A caller wants to know how the bits land,
@@ -591,6 +595,81 @@ A curve that reduces to a line -- most do, including one that calls another line
 one multiply and one add, with the constants folded when the file loads. Anything else is a short
 postfix program over a fixed stack, calls inlined, constants folded, and no allocation. The emitted
 C is the same arithmetic without the interpreter.
+
+## Enumerations
+
+A field typed by an enum, `level: TxLevel;`, is a scalar like any other: the arena holds its number,
+and `framedsl_get_u64()` and `framedsl_set_u64()` read and write it whatever it is. Its names are the
+checked path:
+
+```c
+FramedslStatus framedsl_get_name(const FramedslFrame *frame, FramedslFieldId id, const char **name);
+FramedslStatus framedsl_set_name(FramedslFrame *frame, FramedslFieldId id, const char *name);
+```
+
+```c
+const char *level;
+if (framedsl_get_name(frame, level_id, &level) == FRAMEDSL_OK) {
+  printf("transmitting at %s\n", level);          /* "HIGH" */
+}
+framedsl_set_name(frame, level_id, "MAX");         /* writes 7 */
+```
+
+A decoded value the enum does not list is not a failed decode: the frame arrived, and the number is
+in it. `framedsl_get_name()` says so with `FRAMEDSL_ERROR_UNLISTED` and a `NULL` name, and
+`framedsl_get_u64()` still reads the number -- which is what somebody debugging a device that sends a
+state nobody told the definition about wants to see. A name the enum does not list is
+`FRAMEDSL_ERROR_UNLISTED` too, and writes nothing. A field that is not typed by an enum is
+`FRAMEDSL_ERROR_FIELD` to both. The name is as the definition writes it, `MAX`, never `TxLevel.MAX`.
+
+Why the raw value stays writable: an encoder that refused an unlisted number could not build the frame
+that tests how a device handles one.
+
+### Every enum and its names
+
+```c
+size_t      framedsl_enum_count(const FramedslDefinition *def);
+const char *framedsl_enum_name(const FramedslDefinition *def, size_t index);
+bool        framedsl_find_enum(const FramedslDefinition *def, const char *name, size_t *index);
+size_t      framedsl_enum_item_count(const FramedslDefinition *def, size_t index);
+bool        framedsl_enum_item(const FramedslDefinition *def, size_t index, size_t item,
+                               const char **name, uint64_t *value);
+```
+
+For a program that shows a field's choices -- a menu, a command-line completion -- rather than
+knowing them already. `FramedslField.enumeration` names a field's enum, and `framedsl_find_enum()`
+resolves it; the names come back in the order written, which is increasing value. An imported enum
+is named as the definition names it, `vendor.Mode` for one imported `as vendor`.
+
+### In the emitted C
+
+`framedsl_emit_c()` writes every enum after the calibrations, as constants and a function from a
+value to its name:
+
+```c
+/* enum TxLevel: 3 bits */
+enum fdsl_TxLevel {
+  fdsl_TxLevel_OFF = 0,
+  fdsl_TxLevel_LOW = 1,
+  fdsl_TxLevel_MID = 2,
+  fdsl_TxLevel_HIGH = 3,
+  fdsl_TxLevel_MAX = 7,
+};
+
+static inline const char *fdsl_TxLevel_name(unsigned long long value) {
+  switch (value) {
+  case 0ULL:
+    return "OFF";
+  ...
+  default:
+    return (const char *)0;
+  }
+}
+```
+
+The constants are a C `enum` when every value fits an `int`, which is all an enumeration constant can
+be; an enum with a larger value -- a 64-bit field's -- gets `#define`s instead. Either way each is a
+constant expression, usable in a `case`.
 
 ## A whole program
 

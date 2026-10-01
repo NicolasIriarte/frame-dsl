@@ -100,11 +100,11 @@ static bool declared_by(const AstPacket *block, int line, int column) {
 
 static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out);
 
-/* A "did you mean" for a use naming no block: the closest block name there is, imported ones included
+/* A "did you mean" for a use naming no block or enum: the closest name there is, imported ones included
  * under the name this file gives them -- so `link.Heder` can become `link.Header`. */
 static void suggest_block(Composer *composer, size_t index, const AstField *use) {
   const AstFile *file = composer->file;
-  const char **names = malloc((file->block_count + 1) * sizeof(*names));
+  const char **names = malloc((file->block_count + file->enum_count + 1) * sizeof(*names));
   if (names == NULL || use->block_line == 0) {
     free(names);
     return;
@@ -112,7 +112,10 @@ static void suggest_block(Composer *composer, size_t index, const AstField *use)
   for (size_t i = 0; i < file->block_count; ++i) {
     names[i] = file->blocks[i].name;
   }
-  const char *closest = diag_closest(use->block, strlen(use->block), names, file->block_count);
+  for (size_t i = 0; i < file->enum_count; ++i) {
+    names[file->block_count + i] = file->enums[i].name;
+  }
+  const char *closest = diag_closest(use->block, strlen(use->block), names, file->block_count + file->enum_count);
   if (closest != NULL) {
     diag_set_fix(
       composer->diags,
@@ -247,6 +250,221 @@ static void repeat(
   append(composer, out, &field);
 }
 
+/* ---- Enumerations (#11) ------------------------------------------------------------------------
+ *
+ * A field typed by an enum, `level: TxLevel;`, is written like a use of a block and is resolved here,
+ * where it is known which of the two a name is. It becomes an ordinary field of the enum's width that
+ * remembers its type, with a value written as a name looked up in that type -- so nothing after this
+ * lays it out, checks it or walks it any differently from `level: 3;`. */
+
+/* A "did you mean" among `enumeration`'s names, for one written at (line, column) that it lacks. */
+static void suggest_item(
+  Composer *composer,
+  size_t index,
+  const AstEnum *enumeration,
+  const char *wrong,
+  int line,
+  int column
+) {
+  const char **names = malloc((enumeration->item_count + 1) * sizeof(*names));
+  if (names == NULL || line == 0) {
+    free(names);
+    return;
+  }
+  for (size_t i = 0; i < enumeration->item_count; ++i) {
+    names[i] = enumeration->items[i].name;
+  }
+  const char *closest = diag_closest(wrong, strlen(wrong), names, enumeration->item_count);
+  if (closest != NULL) {
+    diag_set_fix(
+      composer->diags, index, line, column, line, column + (int)strlen(wrong), closest, "did you mean '%s'?", closest
+    );
+  }
+  free(names);
+}
+
+/* Check 39: the value a field typed by `enumeration` is given, as a name or as a number. `what` names
+ * the field in the message. Sets `*value` and returns true when it is a name the enum lists. */
+static bool enum_value(
+  Composer *composer,
+  const AstEnum *enumeration,
+  const char *what,
+  const char *name,
+  uint64_t number,
+  int line,
+  int column,
+  uint64_t *value
+) {
+  char message[512];
+  if (name == NULL) {
+    /* A number the enum lists is one somebody knows the name of; say it, so the fix is to copy it. */
+    const char *listed = ast_enum_name_of(enumeration, number);
+    if (listed != NULL) {
+      snprintf(
+        message,
+        sizeof(message),
+        "'%s' is typed by enum '%s', so its value is one of the enum's names: write '%s' for %llu",
+        what,
+        enumeration->name,
+        listed,
+        (unsigned long long)number
+      );
+    } else {
+      snprintf(
+        message,
+        sizeof(message),
+        "'%s' is typed by enum '%s', so its value is one of the enum's names, not a number",
+        what,
+        enumeration->name
+      );
+    }
+    fail(composer, line, column, 39, message);
+    return false;
+  }
+
+  const AstEnumItem *item = ast_enum_item(enumeration, name);
+  if (item == NULL) {
+    size_t index = composer->diags->count;
+    snprintf(message, sizeof(message), "enum '%s' has no name '%s' for '%s' to take", enumeration->name, name, what);
+    fail(composer, line, column, 39, message);
+    suggest_item(composer, index, enumeration, name, line, column);
+    return false;
+  }
+  *value = item->value;
+  return true;
+}
+
+/* Check 39 from the other side: a name is a value only of a field typed by an enum. */
+static void refuse_name(Composer *composer, const char *what, const char *name, int line, int column) {
+  char message[512];
+  snprintf(
+    message,
+    sizeof(message),
+    "'%s' is not typed by an enum, so its value is a number and '%s' names nothing; to give its values "
+    "names, declare an enum and write 'name: Enum;'",
+    what,
+    name
+  );
+  fail(composer, line, column, 39, message);
+}
+
+/* `name: Enum [= NAME];` becomes an ordinary field of the enum's width. */
+static void type_by_enum(
+  Composer *composer,
+  const AstField *use,
+  const AstEnum *enumeration,
+  const char *prefix,
+  FieldList *out
+) {
+  char message[512];
+
+  /* Check 41: an enum is a field's type, and there is nothing inside it to paste, fix or repeat. */
+  if (use->anonymous) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is an enum, which is the type of a field and has no fields to paste in; name the field, "
+      "'name: %s;'",
+      use->block,
+      use->block
+    );
+    fail(composer, use->line, use->column, 41, message);
+    return;
+  }
+  if (use->repeat != NULL) {
+    snprintf(
+      message, sizeof(message), "'%s' repeats enum '%s'; only a block can be repeated", use->name, enumeration->name
+    );
+    fail(composer, use->repeat_line, use->repeat_column, 41, message);
+    return;
+  }
+  if (use->overrides != NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is typed by enum '%s', which has no fields to fix; give its value as '%s: %s = NAME;'",
+      use->name,
+      enumeration->name,
+      use->name,
+      use->block
+    );
+    fail(composer, use->overrides->line, use->overrides->column, 41, message);
+    return;
+  }
+
+  Expr *width = region_alloc(composer->file->region, sizeof(Expr));
+  if (width == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return;
+  }
+  *width =
+    (Expr){ .kind = EXPR_LITERAL, .line = use->block_line, .column = use->block_column, .literal = enumeration->width };
+
+  AstField field = *use;
+  field.name = join(composer, prefix, use->name);
+  field.block = NULL;
+  field.enumeration = enumeration->name;
+  field.width = width;
+  field.reserve = rename_expr(composer, use->reserve, prefix);
+  if (use->has_fixed || use->fixed_name != NULL) {
+    uint64_t value = 0;
+    field.has_fixed = enum_value(
+      composer, enumeration, use->name, use->fixed_name, use->fixed, use->fixed_line, use->fixed_column, &value
+    );
+    field.fixed = value;
+    field.fixed_name = NULL;
+  }
+  append(composer, out, &field);
+}
+
+/* What a use of a block cannot carry, and a field typed by an enum can -- so the parser takes them
+ * from either and this refuses them once the name is known to be a block's. A group in front of a use
+ * would have to reach inside the block and change its layout, which is settled where the block is
+ * declared so that the same block reads the same everywhere. */
+static bool block_use_is_plain(Composer *composer, const AstField *use) {
+  char message[512];
+  bool plain = true;
+  if (use->bit_order_written || use->byte_order_written || use->cal != NULL) {
+    int line = use->bit_order_written    ? use->bit_order_line
+               : use->byte_order_written ? use->byte_order_line
+                                         : use->cal_line;
+    int column = use->bit_order_written    ? use->bit_order_column
+                 : use->byte_order_written ? use->byte_order_column
+                                           : use->cal_column;
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' uses a block, whose layout is fixed where the block is declared; put the attribute there",
+      use->name
+    );
+    fail(composer, line, column, 0, message);
+    plain = false;
+  }
+  /* A repetition counted by a field reserves its room like any valof()-sized field; a single instance
+   * has none of its own, since its fields reserve what they need. */
+  if (use->reserve != NULL && use->repeat == NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' uses a block, which has no reservation of its own; its fields reserve what they need",
+      use->name
+    );
+    fail(composer, use->reserve_line, use->reserve_column, 0, message);
+    plain = false;
+  }
+  if (use->has_fixed || use->fixed_name != NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' uses a block, and a block has no single value to fix; fix its fields in '{ ... }' instead",
+      use->name
+    );
+    fail(composer, use->fixed_line, use->fixed_column, 0, message);
+    plain = false;
+  }
+  return plain;
+}
+
 /* Check 25, for one use: each override must name a field of this instance, and only once. */
 static void apply_overrides(
   Composer *composer,
@@ -283,10 +501,31 @@ static void apply_overrides(
       continue;
     }
 
+    /* A field typed by an enum takes one of its names, and only such a field takes a name (#11). */
+    uint64_t value = override->value;
+    const AstEnum *enumeration = ast_find_enum(composer->file, target->enumeration);
+    if (enumeration != NULL) {
+      if (!enum_value(
+            composer,
+            enumeration,
+            full,
+            override->value_name,
+            override->value,
+            override->value_line,
+            override->value_column,
+            &value
+          )) {
+        continue;
+      }
+    } else if (override->value_name != NULL) {
+      refuse_name(composer, full, override->value_name, override->value_line, override->value_column);
+      continue;
+    }
+
     /* A fixed value the block wrote is replaced, not contradicted: overriding it is the point. Check 8
      * still sees whether the new value fits, and check 9 whether the field can be fixed at all. */
     target->has_fixed = true;
-    target->fixed = override->value;
+    target->fixed = value;
     target->fixed_line = override->line;
     target->fixed_column = override->column;
   }
@@ -383,6 +622,10 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     starts[f] = out->count;
 
     if (field->block == NULL) {
+      if (field->fixed_name != NULL) {
+        refuse_name(composer, field->name, field->fixed_name, field->fixed_line, field->fixed_column);
+        continue;
+      }
       AstField copy = *field;
       copy.name = join(composer, prefix, field->name);
       copy.width = rename_expr(composer, field->width, prefix);
@@ -393,6 +636,7 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
 
     char message[512];
     const AstPacket *block = find_block(composer->file, field->block);
+    const AstEnum *enumeration = block == NULL ? ast_find_enum(composer->file, field->block) : NULL;
 
     /* Check 2, for the one case the checker cannot see after expansion: an instance sharing its name
      * with another field, whose expanded names (`hdr.id` beside `hdr`) no longer collide. An anonymous
@@ -407,6 +651,24 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
       }
     }
 
+    if (enumeration != NULL) {
+      /* Check 24, for an enum: declared above what uses it, like a block, since it is used like one. */
+      if (enumeration->end_line > field->line
+          || (enumeration->end_line == field->line && enumeration->end_column >= field->column)) {
+        snprintf(
+          message,
+          sizeof(message),
+          "'%s' uses enum '%s' before it is declared; declare an enum above everything that uses it",
+          field->name,
+          enumeration->name
+        );
+        fail(composer, field->line, field->column, 24, message);
+        continue;
+      }
+      type_by_enum(composer, field, enumeration, prefix, out);
+      continue;
+    }
+
     /* Check 23. Written without a width, a field and an anonymous use look alike, so the message for
      * one says what the other would have needed. */
     if (block == NULL) {
@@ -416,7 +678,9 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
           message, sizeof(message), "'%s' is not a block; a field needs a width, '%s: 8;'", field->block, field->block
         );
       } else {
-        snprintf(message, sizeof(message), "'%s' uses '%s', which is not a block", field->name, field->block);
+        snprintf(
+          message, sizeof(message), "'%s' uses '%s', which is not a block or an enum", field->name, field->block
+        );
       }
       fail(composer, field->line, field->column, 23, message);
       suggest_block(composer, index, field);
@@ -440,6 +704,10 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
       continue;
     }
 
+    if (!block_use_is_plain(composer, field)) {
+      continue;
+    }
+
     if (field->repeat != NULL) {
       repeat(composer, field, block, prefix, out);
       continue;
@@ -457,8 +725,152 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
   free(starts);
 }
 
+/* Checks 1 and 35 to 38, over the enums this file declares; an imported one was checked in its own. */
+static void check_enums(Composer *composer) {
+  const AstFile *file = composer->file;
+  char message[512];
+
+  for (size_t e = 0; e < file->enum_count; ++e) {
+    const AstEnum *enumeration = &file->enums[e];
+
+    /* Check 1 for a block of this file named like an imported enum: reported at the block, the one
+     * written here. Everything else about an imported enum was checked in its own file. */
+    if (enumeration->origin != NULL) {
+      for (size_t b = 0; b < file->block_count; ++b) {
+        const AstPacket *block = &file->blocks[b];
+        if (block->origin == NULL && strcmp(block->name, enumeration->name) == 0) {
+          snprintf(
+            message,
+            sizeof(message),
+            "there is already an enum called '%s', from '%s'; a field's type is a block or an enum, so the "
+            "two share their names",
+            enumeration->name,
+            enumeration->origin
+          );
+          fail(composer, block->line, block->column, 1, message);
+        }
+      }
+      continue;
+    }
+
+    /* Check 1: a field's type is a block or an enum, and one name cannot be both. */
+    for (size_t earlier = 0; earlier < e; ++earlier) {
+      if (strcmp(file->enums[earlier].name, enumeration->name) == 0) {
+        snprintf(message, sizeof(message), "there is already an enum called '%s'", enumeration->name);
+        fail(composer, enumeration->line, enumeration->column, 1, message);
+        break;
+      }
+    }
+    for (size_t b = 0; b < file->block_count; ++b) {
+      const AstPacket *block = &file->blocks[b];
+      if (strcmp(block->name, enumeration->name) != 0) {
+        continue;
+      }
+      /* Reported at the later of the two, which is the one written knowing the other was there; an
+       * imported block counts as written first, above everything in this file. */
+      const bool block_later = block->origin == NULL && block->line > enumeration->line;
+      snprintf(
+        message,
+        sizeof(message),
+        "there is already %s called '%s'; a field's type is a block or an enum, so the two share their names",
+        block_later ? "an enum" : "a block",
+        enumeration->name
+      );
+      fail(
+        composer,
+        block_later ? block->line : enumeration->line,
+        block_later ? block->column : enumeration->column,
+        1,
+        message
+      );
+      break;
+    }
+
+    /* Check 35. */
+    const bool width_ok = enumeration->width >= 1 && enumeration->width <= 64;
+    if (!width_ok) {
+      snprintf(
+        message,
+        sizeof(message),
+        "enum '%s' is %llu bits wide; an enum's width is 1 to 64 bits, since a field typed by it is a number",
+        enumeration->name,
+        (unsigned long long)enumeration->width
+      );
+      fail(composer, enumeration->width_line, enumeration->width_column, 35, message);
+    }
+
+    for (size_t i = 0; i < enumeration->item_count; ++i) {
+      const AstEnumItem *item = &enumeration->items[i];
+
+      /* Check 36. */
+      for (size_t j = 0; j < i; ++j) {
+        if (strcmp(enumeration->items[j].name, item->name) == 0) {
+          snprintf(
+            message,
+            sizeof(message),
+            "enum '%s' already has a name '%s', on line %d",
+            enumeration->name,
+            item->name,
+            enumeration->items[j].line
+          );
+          fail(composer, item->line, item->column, 36, message);
+          break;
+        }
+      }
+
+      /* Check 38. A counted value past the largest there is has no value at all, so it is not compared
+       * with anything else. */
+      if (item->overflowed) {
+        snprintf(
+          message,
+          sizeof(message),
+          "'%s' in enum '%s' counts past the largest 64-bit value; give it a value of its own",
+          item->name,
+          enumeration->name
+        );
+        fail(composer, item->line, item->column, 38, message);
+        continue;
+      }
+      if (width_ok && enumeration->width < 64 && item->value >> enumeration->width != 0) {
+        snprintf(
+          message,
+          sizeof(message),
+          "'%s' is %llu, which enum '%s' cannot hold in %llu bits",
+          item->name,
+          (unsigned long long)item->value,
+          enumeration->name,
+          (unsigned long long)enumeration->width
+        );
+        fail(composer, item->line, item->column, 38, message);
+      }
+
+      /* Check 37: against the name before it, which is enough when every step is checked. */
+      const AstEnumItem *before = i > 0 ? &enumeration->items[i - 1] : NULL;
+      if (before != NULL && !before->overflowed && item->value <= before->value) {
+        snprintf(
+          message,
+          sizeof(message),
+          "'%s' is %llu, which does not come after '%s' (%llu); an enum's values increase, so it reads in "
+          "order and no value is listed twice",
+          item->name,
+          (unsigned long long)item->value,
+          before->name,
+          (unsigned long long)before->value
+        );
+        fail(composer, item->line, item->column, 37, message);
+      }
+    }
+  }
+}
+
 bool compose_file(AstFile *file, DiagList *diags) {
   Composer composer = { .file = file, .diags = diags, .failed = false };
+
+  /* A mistake in an enum is its own: it does not make the blocks and packets using it any less worth
+   * expanding, so it does not stop them being expanded below. */
+  check_enums(&composer);
+  const bool enums_failed = composer.failed;
+  composer.failed = false;
 
   for (size_t b = 0; b < file->block_count; ++b) {
     const AstPacket *block = &file->blocks[b];
@@ -509,9 +921,10 @@ bool compose_file(AstFile *file, DiagList *diags) {
   for (size_t p = 0; p < file->packet_count; ++p) {
     AstPacket *packet = &file->packets[p];
 
+    /* A value written as a name has to be looked up, or refused, even in a packet that uses nothing. */
     bool uses_a_block = false;
     for (size_t f = 0; f < packet->field_count; ++f) {
-      uses_a_block = uses_a_block || packet->fields[f].block != NULL;
+      uses_a_block = uses_a_block || packet->fields[f].block != NULL || packet->fields[f].fixed_name != NULL;
     }
     if (!uses_a_block) {
       continue;
@@ -532,5 +945,5 @@ bool compose_file(AstFile *file, DiagList *diags) {
   }
 
   diag_sort(diags);
-  return !composer.failed;
+  return !composer.failed && !enums_failed;
 }

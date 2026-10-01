@@ -927,6 +927,22 @@ static void check_field_cals(Checker *checker, const AstPacket *packet, const Pa
       continue;
     }
 
+    /* Check 40 (#11): a field typed by an enum reads as a name, and a curve would make it a number. */
+    if (field->enumeration != NULL) {
+      fail(
+        checker,
+        field->cal_line,
+        field->cal_column,
+        40,
+        "'%s.%s' is typed by enum '%s', so its values are names; a calibration, which makes a number of "
+        "it, cannot apply as well",
+        packet->name,
+        field->name,
+        field->enumeration
+      );
+      continue;
+    }
+
     /* Check 18, from the field's side. */
     if (find_cal(file, field->cal, NULL) == NULL) {
       size_t index = checker->diags->count;

@@ -95,6 +95,17 @@ function! s:TestPastedSyntax() abort
   bwipeout!
 endfunction
 
+" An enum's name is a type where it is declared and where a field is typed by it, with a value or
+" without; `enum' is a word only where it declares one, so a field may still be called that.
+function! s:TestEnumSyntax() abort
+  call s:Open(['enum TxLevel: 3 {', '  MAX = 7;', '};', 'pkt TM {', '  level: TxLevel = MAX;', '  enum: 8;', '};'])
+  call assert_equal('fdslContextual', s:GroupAt(1, 1), 'enum')
+  call assert_equal('fdslPacketName', s:GroupAt(1, 6), 'the enum name')
+  call assert_equal('fdslTypeName', s:GroupAt(5, 10), 'an enum used as a type, with a value')
+  call assert_equal('fdslFieldName', s:GroupAt(6, 3), 'a field called enum')
+  bwipeout!
+endfunction
+
 " Reindenting every example changes nothing: the examples are what the formatter writes, so this says
 " the indent file and the formatter agree about the layout.
 function! s:TestIndent() abort
@@ -171,6 +182,7 @@ let s:skipped = []
 call s:TestFiletype()
 call s:TestSyntax()
 call s:TestPastedSyntax()
+call s:TestEnumSyntax()
 call s:TestIndent()
 call s:TestQuickfix()
 call s:TestNeovimLsp()
