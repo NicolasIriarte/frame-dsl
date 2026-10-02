@@ -289,11 +289,16 @@ examples/uart_device.py`.
 
 ## Building
 
+Each [release](http://100.125.208.18:3000/nico/Frame-DSL/releases) attaches a prebuilt archive for 64-bit
+Linux -- the tool, the library and its header, the shell completions and every editor's support -- so
+building is only needed for anything else, or to work on this.
+
 Requires a C11 compiler, `make` and `tar`. **No network, and no credentials.**
 
 ```sh
 make        # build build/frame-dsl
 make test   # build and run the test suite
+make dist   # the release archive, build/frame-dsl-<version>-linux-<arch>.tar.gz
 ```
 
 Formatting is clang-format's, from `.clang-format`, and `make format` applies it. That file uses

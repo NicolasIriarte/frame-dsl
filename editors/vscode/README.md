@@ -28,8 +28,9 @@ make vsix                 # writes build/frame-dsl-<version>.vsix, with zip alon
 code --install-extension build/frame-dsl-<version>.vsix
 ```
 
-No marketplace publishing: a `.vsix` is attached to each [Forgejo
-release](http://100.125.208.18:3000/nico/Frame-DSL/releases) instead, built the same way.
+No marketplace publishing: each [Forgejo release](http://100.125.208.18:3000/nico/Frame-DSL/releases)
+carries the `.vsix` instead, built the same way, in its archive at
+`share/frame-dsl/editors/vscode/` -- beside the `frame-dsl` it runs.
 
 ## What it does
 

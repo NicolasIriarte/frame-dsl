@@ -73,11 +73,13 @@ jobs:
       - name: Build the benchmarks
         run: make build/bench build/baseline
 
-      # The VS Code extension, packaged the same way a release does. Needs no npm: the vendored
-      # client (editors/vscode/vendor/vscode-languageclient.js) is committed, like the CLibs
-      # tarballs. scripts/build_vsix.sh checks its own output has the files a .vsix needs.
-      - name: Build the VS Code extension
-        run: make vsix
+      # The release archive (#128), built and checked the same way a release is: the tool, the library,
+      # the completions and every editor's support, the VS Code extension among them -- which needs no
+      # npm, since its vendored client is committed like the CLibs tarballs. scripts/test_dist.sh
+      # unpacks it elsewhere and uses it, Emacs and Vim included, so a broken archive is found here
+      # rather than by the tag that would have published it.
+      - name: Build and check the release archive
+        run: make test-dist
 
       # #59: a bounded fuzz run, only if this runner's clang can produce one. A one-line program probes
       # -fsanitize=fuzzer before committing to the real build -- a runner without it is a skip, exactly
@@ -145,8 +147,8 @@ jobs:
           fi
 
   # Publishes the release a `v*` tag names: the version's section of CHANGELOG.md as its notes, and the
-  # VS Code extension attached (#90). After `test`, since a tag is what somebody installs without
-  # building it themselves.
+  # one archive attached (#90, #128) -- tool, library, completions and editor support together. After
+  # `test`, since a tag is what somebody installs without building it themselves.
   release:
     needs: [test]
     if: github.ref_type == 'tag'
@@ -160,11 +162,16 @@ jobs:
       - name: The changelog has something to say about this version
         run: scripts/changelog_section.sh "${{ github.ref_name }}" > /tmp/release-notes.md
 
-      - name: Build the VS Code extension
+      # The version is the tag, passed rather than left to `git describe`, so the archive's name and
+      # what its `frame-dsl --version` prints are the tag whatever the checkout looks like.
+      # scripts/test_dist.sh then refuses an archive whose tool or extension says otherwise.
+      - name: Build and check the release archive
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           scripts/ci_apt_get.sh update -qq
-          scripts/ci_apt_get.sh install -y -qq --no-install-recommends jq zip unzip
-          make vsix
+          scripts/ci_apt_get.sh install -y -qq --no-install-recommends build-essential emacs-nox vim-nox jq zip unzip
+          make test-dist VERSION_STRING="$TAG"
 
       - name: Publish the release
         env:
@@ -183,7 +190,7 @@ jobs:
                 --data @- "$api/releases" \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
           echo "Created release $TAG (id $id)."
-          for file in build/*.vsix; do
+          for file in build/frame-dsl-"$TAG"-linux-*.tar.gz; do
             echo "Attaching $(basename "$file")"
             curl -sSf -X POST -H "Authorization: token $TOKEN" -F "attachment=@${file}" \
               "$api/releases/${id}/assets?name=$(basename "$file")" > /dev/null

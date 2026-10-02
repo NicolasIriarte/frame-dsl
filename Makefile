@@ -191,6 +191,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	compile-commands \
 	conflicts \
 	deps \
+	dist \
 	format \
 	format-check \
 	format-tool \
@@ -202,6 +203,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	test \
 	test-changelog \
 	test-completion \
+	test-dist \
 	test-editors \
 	test-fuzz-replay \
 	test-output-cap \
@@ -393,6 +395,25 @@ $(VERSION_STAMP): FORCE
 
 $(MAIN_OBJ): $(VERSION_STAMP)
 $(MAIN_OBJ): SRC_FLAGS += -DFRAMEDSL_VERSION=\"$(VERSION_STRING)\"
+
+# A release's one archive (#128): the tool, the library and its header, the completions and every
+# editor's support -- the .vsix included -- under one directory named after the version. The release job
+# attaches it; scripts/build_dist.sh says what is in it and why. VERSION_STRING is the tag on a tag's
+# checkout, and the release job passes it explicitly as well.
+DIST_ARCH := $(shell uname -m)
+DIST := $(BUILD)/frame-dsl-$(VERSION_STRING)-linux-$(DIST_ARCH).tar.gz
+
+dist: $(DIST)
+
+$(DIST): $(TARGET) $(LIB_ARCHIVE) $(LIB_SHARED_LINKS) $(VSIX) scripts/build_dist.sh scripts/dist_install.md \
+         CHANGELOG.md README.md $(wildcard manual/*.md editors/*/README.md editors/emacs/*.el) \
+         $(shell find editors/vim -type f 2>/dev/null)
+	scripts/build_dist.sh $@ $(BUILD) $(VSIX)
+
+# Unpacks the archive somewhere else and uses it: every promised file, the tool, both libraries. Not part
+# of `test`, since it needs the .vsix and so jq and zip; CI runs it on every push, as it builds the .vsix.
+test-dist: $(DIST)
+	scripts/test_dist.sh $(DIST) $(VERSION_STRING)
 
 FORCE:
 

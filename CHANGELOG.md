@@ -12,96 +12,76 @@ release rather than publishing an empty page. See `.forgejo/issue_template/tag.m
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-02
+
+The first release. Frame-DSL describes the layout of binary frames -- bit-wide fields, fixed values
+that identify a packet, lengths taken from other fields, byte and bit order, shared headers, repeated
+and optional parts, enumerations and calibration curves -- in a definition file a program loads at run
+time, and encodes and decodes frames against it without allocating once a frame exists. It is a C
+library with Python bindings, a command-line tool that checks, formats, describes and decodes, and a
+language server with support for Emacs, Vim, Neovim and VS Code, all in one archive for 64-bit Linux.
+There is no earlier version to compare against, so what follows is what this one holds; how it got here
+is in the history of `main`, up to #127. The C API and its ABI may still change before 1.0.
+
 ### Added
 
-- **A block can be pasted in without naming the instance**: `Header { id = 0x82; };` or `Header;`
-  inside a packet or a block brings the block's fields in under their own names -- `TM_ACK2.sequence`
-  rather than `TM_ACK2.hdr.sequence` -- as if they had been written out. The named form is unchanged,
-  and each form's names are found only in that form. A pasted field that shares a name with another
-  field of the packet is check 2, reported at the use. The formatter, the language server's
-  highlighting, the unused-block lint and the Emacs, Vim and VS Code grammars all know the new form.
-- **`frame-dsl --help`** (and `-h`) prints every mode and option, what each argument takes, the exit
-  statuses and examples, as plain text on stdout, from wherever it appears on the command line.
-  **`frame-dsl --version`** prints the `git describe` of the checkout it was built from. A usage
-  mistake now says what it was in one line on stderr and points at `--help`, instead of printing the
-  whole usage text through the logger.
-
-- **`frame-dsl <file>... --check [--werror]`** prints a definition's problems and nothing else, one per
-  line as `path:line:col: error: message [check N]` -- the shape Flymake, Vim's `errorformat`, ALE and
-  a VS Code problem matcher all read. `-` reads the definition from standard input, and
-  `--stdin-name <path>` checks it as that file, so an editor can check a buffer before it is saved.
-- **Diagnostics have a severity and a span.** `FramedslDiagnostic` gains `severity` (error or
-  warning; a warning does not fail the load) and `end_line`/`end_column`, the end of the token the
-  problem is about. `framedsl_load_source()` loads a string as though it were a named file.
-- **A language server**: `frame-dsl --lsp`. Diagnostics as you type (on the buffer, not the file on
-  disk, with imports resolved from beside it), formatting, and semantic highlighting classified by the
-  compiler's own lexer. JSON-RPC over stdio with a hand-written JSON reader and writer, fuzzed like
-  the loader. `frame-dsl-mode` registers it with eglot and lsp-mode, so `M-x eglot` needs no
-  configuration. `docs/highlighting.md` is now `docs/editors.md`, and `manual/editors.md` is new.
-- **Vim, Neovim and VS Code**, alongside Emacs: `editors/vim/` is one runtime directory for Vim and
-  Neovim -- filetype, syntax, indentation, `:make` from `--check`, Neovim 0.11+'s built-in LSP client
-  (`vim.lsp.enable('frame_dsl')`), and, for plain Vim, an ALE linter and fixer plus documented vim-lsp
-  configuration. `editors/vscode/` is a plain-JavaScript extension -- a TextMate grammar, a
-  `frameDsl.path` setting, and `frame-dsl --lsp` through a vendored `vscode-languageclient`
-  (`scripts/vendor_vscode_languageclient.sh` produces it; nothing here needs npm to build or test).
-  `make vsix` packages it with `zip` alone, for attaching to a release; no marketplace publishing.
-  `test/unit/9_editor_support.c`'s drift test now covers the Vim syntax file and the TextMate grammar
-  the same way it already covered the Emacs mode.
-- **A formatter.** `frame-dsl <file>... --format` rewrites definition files into one layout -- two
-  spaces, no tabs, fields aligned on their widths, trailing comments aligned, numbers and comments
-  kept as written -- and `--format --check` reports the files that would change. It refuses a file
-  that does not parse. `framedsl_format()` is the same thing through the API, and
-  `frame-dsl-format-buffer` in Emacs. `make format` and `make format-check` cover `.fdsl` files, and
-  every one in the repository is now in the layout.
-- **Warnings**, which do not fail a load: a block, calibration or import nothing uses (check 30, only
-  in a file with packets -- a file without is a library), and an attribute repeating what an enclosing
-  written attribute already says (check 31). An imported file's warnings are not repeated in the
-  importer. `examples/bit_order.fdsl` had two, and its block now sets something the packet does not.
-- **Errors as you type in Emacs**: `frame-dsl-mode` checks the buffer through Flymake.
-- `make install PREFIX=...` puts `frame-dsl` on the PATH.
-
-- **The language**, and a compiler for it: lexer, parser, and sixteen load-time semantic checks. A
-  definition file declares packets of bit-width fields, with fixed values that identify them, widths
-  that depend on another field's value, and ordering attributes at file, packet, block and field
-  scope. See [`manual/language.md`](manual/language.md).
-- **The runtime**: an arena with a dedicated slot per field, a bytecode the encoder and decoder walk,
-  and a C API that sets fields by name, encodes a named packet, and decodes a buffer into whichever
-  packet its fixed bits identify -- allocating nothing after a frame is created. See
+- **The language.** A definition file declares packets of fields of any width in bits, with fixed
+  values that identify each packet, widths computed from an earlier field's value
+  (`data[128]: valof(len) * 8;`, the bracket reserving its room in bytes), and `@bit_order` and
+  `@byte_order` at file, packet, block and field scope. It is checked when it loads -- checks 1 to 42
+  in [`docs/design.md`](docs/design.md), three of them warnings -- so a mistake is a message at startup
+  rather than a wrong frame on a live link: every packet identifiable and no two indistinguishable,
+  every packet a whole number of bytes, every variable width bounded. See
+  [`manual/language.md`](manual/language.md).
+- **Reuse.** A named `block` is a group of fields used as an instance, `hdr: Header { id = 0x02; };`,
+  whose overrides fix values per use, or pasted in without a name, `Header;`. `import "lib.fdsl";` and
+  `import "lib.fdsl" as vendor;` bring another file's blocks, calibrations and enums, checked in their
+  own file and reported there.
+- **Repetition.** `points: Sample[2];` lays a block out twice in a row, and
+  `samples[48]: Sample[valof(count)];` as many times as a field above says, within the room reserved.
+  An element's fields are `TM.samples[2].reading`.
+- **Conditional fields.** `[ @if: valof(sec_hdr) == 1; ]` -- or `!=` -- in front of a field, a block's
+  use or an anonymous `block { }` puts it on the wire only when an earlier field has that value. Groups
+  nest, and `valof(hdr.flag)` reads a field of an instance. A field a frame does not carry reads as
+  absent rather than as a value nobody sent. `examples/optional_fields.fdsl` is the worked example.
+- **Enumerations.** `enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };` names a field's values, and
+  `level: TxLevel;` types a field by it. A fixed value or a condition is written as a name,
+  `type: PktType = HK;`, and a decoded value the enum does not list is flagged as `<unlisted>` rather
+  than refused.
+- **Calibrations.** `cal volts(raw) = raw * 3.3 / 4095;` and `[ @cal: volts; ]` give a field an
+  engineering value, read and written through the curve -- a straight line inverted automatically,
+  anything else with the `inverse` it declares.
+- **The runtime.** One allocation per frame, a dedicated slot for every field of every packet, and a
+  bytecode the encoder and decoder walk; nothing allocates after a frame is created. The decoder works
+  out which packet a buffer is from its fixed bits, reports how many bytes the frame took, and tells an
+  unrecognised frame from a truncated or a corrupt one -- and a decode that fails changes nothing.
+  `framedsl_encode()` lends its buffer and `framedsl_encode_into()` writes into the caller's;
+  `framedsl_get_bytes()` hands back a pointer into the frame rather than copying. See
   [`manual/api.md`](manual/api.md).
-- `framedsl_encode_into()`, which writes a frame into a buffer the caller already has and reports the
-  size needed when it does not fit, leaving the buffer untouched.
-- `framedsl_get_bytes()` hands back a pointer into the frame instead of filling a caller's buffer --
-  the bytes are already there in their final form, so reading a payload needs no buffer and no copy.
-  The address is fixed for the life of the frame and only that field's own writes change what is
-  behind it. `framedsl_get_bytes_into()` is the copying form, for bytes that must outlive the next
-  frame.
-- **A decode that fails changes nothing.** The packet being walked is put aside before the first
-  write and put back if the walk gives up, so a truncated or over-long frame leaves every field --
-  bytes and lengths both -- holding exactly what it held before, rather than half of the frame that
-  did not arrive.
-
-- **`frame-dsl <file> -d "<hex>"`**, which decodes a capture against a definition and prints the
-  fields of every frame in it. The hex may carry any separators, an odd number of digits is refused
-  rather than padded, and frames back to back are walked one at a time.
-- **Syntax highlighting for Emacs**: `editors/frame-dsl-mode.el`, a major mode with font lock,
-  comment commands and indentation for `.fdsl` files. `docs/highlighting.md` records why it is a
-  hand-written mode rather than a tree-sitter grammar or a language server, and a test compares its
-  word lists against the compiler's so the two cannot drift apart unnoticed.
-- A build: a `Makefile` producing `build/frame-dsl`, and a test runner built on CLibs' user-story
-  test suite.
-- A corpus of definition files under `test/corpus/`, driven by a table in `test/system/7_corpus.c`:
-  each row names a file, the values to set and the bytes they must produce, and one loop encodes,
-  compares against those bytes, decodes them into a second frame and reads every field back. Adding
-  a case costs a file and a row.
-- The CLibs `logger`, `bash-logger` and `testing` libraries, vendored as release tarballs under
-  `third_party/clibs/` and unpacked into `build/` by the build. Building needs no network and no
-  credentials. `scripts/vendor_clibs.sh` updates them, and is the only thing here that does.
-- Continuous integration: every pull request and every push to `main` builds and runs the test suite.
-- `README.md`, and a written scope in `docs/scope.md` stating what the project will not do as well
-  as what it will.
-- `CHANGELOG.md`.
-
-### Fixed
-
-- `make test` no longer prints an `Indenting region...` pair per example file in the middle of the
-  Emacs results: the editor tests reindent with `inhibit-message` bound.
+- **`libframedsl`**, static and shared (`libframedsl.so.0`, exporting only the `framedsl_*` API), with
+  `framedsl.h`. `--emit-c` writes every calibration and enum out as C, for a program that wants them
+  compiled in.
+- **The tool.** `frame-dsl <file>` describes every packet and field; `-d <hex>` decodes a capture,
+  frame after frame, with engineering values, enum names and absent fields; `--check [--werror]` prints
+  problems as `path:line:col: error: message [check N]`, with a `note:` for a suggested fix;
+  `--format [--check]` rewrites files into the one layout; `--list-packets` lists the packets;
+  `--emit-c` writes C; `--help` and `--version`. Bash and zsh completion come with it.
+- **A language server**, `frame-dsl --lsp`: diagnostics as you type, quick fixes, formatting, semantic
+  highlighting from the compiler's own classification, hover with each field's offset and resolved
+  orders, go to definition and completion. See [`manual/editors.md`](manual/editors.md).
+- **Editor support.** An Emacs major mode (eglot and Flymake configured), a Vim and Neovim runtime
+  directory (filetype, syntax, indentation, `:make`, Neovim's built-in LSP client, ALE), and a VS Code
+  extension -- each highlighting before the server answers, and checked against the compiler's word
+  lists so the two cannot drift.
+- **Python bindings.** `framedsl.load(path)`, `frame["PKT.field"]`, `frame.eng[...]`,
+  `frame.names[...]`, `frame.present(...)`, `frame.encode(packet)` and `frame.decode(data)`, over
+  `ctypes` and the shared library, with an exception per kind of failure.
+- **One archive per release**, `frame-dsl-<version>-linux-x86_64.tar.gz`: the tool, the library and its
+  header, the completions, and every editor's support under `share/frame-dsl/editors/` -- the `.vsix`
+  among them -- so editor support arrives with the tool it runs. `INSTALL.md` in it says where each
+  piece goes. `make dist` builds it from a checkout, and `make test-dist` unpacks it elsewhere and uses
+  it.
+- **Building** needs a C11 compiler, `make` and `tar`, and no network: the libraries it builds on are
+  vendored. `make test` runs unit and system tests, the editors' own tests, the Python tests and the
+  saved fuzz inputs; `make fuzz` fuzzes the loader, the decoder, the formatter and the language
+  server's JSON with libFuzzer, and `make baseline` measures encode and decode.

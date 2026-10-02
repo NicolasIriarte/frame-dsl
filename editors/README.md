@@ -29,6 +29,10 @@ make install PREFIX=~/.local     # puts ~/.local/bin/frame-dsl
 Make sure `PREFIX/bin` (`~/.local/bin` above) is on your `PATH`. Each editor's README also says how
 to point it at a build directly instead, for a checkout that has not been installed anywhere.
 
+Without building anything: each [release](http://100.125.208.18:3000/nico/Frame-DSL/releases) attaches
+one archive for 64-bit Linux holding `bin/frame-dsl` and every editor's support, under
+`share/frame-dsl/editors/`. Its `INSTALL.md` says where each piece goes.
+
 ## Running the tests
 
 ```sh
