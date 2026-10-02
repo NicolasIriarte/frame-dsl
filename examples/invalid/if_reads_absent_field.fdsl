@@ -1,0 +1,13 @@
+# REJECTED: check 42 -- a valof() reads a field the frame may not carry.
+#
+# `len` is present only when `has_len` is 1, and `data`'s width reads it from outside that condition:
+# in a frame without `len`, `data` would be sized by a field that is not there. Put both under the
+# same `@if`.
+
+pkt TM_DATA {
+  id:       8 = 0x60;
+  has_len:  8;
+  [ @if: valof(has_len) == 1; ]
+  len:      8;
+  data[16]: valof(len) * 8;
+};

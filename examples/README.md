@@ -57,6 +57,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`bit_order.fdsl`](bit_order.fdsl) | attributes at every scope: file, packet, field and `block` |
 | [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
 | [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
+| [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 
 ## Should be rejected
 
@@ -80,6 +81,13 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/enum_unknown_name.fdsl`](invalid/enum_unknown_name.fdsl) | 39 -- a value that is not one of the field's enum's names |
 | [`invalid/enum_with_cal.fdsl`](invalid/enum_with_cal.fdsl) | 40 -- a calibration on a field typed by an enum |
 | [`invalid/enum_pasted.fdsl`](invalid/enum_pasted.fdsl) | 41 -- an enum written without a field name |
+| [`invalid/if_reads_absent_field.fdsl`](invalid/if_reads_absent_field.fdsl) | 42 -- a `valof()` reading a field the frame may not carry |
+| [`invalid/if_part_not_whole_bytes.fdsl`](invalid/if_part_not_whole_bytes.fdsl) | 13 -- a conditional part that is not whole bytes |
+| [`invalid/if_number_on_enum.fdsl`](invalid/if_number_on_enum.fdsl) | 39 -- a condition on an enum field compared with a number |
+| [`invalid/if_value_too_wide.fdsl`](invalid/if_value_too_wide.fdsl) | 8 -- a condition comparing a field with a value it cannot hold |
+| [`invalid/discriminator_after_condition.fdsl`](invalid/discriminator_after_condition.fdsl) | 11 -- the only fixed value after a conditional field |
+| [`invalid/if_in_repeated_block.fdsl`](invalid/if_in_repeated_block.fdsl) | 32 -- a conditional field inside a repeated block |
+| [`invalid/if_reads_later_field.fdsl`](invalid/if_reads_later_field.fdsl) | 7 -- a condition naming a later field |
 
 Each of these fails the one check it is named for and no other. That is worth keeping true: a fixture
 that trips two checks stops proving which one is working.

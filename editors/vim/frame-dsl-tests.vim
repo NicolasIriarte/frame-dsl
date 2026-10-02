@@ -106,6 +106,18 @@ function! s:TestEnumSyntax() abort
   bwipeout!
 endfunction
 
+" `@if' is an attribute name, and what follows it is a condition: `valof', the field it reads -- dotted
+" through an instance -- and the comparison are what they are anywhere else.
+function! s:TestConditionSyntax() abort
+  call s:Open(['pkt TM {', '  [ @if: valof(hdr.flag) != 1; ] e: 8;', '};'])
+  call assert_equal('fdslAttributeName', s:GroupAt(2, 6), 'if')
+  call assert_equal('fdslKeyword', s:GroupAt(2, 10), 'valof')
+  call assert_equal('fdslValofTarget', s:GroupAt(2, 20), 'the field, through its instance')
+  call assert_equal('fdslOperator', s:GroupAt(2, 26), '!=')
+  call assert_equal('fdslNumber', s:GroupAt(2, 29), 'the value')
+  bwipeout!
+endfunction
+
 " Reindenting every example changes nothing: the examples are what the formatter writes, so this says
 " the indent file and the formatter agree about the layout.
 function! s:TestIndent() abort
@@ -183,6 +195,7 @@ call s:TestFiletype()
 call s:TestSyntax()
 call s:TestPastedSyntax()
 call s:TestEnumSyntax()
+call s:TestConditionSyntax()
 call s:TestIndent()
 call s:TestQuickfix()
 call s:TestNeovimLsp()

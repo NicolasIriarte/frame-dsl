@@ -1,0 +1,44 @@
+# Conditional fields (#12): parts of a packet that a frame carries only when an earlier field says so.
+#
+# `[ @if: valof(name) == value; ]` goes in front of a field, a block's use or an anonymous block, and
+# covers all of it. The value is a number, or -- when the field compared is typed by an enum -- one of
+# its names. `!=` is the opposite, and a group nested inside another needs both conditions.
+
+enum Kind: 4 {
+  IDLE;
+  HOUSEKEEPING;
+  EVENT;
+};
+
+block Header {
+  id:      8;
+  sec_hdr: 1;
+  has_crc: 1;
+  spare:   2;
+  kind:    Kind;
+};
+
+block Time {
+  seconds: 32;
+  subsecs: 16;
+};
+
+block Reading {
+  channel: 8;
+  value:   16;
+};
+
+pkt TM_OPTIONAL {
+  hdr:  Header { id = 0x50; };
+  [ @if: valof(hdr.sec_hdr) == 1; ]
+  time: Time;  # TM_OPTIONAL.time.seconds, present only with a secondary header
+  [ @if: valof(hdr.kind) != IDLE; ]
+  block {
+    count:        8;
+    readings[32]: Reading[valof(count)];
+    [ @if: valof(hdr.kind) == EVENT; ]
+    code:         16;  # present only when kind is EVENT: both conditions hold
+  };
+  [ @if: valof(hdr.has_crc) == 1; ]
+  crc: 16;
+};

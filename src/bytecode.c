@@ -248,12 +248,16 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 
   size_t field_total = 0;
   size_t code_total = 0;
+  size_t condition_total = 0;
   for (size_t p = 0; p < file->packet_count; ++p) {
     const AstPacket *packet = &file->packets[p];
     field_total += packet->field_count;
     for (size_t f = 0; f < packet->field_count; ++f) {
       if (layout->packets[p].fields[f].variable) {
         code_total += measure(packet->fields[f].width);
+      }
+      for (const AstCondition *c = packet->fields[f].condition; c != NULL; c = c->parent) {
+        condition_total += 1;
       }
     }
   }
@@ -262,7 +266,9 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
   size_t fields_offset =
     round_up(packets_offset + file->packet_count * sizeof(PacketProgram), alignof(FieldInstruction));
   size_t code_offset = round_up(fields_offset + field_total * sizeof(FieldInstruction), alignof(WidthInstruction));
-  size_t total = code_offset + code_total * sizeof(WidthInstruction);
+  size_t conditions_offset =
+    round_up(code_offset + code_total * sizeof(WidthInstruction), alignof(ConditionInstruction));
+  size_t total = conditions_offset + condition_total * sizeof(ConditionInstruction);
 
   uint8_t *block = calloc(1, total);
   if (block == NULL) {
@@ -274,6 +280,8 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
   PacketProgram *packets = (PacketProgram *)(block + packets_offset);
   FieldInstruction *fields = (FieldInstruction *)(block + fields_offset);
   Emitter emitter = { .code = (WidthInstruction *)(block + code_offset), .length = 0 };
+  ConditionInstruction *conditions = (ConditionInstruction *)(block + conditions_offset);
+  size_t next_condition = 0;
 
   program->packets = packets;
   program->packet_count = file->packet_count;
@@ -310,6 +318,19 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .byte_order = field->byte_order,
         .element = field->element != NULL ? element_of(program, field->element) : NULL,
       };
+
+      /* Outermost last, as the chain runs; the order does not matter to an AND. */
+      if (field->condition != NULL) {
+        instruction->conditions = &conditions[next_condition];
+        for (const AstCondition *c = field->condition; c != NULL; c = c->parent) {
+          conditions[next_condition++] = (ConditionInstruction){
+            .field = (uint32_t)slot_of(packet, c->field->reference),
+            .equal = c->equal,
+            .value = c->value,
+          };
+          instruction->condition_count += 1;
+        }
+      }
 
       if (!slot->variable) {
         continue;

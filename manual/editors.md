@@ -40,20 +40,23 @@ belongs to, so a file being edited before it is saved behaves as it will once sa
 
 - **A field in a packet**: its width, its offset in the packet (bit, and byte when it is on one), its
   bit and byte order once every attribute scope has been applied, its fixed value and its
-  calibration. These are the facts hardest to work out by reading, and they come from the same layout
+  calibration -- and, for a conditional field, what it is present under. These are the facts hardest to
+  work out by reading, and they come from the same layout
   the runtime uses -- so they need the file to load. While it has errors the hover says what the
   declaration alone says, and that the offset is known once it loads.
 - **A field inside an override**, `hdr: Header { id = 2; }`: the same, for `hdr.id` in this packet.
 - **An instance**, `hdr` or the `axes` of `axes.z`: the block it is, and the bits it covers.
 - **A field declared in a block**: its width and orders. It has no offset until a packet uses it.
-- **A `valof()` target**: the field it names.
+- **A `valof()` target**: the field it names -- each part of `valof(hdr.flag)`, the instance and its
+  field -- in a width, a count or an `@if`.
 - **A block** or **a calibration**, used or declared: its fields, or its line of source, and the file
   it came from when it was imported.
 - **A namespace**, `link` in `link.Header`: the import it stands for and what that brings.
 - **A packet's name**: how many fields it has, and its length when that is fixed.
 - **An attribute's name**: what it does and the values it takes.
 
-Go to definition follows the same names: a `valof()` target, a block or calibration however it is
+Go to definition follows the same names: a `valof()` target, an enum's name an `@if` compares with, a
+block or calibration however it is
 reached -- directly, through a flat import or through an `as` namespace -- a field in an override,
 and a namespace, which goes to its `import`.
 
@@ -61,7 +64,9 @@ and a namespace, which goes to its `import`.
 
 | After | Offers |
 | --- | --- |
-| `@` | the attribute names: `bit_order`, `byte_order`, `cal` |
+| `@` | the attribute names: `bit_order`, `byte_order`, `cal`, `if` |
+| `@if:` | `valof` |
+| `==` or `!=` in an `@if` | the names of the compared field's enum |
 | `@bit_order:`, `@byte_order:` | that attribute's values |
 | `@cal:` | the calibrations, local and imported |
 | `valof(` | the scalar fields declared above, in the same packet or block |

@@ -296,24 +296,31 @@ static void describe(const FramedslDefinition *definition) {
       if (field.offset_known) {
         snprintf(offset, sizeof(offset), "at %llu", (unsigned long long)field.offset_bits);
       }
+      /* A conditional field (#12) says what it is present under, at the end of its line. */
+      char when[512] = "";
+      if (field.condition != NULL) {
+        snprintf(when, sizeof(when), ", if %s", field.condition);
+      }
 
       if (field.element_bits > 0) {
         /* A repetition (#55): its elements' fields, each at its place inside an element. */
         if (field.variable) {
           log_info(
-            "    %-14s %s, repeated, up to %llu elements of %llu bits",
+            "    %-14s %s, repeated, up to %llu elements of %llu bits%s",
             field.name,
             offset,
             (unsigned long long)(field.max_bits / field.element_bits),
-            (unsigned long long)field.element_bits
+            (unsigned long long)field.element_bits,
+            when
           );
         } else {
           log_info(
-            "    %-14s %s, repeated, %llu elements of %llu bits",
+            "    %-14s %s, repeated, %llu elements of %llu bits%s",
             field.name,
             offset,
             (unsigned long long)(field.width_bits / field.element_bits),
-            (unsigned long long)field.element_bits
+            (unsigned long long)field.element_bits,
+            when
           );
         }
         for (size_t m = 0; m < field.member_count; ++m) {
@@ -330,29 +337,35 @@ static void describe(const FramedslDefinition *definition) {
       } else if (field.variable) {
         /* Reported in the unit it was written in, so the line can be compared with the file. */
         log_info(
-          "    %-14s %s, variable, reserves %llu bytes", field.name, offset, (unsigned long long)(field.max_bits / 8)
+          "    %-14s %s, variable, reserves %llu bytes%s",
+          field.name,
+          offset,
+          (unsigned long long)(field.max_bits / 8),
+          when
         );
       } else if (field.has_fixed) {
         log_info(
-          "    %-14s %s, %llu bits = %#llx%s%s%s",
+          "    %-14s %s, %llu bits = %#llx%s%s%s%s",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
           (unsigned long long)field.fixed,
           field.enumeration != NULL ? " (" : "",
           field.enumeration != NULL ? enum_name_of(definition, field.enumeration, field.fixed) : "",
-          field.enumeration != NULL ? ")" : ""
+          field.enumeration != NULL ? ")" : "",
+          when
         );
       } else {
         log_info(
-          "    %-14s %s, %llu bits%s%s%s%s",
+          "    %-14s %s, %llu bits%s%s%s%s%s",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
           field.cal != NULL ? ", cal " : "",
           field.cal != NULL ? field.cal : "",
           field.enumeration != NULL ? ", enum " : "",
-          field.enumeration != NULL ? field.enumeration : ""
+          field.enumeration != NULL ? field.enumeration : "",
+          when
         );
       }
     }
@@ -556,6 +569,13 @@ static void report_frame(
     FramedslField field;
     FramedslFieldId id;
     if (!framedsl_field(definition, packet, f, &field) || !framedsl_field_id(definition, packet, f, &id)) {
+      continue;
+    }
+    /* A field this frame did not carry (#12) is shown as such: that it exists and was not sent is
+     * the reading, and leaving it out would look like a field the packet does not have. */
+    bool present = true;
+    if (framedsl_present(frame, id, &present) == FRAMEDSL_OK && !present) {
+      fprintf(out, "    %-14s <absent>\n", field.name);
       continue;
     }
     if (field.element_bits == 0) {

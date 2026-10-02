@@ -44,7 +44,7 @@ Two, because that is what every file under examples/ is written at."
   "Reserved words.  None of these may be used as an identifier.")
 
 (defconst frame-dsl-attribute-names
-  '("bit_order" "byte_order" "cal")
+  '("bit_order" "byte_order" "cal" "if")
   "Attribute names this version of the language knows.
 These are not reserved: they are meaningful only after `@', and a field may
 perfectly well be called `bit_order'.  Highlighted only where they mean

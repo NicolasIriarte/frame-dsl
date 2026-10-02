@@ -8,10 +8,20 @@
  * expanding into millions. */
 #define COMPOSE_FIELD_MAX 65536
 
+/* The conditions one expand() has placed (#12): each written `@if`, and the copy its fields share. */
+typedef struct {
+  const struct AstCondition **from;
+  struct AstCondition **to;
+  size_t count;
+  size_t capacity;
+} Placed;
+
 typedef struct {
   AstFile *file;
   DiagList *diags;
   bool failed;
+  /* The expand() under way's, or NULL. */
+  Placed *placed;
 } Composer;
 
 typedef struct {
@@ -72,6 +82,59 @@ static Expr *rename_expr(Composer *composer, const Expr *expr, const char *prefi
   return copy;
 }
 
+/* A field's conditions (#12) as they apply where it lands: each `valof()` renamed for the instance, as
+ * a width is, and the chain hung under `outer` -- the conditions of the use it arrived through -- so a
+ * field of a block used under `@if` is present only when the use is. Copied even where nothing changes,
+ * because what a name in a condition means depends on the packet it ends up in, and each copy is
+ * resolved there (resolve_conditions()); one already resolved -- in its block -- stays resolved.
+ *
+ * Within one expand() every field under one `@if` shares one copy, so a group's fields carry the same
+ * node: the checks then see a group as the run of fields carrying it, rather than comparing every field
+ * with every other to find out. */
+static AstCondition *place(Composer *composer, const AstCondition *condition, const char *prefix, AstCondition *outer) {
+  if (condition == NULL) {
+    return outer;
+  }
+  Placed *placed = composer->placed;
+  for (size_t i = 0; placed != NULL && i < placed->count; ++i) {
+    if (placed->from[i] == condition) {
+      return placed->to[i];
+    }
+  }
+  AstCondition *copy = region_alloc(composer->file->region, sizeof(AstCondition));
+  if (copy == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return outer;
+  }
+  *copy = *condition;
+  copy->field = rename_expr(composer, condition->field, prefix);
+  copy->parent = place(composer, condition->parent, prefix, outer);
+  copy->text = NULL;
+
+  if (placed != NULL) {
+    if (placed->count == placed->capacity) {
+      size_t capacity = placed->capacity == 0 ? 8 : placed->capacity * 2;
+      const AstCondition **from = realloc(placed->from, capacity * sizeof(*from));
+      if (from != NULL) {
+        placed->from = from;
+      }
+      AstCondition **to = realloc(placed->to, capacity * sizeof(*to));
+      if (to != NULL) {
+        placed->to = to;
+      }
+      if (from == NULL || to == NULL) {
+        fail(composer, 1, 1, 0, "out of memory");
+        return copy;
+      }
+      placed->capacity = capacity;
+    }
+    placed->from[placed->count] = condition;
+    placed->to[placed->count] = copy;
+    placed->count += 1;
+  }
+  return copy;
+}
+
 static bool append(Composer *composer, FieldList *list, const AstField *field) {
   if (list->count >= COMPOSE_FIELD_MAX) {
     fail(composer, field->line, field->column, 0, "blocks here expand to more fields than any packet could hold");
@@ -98,7 +161,13 @@ static bool declared_by(const AstPacket *block, int line, int column) {
   return block->end_line < line || (block->end_line == line && block->end_column < column);
 }
 
-static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out);
+static void expand(
+  Composer *composer,
+  const AstPacket *container,
+  const char *prefix,
+  AstCondition *outer,
+  FieldList *out
+);
 
 /* A "did you mean" for a use naming no block or enum: the closest name there is, imported ones included
  * under the name this file gives them -- so `link.Heder` can become `link.Header`. */
@@ -176,6 +245,7 @@ static void repeat(
   const AstField *use,
   const AstPacket *block,
   const char *prefix,
+  AstCondition *outer,
   FieldList *out
 ) {
   char message[512];
@@ -195,6 +265,21 @@ static void repeat(
 
   uint64_t element_bits = 0;
   for (size_t i = 0; i < block->field_count; ++i) {
+    /* Check 32, for a field of the block present only in some elements (#12): element i would no longer
+     * be i times one size in. The repetition as a whole may be conditional; a part of an element not. */
+    if (block->fields[i].condition != NULL) {
+      snprintf(
+        message,
+        sizeof(message),
+        "'%s' repeats block '%s', whose field '%s' is conditional; every element must be the same size, "
+        "so a repeated block cannot leave a field out",
+        use->name,
+        block->name,
+        block->fields[i].name
+      );
+      fail(composer, use->repeat_line, use->repeat_column, 32, message);
+      return;
+    }
     uint64_t width = 0;
     if (!constant_width(block->fields[i].width, &width)) {
       snprintf(
@@ -247,6 +332,7 @@ static void repeat(
   field.element_bits = element_bits;
   field.width = width;
   field.reserve = rename_expr(composer, use->reserve, prefix);
+  field.condition = place(composer, use->condition, prefix, outer);
   append(composer, out, &field);
 }
 
@@ -354,6 +440,7 @@ static void type_by_enum(
   const AstField *use,
   const AstEnum *enumeration,
   const char *prefix,
+  AstCondition *outer,
   FieldList *out
 ) {
   char message[512];
@@ -406,6 +493,7 @@ static void type_by_enum(
   field.enumeration = enumeration->name;
   field.width = width;
   field.reserve = rename_expr(composer, use->reserve, prefix);
+  field.condition = place(composer, use->condition, prefix, outer);
   if (use->has_fixed || use->fixed_name != NULL) {
     uint64_t value = 0;
     field.has_fixed = enum_value(
@@ -600,7 +688,13 @@ static void check_pasted(
   }
 }
 
-static void expand(Composer *composer, const AstPacket *container, const char *prefix, FieldList *out) {
+static void expand(
+  Composer *composer,
+  const AstPacket *container,
+  const char *prefix,
+  AstCondition *outer,
+  FieldList *out
+) {
   if (container->field_count > COMPOSE_DECLARED_FIELD_CEILING) {
     char message[256];
     snprintf(
@@ -616,6 +710,9 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     fail(composer, 1, 1, 0, "out of memory");
     return;
   }
+  Placed placed = { 0 };
+  Placed *enclosing = composer->placed;
+  composer->placed = &placed;
 
   for (size_t f = 0; f < container->field_count; ++f) {
     const AstField *field = &container->fields[f];
@@ -630,6 +727,7 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
       copy.name = join(composer, prefix, field->name);
       copy.width = rename_expr(composer, field->width, prefix);
       copy.reserve = rename_expr(composer, field->reserve, prefix);
+      copy.condition = place(composer, field->condition, prefix, outer);
       append(composer, out, &copy);
       continue;
     }
@@ -665,7 +763,7 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
         fail(composer, field->line, field->column, 24, message);
         continue;
       }
-      type_by_enum(composer, field, enumeration, prefix, out);
+      type_by_enum(composer, field, enumeration, prefix, outer, out);
       continue;
     }
 
@@ -709,20 +807,24 @@ static void expand(Composer *composer, const AstPacket *container, const char *p
     }
 
     if (field->repeat != NULL) {
-      repeat(composer, field, block, prefix, out);
+      repeat(composer, field, block, prefix, outer, out);
       continue;
     }
 
     /* Anonymous, the block's fields land under whatever prefix the use itself sits under. */
     const char *inner = field->anonymous ? prefix : join(composer, join(composer, prefix, field->name), ".");
     size_t start = out->count;
-    expand(composer, block, inner, out);
+    AstCondition *use_condition = place(composer, field->condition, prefix, outer);
+    expand(composer, block, inner, use_condition, out);
     apply_overrides(composer, field, block, inner, out, start);
     if (field->anonymous) {
       check_pasted(composer, container, f, out, starts);
     }
   }
   free(starts);
+  free(placed.from);
+  free(placed.to);
+  composer->placed = enclosing;
 }
 
 /* Checks 1 and 35 to 38, over the enums this file declares; an imported one was checked in its own. */
@@ -863,6 +965,113 @@ static void check_enums(Composer *composer) {
   }
 }
 
+/* ---- Conditions (#12) -----------------------------------------------------------------------------
+ *
+ * A condition compares a field's value with a number, or -- on a field typed by an enum -- with one of
+ * its names, as a fixed value does (check 39). Which it is depends on the field it names, known only
+ * once the packet or block is flat, so it is looked up here. A name naming no earlier field is check
+ * 7's, reported by the checker; it is left alone here. */
+static void resolve_conditions(Composer *composer, const AstField *fields, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    for (AstCondition *condition = fields[i].condition; condition != NULL; condition = condition->parent) {
+      if (condition->resolved || condition->field == NULL) {
+        continue;
+      }
+      const AstField *compared = NULL;
+      for (size_t j = 0; j < i && compared == NULL; ++j) {
+        if (strcmp(fields[j].name, condition->field->reference) == 0) {
+          compared = &fields[j];
+        }
+      }
+      if (compared == NULL) {
+        continue;
+      }
+      condition->resolved = true;
+
+      const AstEnum *enumeration = ast_find_enum(composer->file, compared->enumeration);
+      if (enumeration != NULL) {
+        uint64_t value = 0;
+        if (enum_value(
+              composer,
+              enumeration,
+              compared->name,
+              condition->value_name,
+              condition->value,
+              condition->value_line,
+              condition->value_column,
+              &value
+            )) {
+          condition->value = value;
+        }
+      } else if (condition->value_name != NULL) {
+        refuse_name(composer, compared->name, condition->value_name, condition->value_line, condition->value_column);
+      }
+    }
+  }
+}
+
+/* Past this, a description ends in " && ...": each nested condition's text holds the whole chain above
+ * it, so without a limit the text would grow with the square of how deeply conditions nest. */
+#define CONDITION_TEXT_MAX 256
+
+/* What FramedslField.condition shows: the chain, outermost first. */
+static const char *condition_text(Composer *composer, AstCondition *condition) {
+  if (condition->text != NULL) {
+    return condition->text;
+  }
+  const char *outer = condition->parent != NULL ? condition_text(composer, condition->parent) : NULL;
+  static const char ELLIPSIS[] = " && ...";
+  if (outer != NULL && strlen(outer) > CONDITION_TEXT_MAX) {
+    size_t length = strlen(outer);
+    if (length >= sizeof(ELLIPSIS) - 1 && strcmp(outer + length - (sizeof(ELLIPSIS) - 1), ELLIPSIS) == 0) {
+      condition->text = outer;
+      return outer;
+    }
+    char *cut = region_alloc(composer->file->region, length + sizeof(ELLIPSIS));
+    if (cut == NULL) {
+      fail(composer, 1, 1, 0, "out of memory");
+      return "";
+    }
+    memcpy(cut, outer, length);
+    memcpy(cut + length, ELLIPSIS, sizeof(ELLIPSIS));
+    condition->text = cut;
+    return cut;
+  }
+  char value[32];
+  if (condition->value_name == NULL) {
+    snprintf(value, sizeof(value), "%llu", (unsigned long long)condition->value);
+  }
+  const char *reference =
+    condition->field != NULL && condition->field->reference != NULL ? condition->field->reference : "";
+  const char *shown = condition->value_name != NULL ? condition->value_name : value;
+  size_t length = (outer != NULL ? strlen(outer) + 4 : 0) + strlen(reference) + strlen(shown) + 16;
+  char *text = region_alloc(composer->file->region, length);
+  if (text == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return "";
+  }
+  snprintf(
+    text,
+    length,
+    "%s%svalof(%s) %s %s",
+    outer != NULL ? outer : "",
+    outer != NULL ? " && " : "",
+    reference,
+    condition->equal ? "==" : "!=",
+    shown
+  );
+  condition->text = text;
+  return text;
+}
+
+static void describe_conditions(Composer *composer, const AstPacket *container) {
+  for (size_t f = 0; f < container->field_count; ++f) {
+    if (container->fields[f].condition != NULL) {
+      condition_text(composer, container->fields[f].condition);
+    }
+  }
+}
+
 bool compose_file(AstFile *file, DiagList *diags) {
   Composer composer = { .file = file, .diags = diags, .failed = false };
 
@@ -896,7 +1105,8 @@ bool compose_file(AstFile *file, DiagList *diags) {
   for (size_t b = 0; b < file->block_count; ++b) {
     FieldList expanded = { 0 };
     size_t reported = diags->count;
-    expand(&composer, &file->blocks[b], "", &expanded);
+    expand(&composer, &file->blocks[b], "", NULL, &expanded);
+    resolve_conditions(&composer, expanded.items, expanded.count);
     if (diags->count != reported) {
       free(expanded.items);
       continue;
@@ -910,6 +1120,7 @@ bool compose_file(AstFile *file, DiagList *diags) {
     file->blocks[b].fields = expanded.items;
     file->blocks[b].field_count = expanded.count;
     file->blocks[b].field_capacity = expanded.capacity;
+    describe_conditions(&composer, &file->blocks[b]);
   }
   if (composer.failed) {
     diag_sort(diags);
@@ -924,7 +1135,8 @@ bool compose_file(AstFile *file, DiagList *diags) {
     /* A value written as a name has to be looked up, or refused, even in a packet that uses nothing. */
     bool uses_a_block = false;
     for (size_t f = 0; f < packet->field_count; ++f) {
-      uses_a_block = uses_a_block || packet->fields[f].block != NULL || packet->fields[f].fixed_name != NULL;
+      uses_a_block = uses_a_block || packet->fields[f].block != NULL || packet->fields[f].fixed_name != NULL
+                     || packet->fields[f].condition != NULL;
     }
     if (!uses_a_block) {
       continue;
@@ -932,7 +1144,8 @@ bool compose_file(AstFile *file, DiagList *diags) {
 
     FieldList out = { 0 };
     size_t reported = diags->count;
-    expand(&composer, packet, "", &out);
+    expand(&composer, packet, "", NULL, &out);
+    resolve_conditions(&composer, out.items, out.count);
     if (diags->count != reported) {
       free(out.items);
       continue;
@@ -942,6 +1155,7 @@ bool compose_file(AstFile *file, DiagList *diags) {
     packet->fields = out.items;
     packet->field_count = out.count;
     packet->field_capacity = out.capacity;
+    describe_conditions(&composer, packet);
   }
 
   diag_sort(diags);

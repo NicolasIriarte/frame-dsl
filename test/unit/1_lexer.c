@@ -225,6 +225,34 @@ static int us1_tc10_rejects_an_integer_too_large_for_64_bits(const TestArguments
   return failure;
 }
 
+/* `==` and `!=` (#12) are one token each; `=` alone stays `=`, and `!` alone is nothing. */
+static int us1_tc11_comparisons_are_one_token(const TestArguments *args) {
+  (void)args;
+
+  DiagList diags;
+  diag_init(&diags);
+  Token tokens[16];
+  size_t count = tokenise("== != = = =!= ===", tokens, 16, &diags);
+  const TokenKind expected[] = { TOK_EQUAL_EQUAL, TOK_NOT_EQUAL, TOK_EQUALS,      TOK_EQUALS,
+                                 TOK_EQUALS,      TOK_NOT_EQUAL, TOK_EQUAL_EQUAL, TOK_EQUALS };
+  int failure = count == sizeof(expected) / sizeof(*expected) && diags.count == 0 ? 0 : __LINE__;
+  for (size_t i = 0; failure == 0 && i < count; ++i) {
+    failure = tokens[i].kind == expected[i] ? 0 : __LINE__;
+  }
+  if (failure == 0 && (tokens[1].column != 4 || tokens[7].column != 17)) {
+    failure = __LINE__;
+  }
+  diag_free(&diags);
+
+  diag_init(&diags);
+  tokenise("a ! b", tokens, 16, &diags);
+  if (failure == 0 && diags.count != 1) {
+    failure = __LINE__;
+  }
+  diag_free(&diags);
+  return failure;
+}
+
 void register_user_story1(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us1_tc01_recognises_every_punctuation_token, "every punctuation token is recognised", false);
@@ -237,4 +265,5 @@ void register_user_story1(void) {
   ADD_TEST_CASE(us1_tc08_rejects_a_stray_character, "a stray character is reported", false);
   ADD_TEST_CASE(us1_tc09_rejects_a_number_run_into_a_name, "a number running into a name is an error", false);
   ADD_TEST_CASE(us1_tc10_rejects_an_integer_too_large_for_64_bits, "an oversized integer is reported", false);
+  ADD_TEST_CASE(us1_tc11_comparisons_are_one_token, "== and != are one token each", false);
 }

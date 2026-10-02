@@ -314,7 +314,17 @@ Token lexer_next(Lexer *lexer) {
   case ')':
     return make(TOK_RPAREN, line, column);
   case '=':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_EQUAL_EQUAL, line, column);
+    }
     return make(TOK_EQUALS, line, column);
+  case '!':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_NOT_EQUAL, line, column);
+    }
+    break;
   case '+':
     return make(TOK_PLUS, line, column);
   case '-':
@@ -399,6 +409,10 @@ const char *token_kind_name(TokenKind kind) {
     return "')'";
   case TOK_EQUALS:
     return "'='";
+  case TOK_EQUAL_EQUAL:
+    return "'=='";
+  case TOK_NOT_EQUAL:
+    return "'!='";
   case TOK_PLUS:
     return "'+'";
   case TOK_MINUS:

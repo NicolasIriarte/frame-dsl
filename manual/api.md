@@ -85,6 +85,7 @@ bool framedsl_ok(const FramedslResult *result);
 | `FRAMEDSL_ERROR_UNRECOGNISED` | nothing in the definition matches the frame you handed over |
 | `FRAMEDSL_ERROR_TRUNCATED` | a packet matched and then the bytes ran out |
 | `FRAMEDSL_ERROR_UNLISTED` | a field typed by an enum holds a value its enum does not list, or was given a name it does not list |
+| `FRAMEDSL_ERROR_ABSENT` | a conditional field the frame does not hold: its `@if` does not hold over the frame's values |
 
 `IO` and `INVALID` are separate on purpose. A file that is not there is a different problem from a
 file that is wrong, and a caller should not have to read the message to tell them apart.
@@ -158,7 +159,7 @@ a zeroed struct that looks like a real field.
 | `width_bits` | the width, when it is not variable (`0` when it is) |
 | `max_bits` | the reserved slot **in bits**, when it is (`0` when it is not). The definition writes it in bytes, as `data[128]:` |
 | `reserved_bits` | what the arena reserves: the width, or the bound |
-| `offset_known` | false for every field after a variable-width one |
+| `offset_known` | false for every field after a variable-width or a conditional one |
 | `offset_bits` | where it starts, when that is known |
 | `is_scalar` | 64 bits or fewer: read as an integer, not as bytes |
 | `has_fixed`, `fixed` | the value that identifies the packet, if this field carries one |
@@ -166,6 +167,7 @@ a zeroed struct that looks like a real field.
 | `cal`, `cal_invertible` | the calibration `@cal:` names, or `NULL`, and whether it can be set -- see [Calibrations](#calibrations) |
 | `element_bits`, `member_count` | for a repetition, its element's size and fields; `0` otherwise |
 | `enumeration` | the enum the field is typed by, or `NULL` -- see [Enumerations](#enumerations) |
+| `condition` | what a conditional field is present under, as `valof(sec_hdr) == 1`, or `NULL` -- see [Conditional fields](#conditional-fields) |
 
 "Resolved" matters: these are what actually applies to the field after file, packet and field scope
 are combined -- not what was written at any one of them. A caller wants to know how the bits land,
@@ -670,6 +672,44 @@ static inline const char *fdsl_TxLevel_name(unsigned long long value) {
 The constants are a C `enum` when every value fits an `int`, which is all an enumeration constant can
 be; an enum with a larger value -- a 64-bit field's -- gets `#define`s instead. Either way each is a
 constant expression, usable in a `case`.
+
+## Conditional fields
+
+A field under `[ @if: valof(sec_hdr) == 1; ]` is in a frame only when its condition holds -- every
+condition around it, for one in a nested group. Whether it is, is worked out from the values the frame
+holds now, not stored: for a decoded frame that is the fields it carried, and for one being built, the
+fields `framedsl_encode()` will write.
+
+```c
+FramedslStatus framedsl_present(const FramedslFrame *frame, FramedslFieldId id, bool *present);
+```
+
+```c
+bool present;
+framedsl_present(frame, time_id, &present);
+if (present) {
+  framedsl_get_u64(frame, time_id, &seconds);
+}
+```
+
+Reading a field the frame does not hold is `FRAMEDSL_ERROR_ABSENT`, from every getter --
+`framedsl_get_u64()`, `framedsl_get_bytes()` and its copying twin, `framedsl_get_eng()`,
+`framedsl_get_name()` and `framedsl_count()`; `framedsl_byte_length()` says 0. Whatever its slot holds
+is not something the frame says, and a zero would be indistinguishable from a zero that was sent. Asking
+for the wrong kind of value is still `FRAMEDSL_ERROR_FIELD` first. A member of a repetition is present
+when its repetition is.
+
+**Writing one is not refused.** A field can be set while its condition does not hold -- the value
+waits in its slot, and `framedsl_encode()` leaves the field out until the condition holds. So fields can
+be set in any order, the field before the flag that turns it on as well as after.
+
+**A decode clears what it did not carry.** A decoded frame without the field leaves its slot zeroed,
+and a variable one empty, so setting the flag afterwards reads a field nobody has written -- zero --
+rather than the one an earlier frame carried.
+
+A condition comparing a field with a fixed value compares the value the field always has, at both ends:
+what the encoder writes and the decoder reads, whatever the caller left in its slot. The same holds for
+a width or a count read from a fixed field.
 
 ## A whole program
 

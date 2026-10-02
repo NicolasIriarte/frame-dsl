@@ -8,6 +8,7 @@
  *
  * Built with libFuzzer by `make fuzz`, and replayed over fuzz/corpus/ and fuzz/regressions/ by a
  * plain driver in `make test` (fuzz/replay.c). Against the public header alone. */
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,20 @@ static const char *const DEFINITIONS[] = {
   "block Hdr { type: T; seq: 12; };\n"
   "pkt E1 { h: Hdr { type = HK; }; level: Level; pad: 5; [ @byte_order: little_endian; ] mode: Mode; };\n"
   "pkt E2 { h: Hdr { type = EVENT; }; mode: Mode = RUN; };\n",
+
+  /* Conditional fields (#12): on a named use, a pasted one, an anonymous block and a field; nested,
+   * compared with an enum name and with `!=`; a counted payload and a repetition under one; a field of
+   * an instance named through it; and a condition on a field fixed by an override, which must read the
+   * fixed value at both ends. An absent field must read as absent, and the frame re-encode exactly. */
+  "enum K: 4 { NONE; ONE; TWO; };\n"
+  "block Opt { kind: K; flags: 4; [ @if: valof(kind) == ONE; ] x: 8;\n"
+  "  [ @if: valof(flags) != 0; ] block { n: 8; [ @if: valof(n) == 3; @byte_order: little_endian; ] y: 16; }; };\n"
+  "block H { type: 8; f: 8; [ @if: valof(type) == 0x41; ] ext: 8; };\n"
+  "block Pt { a: 8; [ @bit_order: lsb_first; ] b: 8; };\n"
+  "pkt C1 { id: 8 = 0x40; flag: 1; pad: 7; [ @if: valof(flag) == 1; ] o: Opt; [ @if: valof(flag) != 1; ] Pt;\n"
+  "  len: 8; [ @if: valof(len) != 0; ] d[32]: valof(len) * 8; };\n"
+  "pkt C2 { h: H { type = 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
+  "  [ @if: valof(h.f) == 2; @byte_order: little_endian; ] w: 32; tail: 8; };\n",
 };
 
 #define DEFINITION_COUNT (sizeof(DEFINITIONS) / sizeof(*DEFINITIONS))
@@ -83,6 +98,23 @@ static void check_round_trip(size_t d, const char *name, const uint8_t *bytes, s
     FramedslFieldId id;
     if (!framedsl_field(definition, packet, f, &field) || !framedsl_field_id(definition, packet, f, &id)) {
       abort();
+    }
+    /* A field the frame did not carry (#12) reads as absent through every getter, and is not copied:
+     * the copy's conditions, made of values copied above, leave it out of the encoding too. */
+    bool present = false;
+    if (framedsl_present(frames[d], id, &present) != FRAMEDSL_OK || (field.condition == NULL && !present)) {
+      abort();
+    }
+    if (!present) {
+      uint64_t value = 0;
+      size_t length = 0;
+      FramedslStatus status = FRAMEDSL_OK;
+      if (field.is_scalar
+            ? framedsl_get_u64(frames[d], id, &value) != FRAMEDSL_ERROR_ABSENT
+            : framedsl_get_bytes(frames[d], id, &length, &status) != NULL || status != FRAMEDSL_ERROR_ABSENT) {
+        abort();
+      }
+      continue;
     }
     if (field.is_scalar) {
       uint64_t value = 0;

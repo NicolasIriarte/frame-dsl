@@ -106,9 +106,14 @@ static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, siz
  * non-scalar contributes nothing and cannot be referenced anyway -- check 16 sees to that. */
 static void gather_slots(const FramedslFrame *frame, size_t packet, size_t count, uint64_t *slots) {
   size_t base = frame->packet_base[packet];
+  const FieldInstruction *fields = frame->definition->program->packets[packet].fields;
   for (size_t i = 0; i < count; ++i) {
     const Slot *slot = &frame->slots[base + i];
-    if (slot->is_scalar) {
+    /* A fixed field is what the encoder writes, whatever its slot holds -- so it is also what a width
+     * or a condition reading it sees, as the decoder will see it on the other end. */
+    if (fields[i].has_fixed) {
+      slots[i] = fields[i].fixed;
+    } else if (slot->is_scalar) {
       memcpy(&slots[i], frame->arena + slot->offset, sizeof(uint64_t));
     } else {
       slots[i] = 0;
@@ -180,6 +185,12 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
   for (size_t f = 0; f < program->field_count; ++f) {
     const FieldInstruction *instruction = &program->fields[f];
     const Slot *slot = &frame->slots[base + f];
+
+    /* Left out when its conditions do not hold over the values being encoded (#12), whatever its slot
+     * holds: a value set on an absent field waits there for the condition. */
+    if (instruction->condition_count != 0 && !field_present(instruction, slots)) {
+      continue;
+    }
 
     uint64_t width = 0;
     if (!resolve_width(frame, instruction, slots, &width, status)) {

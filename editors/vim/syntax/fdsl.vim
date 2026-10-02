@@ -14,7 +14,7 @@ endif
 " Reserved words: none of these may be used as an identifier.
 syntax keyword fdslKeyword pkt valof block
 " Attribute names this version of the language knows. Not reserved: meaningful only after `@'.
-syntax keyword fdslAttributeName bit_order byte_order cal contained
+syntax keyword fdslAttributeName bit_order byte_order cal if contained
 " Values an attribute may take. Not reserved either.
 syntax keyword fdslAttributeValue msb_first lsb_first big_endian little_endian contained
 
@@ -33,14 +33,17 @@ syntax match fdslAttributeUnknown "\<\w\+\>" contained
 " The value is whatever follows the colon: a known one is a keyword and wins, anything else is the
 " name of a calibration, which is the only attribute whose value is a name.
 syntax match fdslAttributeColon ":" contained nextgroup=fdslAttributeValue,fdslCalName skipwhite
+" `@if: valof(flag) == 1;' (#12) holds a comparison rather than a name, so its words are the ones they
+" are anywhere else.
 syntax region fdslAttribute start="@" end=";" keepend
-      \ contains=fdslAttributeSigil,fdslAttributeName,fdslAttributeUnknown,fdslAttributeColon,fdslComment
+      \ contains=fdslAttributeSigil,fdslAttributeName,fdslAttributeUnknown,fdslAttributeColon,fdslComment,
+      \ fdslKeyword,fdslValofTarget,fdslNumber,fdslOperator
 
 " The name a calibration is given, and the name a use refers to: `@cal: volts;', `hdr: Header;' and
 " `level: TxLevel = HIGH;'.
 " Look-behind rather than \zs: a match may not start where a keyword has already matched, and every
 " one of these follows a keyword.
-syntax match fdslCalName "\a\w*\%(\.\w\+\)*" contained
+syntax match fdslCalName "\%(valof\>\)\@!\a\w*\%(\.\w\+\)*" contained
 syntax match fdslCalDecl "\%(^\s*cal\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(\<\%(pkt\|block\)\>\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(^\s*enum\s\+\)\@<=\a\w*"
@@ -49,13 +52,13 @@ syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*[;{=]"
 " A block pasted in without an instance name, `Header { ... };` or `Header;`, alone on its line. The
 " `block {' of an attribute scope has the same shape, and stays a keyword: a keyword always wins.
 syntax match fdslTypeName "^\s*\zs\a\w*\%(\.\w\+\)*\ze\s*[;{]"
-syntax match fdslValofTarget "\%(\<valof\s*(\s*\)\@<=\w\+"
+syntax match fdslValofTarget "\%(\<valof\s*(\s*\)\@<=\w\+\%(\.\w\+\)*"
 syntax match fdslNamespace "\%(\<as\s\+\)\@<=\a\w*"
 
 syntax match fdslNumber "\<0[xX]\x\+\>"
 syntax match fdslNumber "\<0[bB][01]\+\>"
 syntax match fdslNumber "\<\d\+\%(\.\d*\)\?\%([eE][-+]\?\d\+\)\?\>"
-syntax match fdslOperator "[-+*/=]"
+syntax match fdslOperator "[-+*/=]\|[!=]="
 syntax region fdslString start=+"+ end=+"+ oneline
 syntax match fdslComment "#.*$" contains=@Spell
 

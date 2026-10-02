@@ -389,6 +389,9 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     out->element_bits = element->bits;
     out->member_count = element->member_count;
   }
+  if (ast_field->condition != NULL) {
+    out->condition = ast_field->condition->text;
+  }
   return true;
 }
 

@@ -208,9 +208,10 @@ static void suggest_reference(
   if (expr->reference_line == 0) {
     return;
   }
-  const char *dot = strrchr(expr->reference, '.');
-  const size_t prefix = dot != NULL ? (size_t)(dot - expr->reference) + 1 : 0;
-  const char *written = expr->reference + prefix;
+  /* What was written is the tail of the reference; what is in front of it is the instance's prefix. */
+  const char *written = expr->written != NULL ? expr->written : expr->reference;
+  const size_t full = strlen(expr->reference);
+  const size_t prefix = strlen(written) <= full ? full - strlen(written) : 0;
 
   const char **names = malloc((field_index + 1) * sizeof(*names));
   if (names == NULL) {
@@ -219,7 +220,7 @@ static void suggest_reference(
   size_t count = 0;
   for (size_t i = 0; i < field_index; ++i) {
     const char *name = packet->fields[i].name;
-    if (strncmp(name, expr->reference, prefix) == 0 && strchr(name + prefix, '.') == NULL) {
+    if (strncmp(name, expr->reference, prefix) == 0) {
       names[count++] = name + prefix;
     }
   }
@@ -257,6 +258,119 @@ static void suggest_cal(Checker *checker, size_t index, const AstFile *file, con
     );
   }
   free(names);
+}
+
+static void check_references(
+  Checker *checker,
+  const PacketLayout *layout,
+  const AstPacket *packet,
+  size_t field_index,
+  const Expr *expr
+);
+
+/* The same for the field a condition compares (#12): checks 7 and 16, said of a condition. Returns the
+ * field's index, or -1 when it names none earlier. */
+static long check_compared(
+  Checker *checker,
+  const PacketLayout *layout,
+  const AstPacket *packet,
+  size_t field_index,
+  const Expr *expr
+) {
+  for (size_t i = 0; i < field_index; ++i) {
+    if (strcmp(packet->fields[i].name, expr->reference) == 0) {
+      if (!layout->fields[i].is_scalar) {
+        fail(
+          checker,
+          expr->line,
+          expr->column,
+          16,
+          "valof(%s) names a field of more than %d bits, which has no single value to compare; only a "
+          "scalar can decide whether another field is present",
+          expr->reference,
+          FRAMEDSL_SCALAR_MAX_BITS
+        );
+      }
+      return (long)i;
+    }
+  }
+  for (size_t i = field_index; i < packet->field_count; ++i) {
+    if (strcmp(packet->fields[i].name, expr->reference) == 0) {
+      fail(
+        checker,
+        expr->line,
+        expr->column,
+        7,
+        "valof(%s) names a field declared %s in '%s'; whether a field is present can only depend on a "
+        "field already read",
+        expr->reference,
+        i == field_index ? "here, the one it decides," : "later",
+        packet->name
+      );
+      return -1;
+    }
+  }
+  size_t index = checker->diags->count;
+  fail(checker, expr->line, expr->column, 7, "valof(%s) names no field in '%s'", expr->reference, packet->name);
+  suggest_reference(checker, index, packet, field_index, expr);
+  return -1;
+}
+
+/* Whether `condition` was already checked, at the field before: every field under one `@if` shares its
+ * node (composition's place()), and a group's fields are consecutive, so the first of them is where its
+ * mistakes are reported, once. */
+static bool condition_checked_before(const AstPacket *packet, size_t field_index, const AstCondition *condition) {
+  for (const AstCondition *other = field_index > 0 ? packet->fields[field_index - 1].condition : NULL; other != NULL;
+       other = other->parent) {
+    if (other == condition) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Check 42 (#12): a valof() -- in a width, a count or a condition -- reading a field the frame may not
+ * carry. Allowed only from under the same conditions or stricter ones, `held`: then whenever the reader
+ * is present, so is what it reads. */
+static void check_presence(
+  Checker *checker,
+  const AstPacket *packet,
+  size_t field_index,
+  const Expr *expr,
+  const AstCondition *held,
+  const char *what
+) {
+  if (expr == NULL) {
+    return;
+  }
+  if (expr->kind == EXPR_BINARY) {
+    check_presence(checker, packet, field_index, expr->lhs, held, what);
+    check_presence(checker, packet, field_index, expr->rhs, held, what);
+    return;
+  }
+  if (expr->kind != EXPR_VALOF) {
+    return;
+  }
+  for (size_t i = 0; i < field_index; ++i) {
+    const AstField *read = &packet->fields[i];
+    if (strcmp(read->name, expr->reference) != 0) {
+      continue;
+    }
+    if (!ast_conditions_cover(held, read->condition)) {
+      fail(
+        checker,
+        expr->line,
+        expr->column,
+        42,
+        "valof(%s) reads a field present only when %s, and %s is not under that condition; it would read "
+        "a field the frame may not carry -- put it under the same '@if'",
+        expr->reference,
+        read->condition->text != NULL ? read->condition->text : "a condition holds",
+        what
+      );
+    }
+    return;
+  }
 }
 
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
@@ -402,6 +516,13 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
    * field has no width until a frame arrives but can still be known to be a whole number of bytes. */
   uint64_t byte_residue = 0;
   bool byte_residue_known = true;
+  /* Each field's width mod 8, or 0xFF when unknown: check 13 for a conditional part (#12) sums them. */
+  uint8_t *residues = malloc(packet->field_count == 0 ? 1 : packet->field_count);
+  if (residues != NULL) {
+    memset(residues, 0xFF, packet->field_count == 0 ? 1 : packet->field_count);
+  }
+  /* The first field after which nothing sits at a known offset, for check 11's message. */
+  const AstField *unknown_from = NULL;
 
   /* First pass: widths, offsets, and everything decidable field by field. */
   for (size_t i = 0; i < packet->field_count; ++i) {
@@ -418,6 +539,37 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
 
     check_references(checker, layout, packet, i, field->width);
     check_references(checker, layout, packet, i, field->reserve);
+    check_presence(checker, packet, i, field->width, field->condition, "its width");
+    check_presence(checker, packet, i, field->reserve, field->condition, "its width");
+
+    /* A condition (#12): what it compares, whether the value fits that field (check 8), and whether
+     * the field is there to compare whenever the condition is asked -- under its enclosing ones. */
+    for (const AstCondition *condition = field->condition; condition != NULL; condition = condition->parent) {
+      if (condition->field == NULL || condition_checked_before(packet, i, condition)) {
+        continue;
+      }
+      long compared = check_compared(checker, layout, packet, i, condition->field);
+      if (compared < 0) {
+        continue;
+      }
+      check_presence(checker, packet, i, condition->field, condition->parent, "the condition");
+      const FieldLayout *read = &layout->fields[compared];
+      if (condition->value_name == NULL && read->is_scalar && read->width_bits < 64
+          && condition->value >> read->width_bits != 0) {
+        fail(
+          checker,
+          condition->value_line,
+          condition->value_column,
+          8,
+          "'%s.%s' is %llu bits, so it can never be %#llx; the condition compares it with a value it cannot "
+          "hold",
+          packet->name,
+          packet->fields[compared].name,
+          (unsigned long long)read->width_bits,
+          (unsigned long long)condition->value
+        );
+      }
+    }
 
     bool variable = expr_uses_valof(field->width);
     slot->variable = variable;
@@ -491,7 +643,14 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
         );
         byte_residue_known = false;
       } else {
-        byte_residue = (byte_residue + residue) % 8;
+        /* A conditional part is held to whole bytes on its own, below, so the packet's own total is
+         * over the fields every frame carries. */
+        if (field->condition == NULL) {
+          byte_residue = (byte_residue + residue) % 8;
+        }
+        if (residues != NULL) {
+          residues[i] = (uint8_t)residue;
+        }
       }
     }
 
@@ -664,12 +823,18 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
       }
     }
 
-    if (offset_known && !variable && slot->width_bits > 0) {
+    /* A conditional field (#12) is 0 bits wide in some frames and its width in others, so like a
+     * valof()-sized one it is the last field at a known offset; and a frame need not carry it, so its
+     * fixed value identifies nothing. */
+    if (offset_known && !variable && slot->width_bits > 0 && field->condition == NULL) {
       if (field->has_fixed && slot->width_bits <= 64) {
         discriminator_bits = offset + slot->width_bits;
       }
       offset += slot->width_bits;
     } else {
+      if (offset_known) {
+        unknown_from = field;
+      }
       offset_known = false;
     }
 
@@ -706,7 +871,51 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     }
   }
 
-  /* Check 11. */
+  /* Check 13 for each conditional part (#12): the fields present under one set of conditions must be
+   * whole bytes together, so the packet is whole bytes with them or without them. Parts are compared by
+   * what their conditions say rather than by group, so two groups under the same condition count as one
+   * part. Conservative, as the rest of check 13 is: two parts that could only ever appear together and
+   * make up a byte between them are still each held to it. */
+  if (!is_block && residues != NULL && byte_residue_known) {
+    bool *seen = calloc(packet->field_count == 0 ? 1 : packet->field_count, sizeof(bool));
+    for (size_t i = 0; seen != NULL && i < packet->field_count; ++i) {
+      const AstCondition *part = packet->fields[i].condition;
+      if (part == NULL || seen[i]) {
+        continue;
+      }
+      uint64_t sum = 0;
+      bool known = true;
+      for (size_t j = i; j < packet->field_count; ++j) {
+        const AstCondition *other = packet->fields[j].condition;
+        if (other != NULL && !seen[j]
+            && (other == part || (ast_condition_same(other, part) && ast_conditions_equal(part, other)))) {
+          seen[j] = true;
+          known = known && residues[j] != 0xFF;
+          sum += residues[j];
+        }
+      }
+      if (known && sum % 8 != 0) {
+        fail(
+          checker,
+          packet->fields[i].line,
+          packet->fields[i].column,
+          13,
+          "'%s.%s' and the fields present with it when %s leave %llu bit(s) over a whole byte; a "
+          "conditional part must be whole bytes, so that '%s' is whole bytes with it or without it",
+          packet->name,
+          packet->fields[i].name,
+          part->text != NULL ? part->text : "its condition holds",
+          (unsigned long long)(sum % 8),
+          packet->name
+        );
+      }
+    }
+    free(seen);
+  }
+  free(residues);
+
+  /* Check 11. A fixed value identifies a packet only where a decoder knows to look for it: at a known
+   * offset, in a field every frame carries. */
   if (!is_block && !has_fixed && packet->field_count > 0) {
     fail(
       checker,
@@ -717,6 +926,39 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
       "has no way to conclude the frame is this packet",
       packet->name
     );
+  } else if (!is_block && has_fixed && discriminator_bits == 0 && packet->field_count > 0) {
+    const AstField *fixed = NULL;
+    for (size_t i = 0; i < packet->field_count && fixed == NULL; ++i) {
+      if (packet->fields[i].has_fixed) {
+        fixed = &packet->fields[i];
+      }
+    }
+    if (fixed != NULL && fixed->condition != NULL && fixed == unknown_from) {
+      fail(
+        checker,
+        packet->line,
+        packet->column,
+        11,
+        "'%s' has no fixed value every frame carries at a known position: '%s' is present only when %s, "
+        "so a decoder cannot rely on it to identify the packet",
+        packet->name,
+        fixed->name,
+        fixed->condition->text != NULL ? fixed->condition->text : "a condition holds"
+      );
+    } else if (fixed != NULL && unknown_from != NULL) {
+      fail(
+        checker,
+        packet->line,
+        packet->column,
+        11,
+        "'%s' has no fixed value at a known position: '%s' comes after '%s', which %s, so a decoder "
+        "cannot know where to look for it",
+        packet->name,
+        fixed->name,
+        unknown_from->name,
+        unknown_from->condition != NULL ? "is conditional" : "is sized by another field"
+      );
+    }
   }
 
   /* Second pass: project the fixed fields that sit at a constant offset. */
@@ -733,8 +975,8 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     for (size_t i = 0; i < packet->field_count; ++i) {
       const AstField *field = &packet->fields[i];
       const FieldLayout *slot = &layout->fields[i];
-      if (!field->has_fixed || slot->variable || !slot->offset_known || slot->width_bits == 0
-          || slot->width_bits > 64) {
+      if (!field->has_fixed || slot->variable || !slot->offset_known || slot->width_bits == 0 || slot->width_bits > 64
+          || field->condition != NULL) {
         continue;
       }
       if (slot->offset_bits + slot->width_bits > discriminator_bits) {

@@ -51,7 +51,7 @@
       ]
     },
     "operator": {
-      "match": "[-+*/=]",
+      "match": "[!=]=|[-+*/=]",
       "name": "keyword.operator.fdsl"
     },
 
@@ -108,7 +108,7 @@
       "captures": { "1": { "name": "entity.name.type.fdsl" } }
     },
     "valof-target": {
-      "match": "(?<=\\bvalof\\s{0,4}\\(\\s{0,4})\\w+",
+      "match": "(?<=\\bvalof\\s{0,4}\\(\\s{0,4})\\w+(?:\\.\\w+)*",
       "name": "variable.other.fdsl"
     },
     "inverse": {
@@ -125,12 +125,16 @@
         { "include": "#attribute-header" },
         { "include": "#attribute-values" },
         { "include": "#comment" },
+        { "include": "#valof-target" },
+        { "include": "#keywords" },
+        { "include": "#numbers" },
+        { "include": "#operator" },
         { "match": "[A-Za-z_]\\w*(?:\\.\\w+)*", "name": "entity.name.function.cal-name.fdsl" }
       ]
     },
     "attribute-header": {
       "comment": "Only the word right after '@' is judged: an unknown attribute name is painted as an error before anything is compiled, the way an unreserved cal name later in the same statement is not.",
-      "match": "\\G\\s{0,4}(?:(bit_order|byte_order|cal)|([A-Za-z_]\\w*))",
+      "match": "\\G\\s{0,4}(?:(bit_order|byte_order|cal|if)|([A-Za-z_]\\w*))",
       "captures": {
         "1": { "name": "entity.other.attribute-name.fdsl" },
         "2": { "name": "invalid.illegal.unknown-attribute.fdsl" }

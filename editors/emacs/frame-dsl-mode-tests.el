@@ -86,6 +86,17 @@ value; the word `enum' is a keyword only where it declares one."
     (should (eq (frame-dsl-tests--face-of sample "vendor.Mode") 'font-lock-type-face))
     (should-not (eq (frame-dsl-tests--face-of sample "enum:") 'font-lock-keyword-face))))
 
+(ert-deftest frame-dsl-tests-a-condition-is-an-attribute ()
+  "`@if' is an attribute name like the others, and inside its condition `valof' is the keyword it is
+anywhere else; a field may still be called `if'."
+  (let ((sample (concat "pkt TM {\n"
+                        "  if: 8 = 1;\n"
+                        "  [ @if: valof(if) == 1; ] e: 8;\n"
+                        "};\n")))
+    (should (eq (frame-dsl-tests--face-of sample "if: valof") 'font-lock-builtin-face))
+    (should (eq (frame-dsl-tests--face-of sample "valof(if)") 'font-lock-keyword-face))
+    (should-not (eq (frame-dsl-tests--face-of sample "if: 8") 'font-lock-builtin-face))))
+
 (ert-deftest frame-dsl-tests-each-kind-of-thing-looks-different ()
   "The six things a reader has to tell apart are told apart."
   (let ((sample (concat "@bit_order: msb_first;\n"

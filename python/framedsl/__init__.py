@@ -39,6 +39,7 @@ __all__ = [
     "UnrecognisedError",
     "TruncatedError",
     "UnlistedError",
+    "AbsentError",
 ]
 
 # ---- Exceptions -------------------------------------------------------------------------------
@@ -111,6 +112,16 @@ class UnlistedError(Error, ValueError):
     status = _native.ERROR_UNLISTED
 
 
+class AbsentError(Error, LookupError):
+    """FRAMEDSL_ERROR_ABSENT: a conditional field the frame does not hold.
+
+    Its `@if` does not hold over the frame's values now: a decoded frame did not carry it, or encoding
+    would leave it out. frame.present(...) asks without raising; setting the field still works.
+    """
+
+    status = _native.ERROR_ABSENT
+
+
 _BY_STATUS = {
     _native.ERROR_FIELD: FieldError,
     _native.ERROR_RANGE: RangeError,
@@ -118,6 +129,7 @@ _BY_STATUS = {
     _native.ERROR_UNRECOGNISED: UnrecognisedError,
     _native.ERROR_TRUNCATED: TruncatedError,
     _native.ERROR_UNLISTED: UnlistedError,
+    _native.ERROR_ABSENT: AbsentError,
 }
 
 
@@ -389,6 +401,13 @@ class Frame:
                 raise TypeError(f"{dotted} is a bit string and takes bytes, not {type(value).__name__}")
             data = bytes(value)
             _check(_native.framedsl_set_bytes(self._handle, field_id, data, len(data)), f"{dotted}: {len(data)} bytes")
+
+    def present(self, dotted):
+        """Whether the field `dotted` is in the frame: a conditional field's `@if` holds over its values now."""
+        field_id, _ = self._definition._field(dotted)
+        present = ctypes.c_bool()
+        _check(_native.framedsl_present(self._handle, field_id, ctypes.byref(present)), dotted)
+        return present.value
 
     def count(self, dotted):
         """How many elements the repetition `dotted` (or any member of it) holds in this frame."""

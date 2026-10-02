@@ -272,7 +272,8 @@ static void to_tail(Formatter *f) {
  * after a unary minus. */
 
 static bool is_operator(TokenKind kind) {
-  return kind == TOK_PLUS || kind == TOK_MINUS || kind == TOK_STAR || kind == TOK_SLASH;
+  return kind == TOK_PLUS || kind == TOK_MINUS || kind == TOK_STAR || kind == TOK_SLASH || kind == TOK_EQUAL_EQUAL
+         || kind == TOK_NOT_EQUAL;
 }
 
 /* Everything up to one of the stop kinds at parenthesis depth zero, which is left unconsumed. */
@@ -323,6 +324,16 @@ static void dotted(Formatter *f, bool space) {
 
 /* ---- Declarations ------------------------------------------------------------------------------ */
 
+/* An attribute's value: a name, `little_endian` or `vendor.volts`, or the comparison an `@if` holds
+ * (#12), `valof(hdr.flag) == 1`, spaced as an expression is. */
+static void attribute_value(Formatter *f) {
+  if (peek(f)->kind == TOK_VALOF) {
+    expression(f, TOK_SEMICOLON, TOK_RBRACKET, true);
+    return;
+  }
+  dotted(f, true);
+}
+
 /* `@name: value;`, aligned on the value. */
 static void attribute(Formatter *f, int depth) {
   begin(f, LINE_ALIGNED, depth);
@@ -330,7 +341,7 @@ static void attribute(Formatter *f, int depth) {
   take(f, false); /* name */
   take(f, false); /* : */
   to_tail(f);
-  dotted(f, true);
+  attribute_value(f);
   take(f, false); /* ; */
   end(f);
 }
@@ -356,7 +367,7 @@ static void group(Formatter *f, int depth) {
     take(f, true); /* @ */
     take(f, false);
     take(f, false); /* : */
-    dotted(f, true);
+    attribute_value(f);
     take(f, false); /* ; */
     take(f, true); /* ] */
     end(f);

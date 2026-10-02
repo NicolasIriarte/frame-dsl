@@ -290,3 +290,44 @@ class Repetition(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Conditions(unittest.TestCase):
+    """Conditional fields (#12): present only when an earlier field says so."""
+
+    def setUp(self):
+        self.definition = example("optional_fields.fdsl")
+        self.frame = self.definition.frame()
+
+    def test_an_absent_field_raises_and_present_says_so(self):
+        self.frame.decode(bytes([0x50, 0x00]))
+        self.assertFalse(self.frame.present("TM_OPTIONAL.time.seconds"))
+        self.assertTrue(self.frame.present("TM_OPTIONAL.hdr.kind"))
+        with self.assertRaises(framedsl.AbsentError) as caught:
+            self.frame["TM_OPTIONAL.time.seconds"]
+        self.assertEqual(caught.exception.status, 10)
+        self.assertIsInstance(caught.exception, LookupError)
+        with self.assertRaises(framedsl.AbsentError):
+            self.frame.count("TM_OPTIONAL.readings")
+        with self.assertRaises(framedsl.AbsentError):
+            self.frame.names["TM_OPTIONAL.code"]
+
+    def test_an_absent_field_can_be_set_and_is_left_out(self):
+        self.frame["TM_OPTIONAL.hdr.has_crc"] = 1
+        self.frame["TM_OPTIONAL.crc"] = 0x1234
+        self.frame["TM_OPTIONAL.time.seconds"] = 7  # absent: kept, not sent
+        self.assertEqual(self.frame.encode("TM_OPTIONAL"), bytes([0x50, 0x40, 0x12, 0x34]))
+        self.frame["TM_OPTIONAL.hdr.sec_hdr"] = 1
+        self.assertTrue(self.frame.present("TM_OPTIONAL.time.seconds"))
+        self.assertEqual(self.frame["TM_OPTIONAL.time.seconds"], 7)
+        self.assertEqual(
+            self.frame.encode("TM_OPTIONAL"), bytes([0x50, 0xC0, 0, 0, 0, 7, 0, 0, 0x12, 0x34])
+        )
+
+    def test_a_nested_part_and_a_repetition_round_trip(self):
+        data = bytes.fromhex("50C2000000010002010700 05ABCD1234".replace(" ", ""))
+        self.assertEqual(self.frame.decode(data), "TM_OPTIONAL")
+        self.assertEqual(self.frame.names["TM_OPTIONAL.hdr.kind"], "EVENT")
+        self.assertEqual(self.frame.elements("TM_OPTIONAL.readings.value"), [5])
+        self.assertEqual(self.frame["TM_OPTIONAL.code"], 0xABCD)
+        self.assertEqual(self.frame.encode("TM_OPTIONAL"), data)

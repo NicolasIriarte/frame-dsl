@@ -179,13 +179,15 @@ alternative is finding out on a live link.
 5. A width expression containing `valof()` must reserve a slot, written `name[bytes]`.
 6. A reservation must be a positive constant expression, must not itself contain `valof()`, and is
    held to the same half-gigabyte as check 4 -- it becomes bits, and the arena allocates it.
-7. A `valof()` must name a field **declared earlier in the same packet**. Reading a field requires
-   knowing where it starts, which requires every field before it to be resolved already.
+7. A `valof()` must name a field **declared earlier in the same packet** -- in a width, a count or a
+   condition. Reading a field requires knowing where it starts, which requires every field before it
+   to be resolved already; and whether a field is present has to be known when the walk reaches it.
 
 **Values**
 
 8. A fixed value must fit in its field's declared width, and the field must be a scalar -- a bit
-   string is bytes the caller handed over, not a number to hold one against.
+   string is bytes the caller handed over, not a number to hold one against. The same goes for the value
+   a condition compares a field with: one it cannot hold would make the field it decides dead.
 9. A field may not have both `= <value>` and a variable width -- a width unknown until decode time
    cannot also be a discriminator.
 
@@ -201,14 +203,18 @@ alternative is finding out on a live link.
 
 **Identification**
 
-11. Every packet has at least one fixed-value field.
+11. Every packet has at least one fixed-value field **at a known offset, in a field every frame
+    carries**: before any `valof()`-sized or conditional field, and not conditional itself. A fixed value
+    anywhere else is written by the encoder but cannot identify anything, since a decoder would not know
+    where to look for it.
 12. No two packets in a file are indistinguishable.
 
 **Framing**
 
 13. A packet's fields sum to a multiple of 8 bits. Sub-byte fields are unaffected; it is the total
     that must land on a byte boundary. See "Deciding byte multiples" below for what this means when
-    a `valof()` field makes the total depend on the frame.
+    a `valof()` field makes the total depend on the frame. Each conditional part is held to it on its
+    own -- see "Conditional fields".
 
 **Storage**
 
@@ -276,7 +282,7 @@ alternative is finding out on a live link.
 **Repetition**
 
 32. A repeated block (`name: Block[count];`) must be the same size every time -- none of its widths
-    may depend on another field -- and a whole number of bytes. The first is what puts element *i* at
+    may depend on another field, and none of its fields may be conditional -- and a whole number of bytes. The first is what puts element *i* at
     *i* times the element's size; the second is what keeps a packet whole bytes however many elements
     a frame carries, the half of check 13 a count cannot otherwise promise.
 33. A repetition takes no overrides. An override fixes one field of one instance, and a repetition is
@@ -285,6 +291,13 @@ alternative is finding out on a live link.
 A repetition counted by a field is a field whose width has a `valof()` in it, so checks 5, 6 and 7
 apply to its count and its reservation exactly as they do to any such field, and check 14 forbids a
 reservation on a constant one.
+
+**Conditions**
+
+42. A `valof()` -- in a width, a count or a condition -- may name a conditional field only from a
+    declaration under the same conditions or stricter ones. Anywhere else it would read a field the
+    frame may not carry. Conditions are compared by what they say, so two groups under the same `@if`
+    count as one.
 
 **Shape**
 
@@ -324,7 +337,8 @@ obvious informal version ("they have different fixed fields") is wrong.
 
 For each packet, walk its fields in order accumulating a bit offset. While every field so far has a
 constant width, the offset is constant too; once a `valof()`-sized field is passed, nothing after it
-sits at a known position. For each fixed-value field at a constant offset, project its value onto
+sits at a known position. A conditional field ends the stretch the same way -- its width is either
+its own or zero -- and, being absent from some frames, is not projected itself. For each fixed-value field at a constant offset, project its value onto
 the stream bits it occupies -- *after* applying that field's `bit_order` and `byte_order`, since the
 question is which stream bits are pinned, not which value bits are.
 
@@ -376,7 +390,7 @@ expression is rejected can always rewrite it so the multiple of eight is visible
    packet matches; if none does, the frame is unrecognised and that is the error.
 2. Walk that packet's bytecode, field by field. Constant widths are known already; a `valof()` width
    is evaluated against the arena slot of the field it names, which has been decoded by then
-   (check 7).
+   (check 7). A conditional field whose conditions do not hold takes no bits, and its slot is cleared.
 3. If a resolved width exceeds the field's reservation, stop: it is a decode error. Nothing is allocated,
    nothing is truncated, and the arena is left in a state the caller is told not to read.
 4. Convert each field into host order and write it to its slot.
@@ -673,5 +687,62 @@ should answer it the same way.
 **At run time** an enum is the parsed declaration, kept with the definition: its names in increasing
 order, looked up by binary search for a decode and by name for a set. A field instruction carries the
 enum's index, resolved when the file loads, as it does a calibration's.
+
+## Conditional fields
+
+`[ @if: valof(sec_hdr) == 1; ]` in front of a field, a block's use or an anonymous block (#12) puts it
+on the wire only when the comparison holds.
+
+**An attribute, not a declaration.** Presence modifies a declaration rather than describing one, which is
+what an attribute is for, and attaching it as one means it goes in front of anything a group can: a
+field, an anonymous block for a one-off group, or a block's use for the common case -- a secondary header
+that is a block anyway. A block's use takes no other attribute, because a block's layout is settled where
+it is declared; presence is the exception because it is not layout but a property of the *use*: one
+header may be optional in one packet and always there in another. `if` is then a word only after `@`,
+like every attribute name, and reserves nothing.
+
+**One comparison, nested for AND.** `==` or `!=` against a value, which is a name when the field compared
+is typed by an enum. Nested groups AND their conditions; a second `@if` in one group is an error rather
+than check 34's "the later wins", which here would drop a condition silently. There is no `else`: with a
+single comparison it is always the other operator. Compound conditions are #126.
+
+**Resolved by composition.** A condition is an `AstCondition` chained to the one around it, with the
+field it compares held as a `valof()` expression -- so composition renames it per instance exactly as it
+renames a width, and the checks find what it names exactly as they find a width's reference. Composition
+gives every field its whole chain, re-parented under the condition of the use it arrived through, and
+looks up an enum name in the field it compares. The bytecode gives each field a flat list of
+`(slot, ==/!=, value)`, all of which must hold; a field with none costs the walk one comparison.
+
+**Presence is worked out, not stored.** A field is present when its conditions hold over the frame's
+values as they are now. That is the same question for a decoded frame and for one being built, it costs
+no bookkeeping -- a condition reads scalars (check 16), a load and a compare each -- and it cannot
+disagree with what encode will do, because it is what encode does. Reading an absent field is
+`FRAMEDSL_ERROR_ABSENT`; writing one is allowed, so fields can be set in any order, and the value waits.
+A decode clears what it did not carry, so meeting the condition later never shows an earlier frame's
+value. The arena keeps a slot for every field, present or not, so nothing allocates.
+
+A fixed field is its fixed value to a condition, a width and a count alike, at both ends. Encode used to
+read a fixed field's *slot* to size a field after it, which only agreed with the decoder when the caller
+had happened to write the same value there.
+
+**Constant offsets end at the first conditional field.** A decoder identifies a packet before walking it,
+from bits at known places, and nothing at or after a field that may be absent is at a known place. Rather
+than lay a packet out once per combination of conditions -- 2^n layouts, and a distinguishability check
+over all of them -- a conditional field ends the stretch check 12 projects, as a `valof()`-sized one does,
+and check 11 asks for a fixed value inside that stretch. A fixed value in a conditional part is written
+when the part is, and identifies nothing.
+
+**Whole bytes per part.** Check 13 holds each set of fields present under the same conditions to whole
+bytes on its own, and the fields every frame carries likewise. That is conservative: two parts that are
+only ever present together and make a byte between them are each refused -- the right direction to be
+wrong in, for the reason "Deciding byte multiples" gives.
+
+**What a valof() may read.** A width, a count or a condition naming a conditional field would read a field
+the frame may not carry. Check 42 allows it only from under conditions that include the field's own, so
+that whenever the reader is there, so is what it reads. Conditions are compared by what they say, not by
+which group wrote them.
+
+**Not inside a repetition.** Element *i* of a repetition is *i* times one size in, which an element that
+may leave a field out does not have (check 32). A whole repetition may be conditional.
 
 ## Deliberately unsettled

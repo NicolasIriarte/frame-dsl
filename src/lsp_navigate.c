@@ -19,7 +19,7 @@
 #include "lsp_semantic.h"
 #include "parser.h"
 
-const char *const NAV_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", NULL };
+const char *const NAV_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "if", NULL };
 static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first", NULL };
 static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian", NULL };
 
@@ -280,6 +280,26 @@ static char *dotted_at(const Navigator *navigator, long index) {
   return take(&buffer);
 }
 
+/* Whether the name at `index` is inside `valof( ... )`, and if so the path written there up to and
+ * including it: `hdr` or `hdr.len` for the two names of `valof(hdr.len)` (#12). */
+static bool valof_path(const Navigator *navigator, long index, char *path, size_t capacity) {
+  long first = index;
+  while (is(token(navigator, first - 1), TOK_DOT) && is(token(navigator, first - 2), TOK_IDENT)) {
+    first -= 2;
+  }
+  if (!is(token(navigator, first - 1), TOK_LPAREN) || !is(token(navigator, first - 2), TOK_VALOF)) {
+    return false;
+  }
+  size_t used = 0;
+  path[0] = '\0';
+  for (long i = first; i <= index && used + 1 < capacity; ++i) {
+    const Token *part = token(navigator, i);
+    int wrote = snprintf(path + used, capacity - used, "%.*s", (int)part->length, part->text);
+    used += wrote > 0 ? (size_t)wrote : 0;
+  }
+  return true;
+}
+
 /* The packet or named block of this file whose braces hold (line, column), or NULL. */
 static const AstPacket *container_at(const Navigator *navigator, int line, int column, bool *is_block) {
   const AstPacket *best = NULL;
@@ -513,7 +533,10 @@ static void describe_layout(Buffer *buffer, const FramedslField *field) {
     }
     put(buffer, "\n");
   } else {
-    put(buffer, "- offset: not fixed -- it follows a field whose width varies\n");
+    put(buffer, "- offset: not fixed -- it follows a field whose width varies, or one that may be absent\n");
+  }
+  if (field->condition != NULL) {
+    put(buffer, "- present only if `%s`\n", field->condition);
   }
   put(
     buffer,
@@ -781,6 +804,12 @@ static void describe_attribute(Buffer *buffer, const Token *name) {
     );
   } else if (spells(name, "cal")) {
     put(buffer, "**@cal**: the calibration that turns this field's raw value into engineering units.\n");
+  } else if (spells(name, "if")) {
+    put(
+      buffer,
+      "**@if**: `valof(name) == value` or `!=` -- what follows is in a frame only when an earlier field has, "
+      "or has not, that value.\n"
+    );
   }
 }
 
@@ -816,6 +845,23 @@ typedef struct {
   const AstPacket *decl_owner;
   char expanded[512];
 } Target;
+
+/* In `@if: valof(kind) == IDLE;` (#12), the enum of the field compared, given the index of the `==` or
+ * `!=`: what a name after it is one of. NULL anywhere else. */
+static const AstEnum *compared_enum(const Navigator *navigator, long op, const AstPacket *container) {
+  if (!is(token(navigator, op), TOK_EQUAL_EQUAL) && !is(token(navigator, op), TOK_NOT_EQUAL)) {
+    return NULL;
+  }
+  if (!is(token(navigator, op - 1), TOK_RPAREN) || !is(token(navigator, op - 2), TOK_IDENT)) {
+    return NULL;
+  }
+  char path[256];
+  if (!valof_path(navigator, op - 2, path, sizeof(path))) {
+    return NULL;
+  }
+  const AstPacket *owner = NULL;
+  return enum_of(navigator->ast, resolve_path(navigator->ast, container, path, &owner));
+}
 
 static Target find_target(const Navigator *navigator, int line, int column) {
   Target target = { .kind = TARGET_NONE };
@@ -857,6 +903,9 @@ static Target find_target(const Navigator *navigator, int line, int column) {
     if (target.enumeration == NULL && is(token(navigator, index - 1), TOK_EQUALS)) {
       target.enumeration = enum_of_value(ast, target.container, here->line, here->column);
     }
+    if (target.enumeration == NULL) {
+      target.enumeration = compared_enum(navigator, index - 1, target.container);
+    }
     target.item = ast_enum_item(target.enumeration, dotted);
     target.kind = target.item != NULL ? TARGET_ENUM_ITEM : TARGET_NONE;
   } else if (type == SEM_FUNCTION) {
@@ -883,12 +932,13 @@ static Target find_target(const Navigator *navigator, int line, int column) {
         target.kind = target.decl->block != NULL ? TARGET_INSTANCE : TARGET_FIELD;
         snprintf(target.expanded, sizeof(target.expanded), "%s", name);
       }
-    } else if (is(token(navigator, index - 1), TOK_LPAREN) && is(token(navigator, index - 2), TOK_VALOF)) {
-      target.decl = field_in(target.container, name);
-      target.decl_owner = target.container;
+    } else if (valof_path(navigator, index, path, sizeof(path))) {
+      /* `valof(len)`, or a field of an instance, `valof(hdr.len)` (#12): each part goes where it names. */
+      target.decl = resolve_path(ast, target.container, path, &target.decl_owner);
       if (target.decl != NULL) {
-        target.kind = TARGET_FIELD;
-        snprintf(target.expanded, sizeof(target.expanded), "%s", name);
+        target.kind =
+          target.decl->block != NULL && ast_find_enum(ast, target.decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        snprintf(target.expanded, sizeof(target.expanded), "%s", path);
       }
     } else if ((use = override_at(target.container, here->line, here->column, path, sizeof(path))) != NULL) {
       target.decl = resolve_path(ast, find_block(ast, use->block), path, &target.decl_owner);
@@ -1183,6 +1233,8 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
       offer_list(&completions, BYTE_ORDER_VALUES, NAV_VALUE);
     } else if (spells(second, "cal")) {
       offer_cals(&completions, navigator->ast);
+    } else if (spells(second, "if")) {
+      offer(&completions, "valof", NAV_KEYWORD, NULL);
     }
   } else if (is(previous, TOK_LPAREN) && is(second, TOK_VALOF)) {
     offer_scalars(&completions, container, line, column);
@@ -1209,6 +1261,14 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
     }
   } else if (is(previous, TOK_EQUALS) && depth > 0) {
     offer_values(&completions, navigator, before);
+  } else if (is(previous, TOK_EQUAL_EQUAL) || is(previous, TOK_NOT_EQUAL)) {
+    /* `@if: valof(kind) == ` (#12): the names of the compared field's enum, when it has one. */
+    const AstEnum *enumeration = compared_enum(navigator, before, container);
+    for (size_t i = 0; enumeration != NULL && i < enumeration->item_count; ++i) {
+      char detail[64];
+      snprintf(detail, sizeof(detail), "%llu", (unsigned long long)enumeration->items[i].value);
+      offer(&completions, enumeration->items[i].name, NAV_VALUE, detail);
+    }
   } else if (is(previous, TOK_COLON) && depth > 0) {
     offer_blocks(&completions, navigator->ast);
     offer_enums(&completions, navigator->ast);

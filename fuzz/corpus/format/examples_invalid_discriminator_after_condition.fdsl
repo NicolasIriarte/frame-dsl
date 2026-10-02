@@ -1,0 +1,11 @@
+# REJECTED: check 11 -- the only fixed value is after a conditional field.
+#
+# A decoder identifies a packet by fixed values it knows where to find. `id` sits after `ext`, which a
+# frame may or may not carry, so where `id` is depends on the frame being identified.
+
+pkt TM_LATE {
+  flag: 8;
+  [ @if: valof(flag) == 1; ]
+  ext:  16;
+  id:   8 = 0x64;
+};

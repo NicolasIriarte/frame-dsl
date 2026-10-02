@@ -440,6 +440,112 @@ static int us15_tc10_semantic_tokens_know_an_enum_from_a_block(const TestArgumen
   return failure;
 }
 
+/* `[ @if: valof(hdr.flag) == 1; ]` (#12): each part of the name inside goes to what it names, an enum's
+ * name after `==` or `!=` to its declaration, and a conditional field says what it is present under. */
+static const char *const CONDITIONAL =
+  "enum Kind: 4 { IDLE; RUN; };\n"
+  "block H { flag: 8; kind: Kind; pad: 4; };\n"
+  "pkt P {\n"
+  "  id:  8 = 1;\n"
+  "  hdr: H;\n"
+  "  [ @if: valof(hdr.flag) == 1; ] e: 8;\n"
+  "  [ @if: valof(hdr.kind) != RUN; ] f: 8;\n"
+  "};\n";
+
+static int us15_tc11_a_condition_is_navigable(const TestArguments *args) {
+  (void)args;
+  Navigator *navigator = nav_open(CONDITIONAL, NULL);
+  NavLocation at = { 0 };
+  int failure = navigator == NULL ? __LINE__ : 0;
+
+  if (failure == 0 && (!nav_definition(navigator, 6, 16, &at) || at.line != 5 || at.column != 3)) {
+    failure = __LINE__; /* hdr, onto the instance */
+  }
+  free(at.file);
+  at.file = NULL;
+  if (failure == 0 && (!nav_definition(navigator, 6, 20, &at) || at.line != 2 || at.column != 11)) {
+    failure = __LINE__; /* flag, onto the block's field */
+  }
+  free(at.file);
+  at.file = NULL;
+  if (failure == 0 && (!nav_definition(navigator, 7, 29, &at) || at.line != 1 || at.column != 22)) {
+    failure = __LINE__; /* RUN, onto the enum's name */
+  }
+  free(at.file);
+
+  NavLocation range;
+  char *text = failure == 0 ? nav_hover(navigator, 6, 6, &range) : NULL;
+  if (failure == 0 && !contains(text, "**@if**")) {
+    failure = __LINE__;
+  }
+  free(text);
+  text = failure == 0 ? nav_hover(navigator, 6, 34, &range) : NULL;
+  if (failure == 0 && !contains(text, "present only if `valof(hdr.flag) == 1`")) {
+    failure = __LINE__;
+  }
+  free(text);
+  text = failure == 0 ? nav_hover(navigator, 7, 20, &range) : NULL;
+  if (failure == 0 && !contains(text, "**hdr.kind**")) {
+    failure = __LINE__;
+  }
+  free(text);
+  nav_close(navigator);
+
+  /* After `@if:` comes valof(); after `==` on an enum's field, its names. */
+  static const char *const VALOF[] = { "valof", NULL };
+  static const char *const NAMES[] = { "IDLE", "RUN", NULL };
+  navigator = failure == 0 ? nav_open("pkt P {\n  id: 8 = 1;\n  [ @if: \n", NULL) : NULL;
+  if (failure == 0 && (navigator == NULL || !completes_to(navigator, 3, 10, VALOF))) {
+    failure = __LINE__;
+  }
+  nav_close(navigator);
+  navigator =
+    failure == 0
+      ? nav_open(
+          "enum Kind: 4 { IDLE; RUN; };\npkt P {\n  id: 8 = 1;\n  k: Kind;\n  p: 4;\n  [ @if: valof(k) == \n", NULL
+        )
+      : NULL;
+  if (failure == 0 && (navigator == NULL || !completes_to(navigator, 6, 22, NAMES))) {
+    failure = __LINE__;
+  }
+  nav_close(navigator);
+  return failure;
+}
+
+static int us15_tc12_semantic_tokens_read_a_condition(const TestArguments *args) {
+  (void)args;
+  size_t count = 0;
+  SemanticToken *tokens = semantic_tokens(CONDITIONAL, &count);
+  const struct {
+    int line;
+    int column;
+    SemanticType type;
+  } want[] = {
+    { 6, 5,  SEM_DECORATOR   }, /* @ */
+    { 6, 6,  SEM_DECORATOR   }, /* if */
+    { 6, 10, SEM_KEYWORD     }, /* valof */
+    { 6, 16, SEM_PROPERTY    }, /* hdr */
+    { 6, 20, SEM_PROPERTY    }, /* flag */
+    { 6, 26, SEM_OPERATOR    }, /* == */
+    { 6, 29, SEM_NUMBER      }, /* 1 */
+    { 7, 26, SEM_OPERATOR    }, /* != */
+    { 7, 29, SEM_ENUM_MEMBER }, /* RUN */
+    { 7, 36, SEM_PROPERTY    }, /* f, after the group */
+  };
+  int failure = tokens == NULL ? __LINE__ : 0;
+  for (size_t w = 0; failure == 0 && w < sizeof(want) / sizeof(*want); ++w) {
+    bool found = false;
+    for (size_t i = 0; i < count; ++i) {
+      if (tokens[i].line == want[w].line && tokens[i].column == want[w].column) {
+        found = tokens[i].type == want[w].type;
+      }
+    }
+    failure = found ? 0 : __LINE__ * 100 + (int)w;
+  }
+  free(tokens);
+  return failure;
+}
+
 void register_user_story15(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us15_tc01_hover_shows_where_a_field_lands, "hover shows width, offset and the orders in force", true);
@@ -464,4 +570,6 @@ void register_user_story15(void) {
   ADD_TEST_CASE(
     us15_tc10_semantic_tokens_know_an_enum_from_a_block, "semantic tokens know an enum from a block", false
   );
+  ADD_TEST_CASE(us15_tc11_a_condition_is_navigable, "a condition is navigable", false);
+  ADD_TEST_CASE(us15_tc12_semantic_tokens_read_a_condition, "semantic tokens read a condition", false);
 }

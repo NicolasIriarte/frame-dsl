@@ -285,6 +285,42 @@ bool framedsl_find(const FramedslDefinition *definition, const char *dotted, Fra
   return false;
 }
 
+/* ---- Presence (#12) ------------------------------------------------------------------------------
+ *
+ * A conditional field is present when its conditions hold over the values the frame holds now --
+ * decoded or set, alike. Nothing is stored for it: a condition reads the slots of the fields it names,
+ * which are scalars (check 16), so this is a load and a compare per condition. A member of a repetition
+ * is present when the repetition is. */
+
+static bool field_absent(const FramedslFrame *frame, FramedslFieldId id) {
+  const FieldInstruction *instruction = &frame->definition->program->packets[id.packet].fields[id.field];
+  const size_t base = frame->packet_base[id.packet];
+  for (uint32_t i = 0; i < instruction->condition_count; ++i) {
+    const ConditionInstruction *condition = &instruction->conditions[i];
+    const FieldInstruction *compared = &frame->definition->program->packets[id.packet].fields[condition->field];
+    uint64_t value = compared->fixed;
+    /* A fixed field is its fixed value, whatever its slot holds: what encode writes and decode reads. */
+    if (!compared->has_fixed) {
+      memcpy(&value, frame->arena + frame->slots[base + condition->field].offset, sizeof(value));
+    }
+    if ((value == condition->value) != condition->equal) {
+      return true;
+    }
+  }
+  return false;
+}
+
+FramedslStatus framedsl_present(const FramedslFrame *frame, FramedslFieldId id, bool *present) {
+  if (frame == NULL || present == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  if (frame_slot(frame, id) == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  *present = !field_absent(frame, id);
+  return FRAMEDSL_OK;
+}
+
 /* ---- Repetitions (#55) ----------------------------------------------------------------------------
  *
  * A repetition is one slot holding its elements as they are on the wire, one after another. A member of
@@ -390,6 +426,9 @@ FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, si
   if (instruction->element == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
+  if (field_absent(frame, id)) {
+    return FRAMEDSL_ERROR_ABSENT;
+  }
 
   uint64_t width = instruction->width_bits;
   if (instruction->variable) {
@@ -401,8 +440,8 @@ FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, si
     const size_t base = frame->packet_base[id.packet];
     for (size_t f = 0; f < packet->field_count; ++f) {
       const Slot *slot = &frame->slots[base + f];
-      values[f] = 0;
-      if (slot->is_scalar) {
+      values[f] = packet->fields[f].has_fixed ? packet->fields[f].fixed : 0;
+      if (slot->is_scalar && !packet->fields[f].has_fixed) {
         memcpy(&values[f], frame->arena + slot->offset, sizeof(uint64_t));
       }
     }
@@ -502,6 +541,9 @@ static FramedslStatus member_get_u64(const FramedslFrame *frame, FramedslFieldId
   if (!member_view(frame, id, &view) || !view.member->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
+  if (field_absent(frame, id)) {
+    return FRAMEDSL_ERROR_ABSENT;
+  }
   *out = member_get(frame->arena + view.slot->offset, view.offset, view.member);
   return FRAMEDSL_OK;
 }
@@ -537,6 +579,9 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_absent(frame, id)) {
+    return FRAMEDSL_ERROR_ABSENT;
   }
   memcpy(out, frame->arena + slot->offset, sizeof(*out));
   return FRAMEDSL_OK;
@@ -678,12 +723,20 @@ const uint8_t *framedsl_get_bytes(
       *status = FRAMEDSL_ERROR_FIELD;
       return NULL;
     }
+    if (field_absent(frame, id)) {
+      *status = FRAMEDSL_ERROR_ABSENT;
+      return NULL;
+    }
     *length = (size_t)(view.member->width_bits / 8);
     return at;
   }
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar) {
     *status = FRAMEDSL_ERROR_FIELD;
+    return NULL;
+  }
+  if (field_absent(frame, id)) {
+    *status = FRAMEDSL_ERROR_ABSENT;
     return NULL;
   }
 
@@ -710,7 +763,7 @@ FramedslStatus framedsl_get_bytes_into(
     size_t size = 0;
     const uint8_t *at = length != NULL ? framedsl_get_bytes(frame, id, &size, &status) : NULL;
     if (at == NULL) {
-      return FRAMEDSL_ERROR_FIELD;
+      return status == FRAMEDSL_ERROR_ABSENT ? status : FRAMEDSL_ERROR_FIELD;
     }
     *length = size;
     if (capacity < size || (out == NULL && size > 0)) {
@@ -724,6 +777,9 @@ FramedslStatus framedsl_get_bytes_into(
   const Slot *slot = frame_slot(frame, id);
   if (slot == NULL || slot->is_scalar || length == NULL) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_absent(frame, id)) {
+    return FRAMEDSL_ERROR_ABSENT;
   }
   if (capacity < slot->length || (out == NULL && slot->length > 0)) {
     /* The size needed, so a caller can allocate from the answer rather than from a guess. */
@@ -745,7 +801,7 @@ size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id) {
     return framedsl_get_bytes(frame, id, &length, &status) != NULL ? length : 0;
   }
   const Slot *slot = frame_slot(frame, id);
-  if (slot == NULL || slot->is_scalar) {
+  if (slot == NULL || slot->is_scalar || field_absent(frame, id)) {
     return 0;
   }
   return slot->length;

@@ -1,0 +1,12 @@
+# REJECTED: check 13 -- a conditional part is not a whole number of bytes.
+#
+# With `ext` the packet is 20 bits, without it 16: whichever the frame is, one of the two has no byte
+# form. A conditional part must be whole bytes on its own.
+
+pkt TM_EXT {
+  id:   8 = 0x61;
+  flag: 4;
+  [ @if: valof(flag) == 1; ]
+  ext:  4;
+  pad:  4;
+};

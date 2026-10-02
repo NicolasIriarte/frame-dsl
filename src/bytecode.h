@@ -64,6 +64,16 @@ typedef struct {
 } WidthProgram;
 
 /**
+ * @brief One condition a field's presence depends on (#12): the value in slot `field` is, or is not,
+ * `value`. A field carries all of its chain, and is present when every one holds.
+ */
+typedef struct {
+  uint32_t field;
+  bool equal;
+  uint64_t value;
+} ConditionInstruction;
+
+/**
  * @brief One field of a repeated block's element (#55): where it sits inside an element, and how to
  * read it. Every width is constant -- composition refuses to repeat a block whose size varies.
  */
@@ -133,6 +143,14 @@ typedef struct {
    * the fixed values its elements carry, which encode writes into every element.
    */
   const ElementProgram *element;
+
+  /**
+   * @brief What the field's presence depends on (#12): every condition must hold, over values already
+   * read -- a condition only names an earlier field. Zero conditions is the common case, and costs the
+   * walk one comparison.
+   */
+  const ConditionInstruction *conditions;
+  uint32_t condition_count;
 } FieldInstruction;
 
 typedef struct {
@@ -173,3 +191,17 @@ void program_free(Program *program);
  * depend on a frame's contents, so neither can be settled when the definition loads.
  */
 bool width_program_eval(const WidthProgram *program, const uint64_t *slots, uint64_t *out);
+
+/**
+ * @brief Whether a field is present (#12): all its conditions hold over `slots`, indexed as OP_SLOT
+ * indexes them. A field with no conditions always is.
+ */
+static inline bool field_present(const FieldInstruction *instruction, const uint64_t *slots) {
+  for (uint32_t i = 0; i < instruction->condition_count; ++i) {
+    const ConditionInstruction *condition = &instruction->conditions[i];
+    if ((slots[condition->field] == condition->value) != condition->equal) {
+      return false;
+    }
+  }
+  return true;
+}

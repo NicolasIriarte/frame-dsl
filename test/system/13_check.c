@@ -324,6 +324,13 @@ static int us13_tc10_every_span_is_well_formed(const TestArguments *args) {
     "enum_unknown_name.fdsl",
     "enum_with_cal.fdsl",
     "enum_pasted.fdsl",
+    "if_reads_absent_field.fdsl",
+    "if_part_not_whole_bytes.fdsl",
+    "if_number_on_enum.fdsl",
+    "if_value_too_wide.fdsl",
+    "discriminator_after_condition.fdsl",
+    "if_in_repeated_block.fdsl",
+    "if_reads_later_field.fdsl",
   };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     char path[512];

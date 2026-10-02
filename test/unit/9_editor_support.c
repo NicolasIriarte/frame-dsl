@@ -238,6 +238,21 @@ static bool loads(const char *source) {
   return ok;
 }
 
+/* Whether `@name: value;` loads on a byte-wide field -- with a calibration named after the value, since
+ * `@cal`'s value is the name of one. `@if` (#12) takes a comparison rather than a word, so it is tried
+ * with one; a value belongs to one attribute, so most other pairings are rejected, and what a caller
+ * asks is whether every name pairs with at least one. */
+static bool attribute_loads(const char *name, const char *value) {
+  char definition[256];
+  if (strcmp(name, "if") == 0) {
+    return loads("pkt A { x: 8 = 1; [ @if: valof(x) == 1; ] y: 8; };");
+  }
+  snprintf(
+    definition, sizeof(definition), "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };", value, name, value
+  );
+  return loads(definition);
+}
+
 /* ---- Mode to compiler, by running the compiler ------------------------------------------------ */
 
 /* A word the mode paints as a keyword had better be one. `pkt A { valof: 8 = 1; };` must fail: if it
@@ -296,21 +311,7 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
   size_t accepted = 0;
   for (size_t n = 0; n < names.count; ++n) {
     for (size_t v = 0; v < values.count; ++v) {
-      char definition[256];
-      /* On a byte-wide field rather than at file scope, because `@cal` applies to one field and
-       * nowhere else; and with a calibration named after the value, because `@cal`'s value is the
-       * name of one. Neither changes anything for the attributes that do not care. */
-      snprintf(
-        definition,
-        sizeof(definition),
-        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
-        values.words[v],
-        names.words[n],
-        values.words[v]
-      );
-      /* A value belongs to one attribute, so most pairings are rejected. What matters is that every
-       * name pairs with at least one value -- a name nothing accepts is a name that has gone. */
-      if (loads(definition)) {
+      if (attribute_loads(names.words[n], values.words[v])) {
         accepted += 1;
         break;
       }
@@ -478,16 +479,7 @@ static int us9_tc07_every_attribute_the_vim_syntax_knows_is_accepted(const TestA
   size_t accepted = 0;
   for (size_t n = 0; n < names.count; ++n) {
     for (size_t v = 0; v < values.count; ++v) {
-      char definition[256];
-      snprintf(
-        definition,
-        sizeof(definition),
-        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
-        values.words[v],
-        names.words[n],
-        values.words[v]
-      );
-      if (loads(definition)) {
+      if (attribute_loads(names.words[n], values.words[v])) {
         accepted += 1;
         break;
       }
@@ -631,16 +623,7 @@ static int us9_tc11_every_attribute_the_grammar_knows_is_accepted(const TestArgu
   size_t accepted = 0;
   for (size_t n = 0; n < names.count && failure == 0; ++n) {
     for (size_t v = 0; v < values.count; ++v) {
-      char definition[256];
-      snprintf(
-        definition,
-        sizeof(definition),
-        "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };",
-        values.words[v],
-        names.words[n],
-        values.words[v]
-      );
-      if (loads(definition)) {
+      if (attribute_loads(names.words[n], values.words[v])) {
         accepted += 1;
         break;
       }

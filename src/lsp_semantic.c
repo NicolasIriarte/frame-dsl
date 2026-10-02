@@ -115,6 +115,9 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
   bool in_enum_header = false;
   AttributeState attribute = ATTRIBUTE_NONE;
   bool attribute_is_cal = false;
+  /* Inside `valof( ... )`: every part of the name there is a field's, `valof(hdr.len)` (#12), in a width
+   * and in an `@if` alike. */
+  bool in_valof = false;
 
   /* The previous two significant tokens, and the next one: all a name's meaning depends on. */
   const Token *previous = NULL;
@@ -140,8 +143,11 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
     const bool statement_start = previous == NULL || is(previous, TOK_SEMICOLON);
 
     switch (token->kind) {
-    case TOK_PKT:
     case TOK_VALOF:
+      in_valof = true;
+      type = SEM_KEYWORD;
+      break;
+    case TOK_PKT:
     case TOK_BLOCK:
       type = SEM_KEYWORD;
       break;
@@ -161,6 +167,8 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
     case TOK_STAR:
     case TOK_SLASH:
     case TOK_EQUALS:
+    case TOK_EQUAL_EQUAL:
+    case TOK_NOT_EQUAL:
       type = SEM_OPERATOR;
       break;
     case TOK_LBRACE:
@@ -192,10 +200,13 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
       break;
     case TOK_RPAREN:
       parens = parens > 0 ? parens - 1 : 0;
+      in_valof = false;
       break;
     case TOK_IDENT: {
       const BraceKind inside = depth > 0 ? braces[depth - 1 < 64 ? depth - 1 : 63] : BRACE_BODY;
-      if (attribute == ATTRIBUTE_AT) {
+      if (in_valof) {
+        type = SEM_PROPERTY;
+      } else if (attribute == ATTRIBUTE_AT) {
         type = SEM_DECORATOR;
         attribute = ATTRIBUTE_NAME;
         attribute_is_cal = is_word(token, "cal");

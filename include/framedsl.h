@@ -85,6 +85,13 @@ typedef enum {
    * nothing.
    */
   FRAMEDSL_ERROR_UNLISTED,
+  /** @brief The field is conditional (#12), and its conditions do not hold over the values the frame
+   * holds now: a decoded frame did not carry it, or a frame being built would leave it out.
+   *
+   * Reading one is refused rather than answered with whatever its slot holds, which is a value nobody
+   * sent. framedsl_present() asks without reading.
+   */
+  FRAMEDSL_ERROR_ABSENT,
 } FramedslStatus;
 
 typedef enum {
@@ -202,6 +209,12 @@ typedef struct {
    * definition; framedsl_find_enum() resolves it.
    */
   const char *enumeration;
+
+  /** @brief For a conditional field (#12), what it is present under, as `valof(sec_hdr) == 1` -- nested
+   * conditions joined by ` && `, outermost first. NULL for a field every frame carries. It points into
+   * the definition.
+   */
+  const char *condition;
 } FramedslField;
 
 /** @brief A loaded definition. Valid until its result is freed. */
@@ -456,6 +469,22 @@ void framedsl_frame_reset(FramedslFrame *frame);
  * past what the repetition reserves.
  */
 bool framedsl_find(const FramedslDefinition *definition, const char *dotted, FramedslFieldId *out);
+
+/**
+ * @brief Whether a field is in the frame (#12): whether a conditional field's conditions hold over the
+ * values the frame holds now. A field with no conditions always is.
+ *
+ * Presence is worked out rather than stored, so it means the same for a decoded frame -- the fields it
+ * carried -- and for one being built: the fields framedsl_encode() would write. A field that is not
+ * present can still be set; the value waits in its slot until the condition holds. Reading it is
+ * FRAMEDSL_ERROR_ABSENT.
+ *
+ * @param frame A frame.
+ * @param id Any field id, a member of a repetition included -- present when its repetition is.
+ * @param present Set on success.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD if `id` does not address a field of this frame's definition.
+ */
+FramedslStatus framedsl_present(const FramedslFrame *frame, FramedslFieldId id, bool *present);
 
 /**
  * @brief The same member of element `index` (#55): how a loop walks a repetition without building a

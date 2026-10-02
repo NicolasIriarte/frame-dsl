@@ -67,7 +67,7 @@ class Structs(unittest.TestCase):
         _native.framedsl_result_free(result)
 
     def test_a_field_typed_by_an_enum_names_it_last(self):
-        # The member added last, so a Field missing it or holding it out of order reads it wrong.
+        # Added after the first members (#11), so a Field missing it or holding it out of order reads it wrong.
         result = _native.framedsl_load_file(os.path.join(EXAMPLES, "radio_status.fdsl").encode())
         self.assertTrue(_native.framedsl_ok(result))
         definition = _native.framedsl_definition(result)
@@ -86,6 +86,30 @@ class Structs(unittest.TestCase):
         self.assertEqual(_native.framedsl_get_name(frame, field, ctypes.byref(name)), _native.OK)
         self.assertEqual(name.value, b"MAX")
         self.assertEqual(_native.framedsl_set_name(frame, field, b"LOUD"), _native.ERROR_UNLISTED)
+        _native.framedsl_frame_free(frame)
+        _native.framedsl_result_free(result)
+
+    def test_a_conditional_field_names_its_condition_last(self):
+        # The member added last (#12): a Field missing it reads past the end of what C wrote.
+        result = _native.framedsl_load_file(os.path.join(EXAMPLES, "optional_fields.fdsl").encode())
+        self.assertTrue(_native.framedsl_ok(result))
+        definition = _native.framedsl_definition(result)
+        seconds = _native.Field()
+        self.assertTrue(_native.framedsl_field(definition, 0, 5, ctypes.byref(seconds)))
+        self.assertEqual(seconds.name, b"time.seconds")
+        self.assertEqual(seconds.condition, b"valof(hdr.sec_hdr) == 1")
+        kind = _native.Field()
+        self.assertTrue(_native.framedsl_field(definition, 0, 4, ctypes.byref(kind)))
+        self.assertIsNone(kind.condition)
+
+        frame = _native.framedsl_frame_new(definition)
+        field = _native.FieldId()
+        self.assertTrue(_native.framedsl_find(definition, b"TM_OPTIONAL.time.seconds", ctypes.byref(field)))
+        present = ctypes.c_bool(True)
+        self.assertEqual(_native.framedsl_present(frame, field, ctypes.byref(present)), _native.OK)
+        self.assertFalse(present.value)
+        value = ctypes.c_uint64()
+        self.assertEqual(_native.framedsl_get_u64(frame, field, ctypes.byref(value)), _native.ERROR_ABSENT)
         _native.framedsl_frame_free(frame)
         _native.framedsl_result_free(result)
 

@@ -4,8 +4,8 @@
  * written to be turned directly into a recursive-descent parser: one function per production, no
  * backtracking needed, and every production decidable from a single lookahead token.
  *
- * What is NOT here is as deliberate as what is. Signed and floating-point fields, conditional fields
- * and CRC declarations are all deferred,
+ * What is NOT here is as deliberate as what is. Signed and floating-point fields and CRC declarations
+ * are deferred,
  * each to its own issue, so that they are designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
@@ -38,11 +38,18 @@ dotted_name        = identifier , { "." , identifier } ;
  * The names are identifiers rather than keywords, and this grammar deliberately does not enumerate
  * them: the parser holds the table, so none of them is reserved and a field may be called
  * `bit_order`. v1 knows `bit_order` (msb_first | lsb_first), `byte_order` (big_endian |
- * little_endian) and `cal` (the name of a calibration, on a field only); an unknown one is reported
- * by name.
+ * little_endian), `cal` (the name of a calibration, on a field only) and `if` (a condition, #12); an
+ * unknown one is reported by name.
+ *
+ * `if` takes a comparison where the others take a name. It goes in a group in front of a field, a use
+ * or an anonymous block -- not at file scope, nor in front of a packet or a named block -- and is the
+ * one attribute a block's use may carry. A group holds at most one; groups nest, and a nested one's
+ * condition is ANDed with those around it. Conditions combining comparisons are #126.
  *)
 
-attribute          = "@" , identifier , ":" , identifier , ";" ;
+attribute          = "@" , identifier , ":" , identifier , ";"
+                   | "@" , "if" , ":" , condition , ";" ;
+condition          = valof , ( "==" | "!=" ) , value ;
 attribute_group    = "[" , attribute , { attribute } , "]" ;
 
 (* --- Packets --------------------------------------------------------------------------------
@@ -131,7 +138,8 @@ factor             = integer
                    | valof
                    | "(" , expression , ")" ;
 
-valof              = "valof" , "(" , identifier , ")" ;
+(* A field of an instance is named through it, `valof(hdr.len)` (#12), as framedsl_find() names it. *)
+valof              = "valof" , "(" , dotted_name , ")" ;
 
 (* --- Calibrations ---------------------------------------------------------------------------
  * A named function from a field's raw value to its engineering value, attached to a field with

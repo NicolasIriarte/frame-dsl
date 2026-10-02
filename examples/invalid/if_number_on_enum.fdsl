@@ -1,0 +1,16 @@
+# REJECTED: check 39 -- a condition on a field typed by an enum compares it with one of its names.
+#
+# `kind` is typed by `Kind`, so what it is compared with is written `EVENT`, as a fixed value would be,
+# not the number behind it.
+
+enum Kind: 8 {
+  IDLE;
+  EVENT;
+};
+
+pkt TM_KIND {
+  id:   8 = 0x62;
+  kind: Kind;
+  [ @if: valof(kind) == 1; ]
+  code: 16;
+};

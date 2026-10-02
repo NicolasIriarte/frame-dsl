@@ -1,0 +1,11 @@
+# REJECTED: check 7 -- a condition names a field that comes after it.
+#
+# Whether `ext` is present has to be known when the decoder reaches it, so the field deciding it must
+# already have been read.
+
+pkt TM_ORDER {
+  id:   8 = 0x66;
+  [ @if: valof(flag) == 1; ]
+  ext:  8;
+  flag: 8;
+};

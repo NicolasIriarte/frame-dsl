@@ -125,8 +125,10 @@ the decoder uses it to recognise the packet.
 some_header: 8 = 0xAA;
 ```
 
-**Every packet must have at least one fixed-value field.** A packet with none cannot be recognised,
-and a definition file containing one is rejected when it loads -- not when a frame arrives.
+**Every packet must have at least one fixed-value field**, somewhere a decoder knows to look: before
+any field whose width depends on another, and outside any [conditional](#conditional-fields) part. A
+packet with none cannot be recognised, and a definition file containing one is rejected when it loads
+-- not when a frame arrives.
 
 Definitions whose packets *could* be confused for one another are rejected the same way, with a
 message naming the pair. Two packets are distinguishable when there is some position both constrain
@@ -163,6 +165,13 @@ len:       16;                 # counts the whole packet, itself included
 body[512]: valof(len) * 8 - 16;
 ```
 
+A field of a block's instance is named through it, as `framedsl_find()` names it:
+
+```
+hdr:       Header;
+data[128]: valof(hdr.len) * 8;
+```
+
 Two rules, both checked at load time:
 
 1. **`valof()` may only name a field declared before it**, in the same packet. A width that is not
@@ -197,13 +206,14 @@ Three rules:
 ## Attributes
 
 Anything that modifies a declaration rather than describing it is an attribute, written
-`@name: value;`. There are three:
+`@name: value;`. There are four:
 
 | Attribute | Values | Default | Controls |
 | --- | --- | --- | --- |
 | `@bit_order` | `msb_first`, `lsb_first` | `msb_first` | the order a field's bits enter the stream |
 | `@byte_order` | `big_endian`, `little_endian` | `big_endian` | the order the bytes of a multi-byte value appear |
 | `@cal` | the name of a `cal` | none | the curve between a field's raw and engineering value -- see [Calibrations](#calibrations) |
+| `@if` | `valof(name) == value` or `!=` | none | whether what follows is in a frame at all -- see [Conditional fields](#conditional-fields) |
 
 Attribute names are **not** reserved words -- they mean something only after `@`. A field may be
 called `bit_order` if that is what the specification calls it.
@@ -657,6 +667,127 @@ The raw value is the field's value in the frame, as always: `framedsl_get_u64()`
 `framedsl_set_u64()` read and write it whatever it is, and `framedsl_get_name()` and
 `framedsl_set_name()` are the checked path, by name -- see [the API](api.md#enumerations).
 
+## Conditional fields
+
+Some of a frame is there only sometimes: a secondary header a flag announces, a payload only one kind of
+packet carries. `@if` in a group in front of a field, a block's use or an anonymous block makes it
+**conditional** -- on the wire only when an earlier field has a value:
+
+```
+enum Kind: 4 {
+  IDLE;
+  HOUSEKEEPING;
+  EVENT;
+};
+
+block Header {
+  id:      8;
+  sec_hdr: 1;
+  has_crc: 1;
+  spare:   2;
+  kind:    Kind;
+};
+
+block Time {
+  seconds: 32;
+  subsecs: 16;
+};
+
+block Reading {
+  channel: 8;
+  value:   16;
+};
+
+pkt TM_OPTIONAL {
+  hdr:  Header { id = 0x50; };
+  [ @if: valof(hdr.sec_hdr) == 1; ]
+  time: Time;  # TM_OPTIONAL.time.seconds, present only with a secondary header
+  [ @if: valof(hdr.kind) != IDLE; ]
+  block {
+    count:        8;
+    readings[32]: Reading[valof(count)];
+    [ @if: valof(hdr.kind) == EVENT; ]
+    code:         16;  # present only when kind is EVENT: both conditions hold
+  };
+  [ @if: valof(hdr.has_crc) == 1; ]
+  crc: 16;
+};
+```
+
+That is [`examples/optional_fields.fdsl`](../examples/optional_fields.fdsl).
+
+**A condition is one comparison.** `valof(name) == value`, or `!=` for its opposite -- which is also
+how an "otherwise" is written: two groups, `==` and `!=`. The field compared is one declared above,
+in the same packet, and a scalar (checks 7 and 16), named through an instance where it is in one,
+`valof(hdr.sec_hdr)`. The value is a number that fits it (check 8), or -- when it is typed by an enum
+-- one of the enum's names, as a fixed value would be (check 39). Combining comparisons in one
+condition is #126.
+
+**Groups nest**, and what is inside needs every condition around it. One group takes one `@if`; two
+would leave a reader wondering which wins, so it is an error, and nesting is how both are asked for.
+`@if` shares its group with any other attribute, in any order. It goes in front of what may be absent
+-- a field, a use, an anonymous block -- and not in front of a packet, a named block's declaration or
+at the top of a file.
+
+**A block's use may be conditional**, though no other attribute goes in front of one: whether a
+block is there belongs to where it is used, not to its layout. Inside a block's declaration, a
+condition reads the block's own fields, as a `valof()` width does. A whole repetition may be
+conditional; a field of a repeated block may not, since every element must be one size (check 32).
+
+**Whole bytes, with it or without it.** A packet is whole bytes in every frame, so each conditional
+part must be whole bytes on its own (check 13) -- sub-byte fields inside one are fine as long as they
+add up:
+
+```
+[ @if: valof(f) == 1; ]
+block { a: 3; b: 5; };              # fine: 8 bits
+[ @if: valof(f) == 2; ]
+c: 4;                               # rejected: the packet would be 4 bits off when it is there
+```
+
+**Reading what may not be there.** A `valof()` -- in a width, a count or a condition -- may name a
+conditional field only from under the same conditions, or stricter ones (check 42). Elsewhere it would
+read a field the frame may not carry:
+
+```
+[ @if: valof(has_len) == 1; ]
+block {
+  len:      8;
+  data[16]: valof(len) * 8;         # fine: both there, or neither
+};
+```
+
+**Identifying a packet.** Nothing at or after a conditional field sits at a known offset, as after a
+`valof()`-sized one, so no fixed value there identifies the packet: a fixed value inside a conditional
+part is written when the part is there, and that is all. A packet whose only fixed value is in or after
+one is rejected when it loads (check 11).
+
+**Reading and writing one.** Whether a field is there is worked out from the frame's values as they are
+now -- a decoded frame's, or the ones being set -- so `framedsl_present()` answers for both, and reading
+a field that is not there is `FRAMEDSL_ERROR_ABSENT` rather than a value nobody sent. Setting one is
+never refused: the value waits until its condition holds, and the encoder leaves it out until then.
+`-d` shows what a frame did not carry:
+
+```
+$ frame-dsl examples/optional_fields.fdsl -d 50 41 00 12 34
+# Decoded 5 bytes
+pkt TM_OPTIONAL {
+    hdr.id         80 (0x50)
+    hdr.sec_hdr    0 (0)
+    hdr.has_crc    1 (0x1)
+    hdr.spare      0 (0)
+    hdr.kind       1 (0x1) = HOUSEKEEPING [Kind]
+    time.seconds   <absent>
+    time.subsecs   <absent>
+    count          0 (0)
+    readings       0 elements
+    code           <absent>
+    crc            4660 (0x1234)
+}
+```
+
+`if` is a word only after `@`, like every attribute's name, so a field may still be called `if`.
+
 ## Comments
 
 ```
@@ -700,7 +831,7 @@ pkt TM_STATUS {
   their own. File settings align on their values the same way, and so do the settings of a group.
 - **Trailing comments align too**, two spaces past the longest line of the run that has one.
 - **One setting in a group stays on one line**, `[ @byte_order: big_endian; ]`; more than one is one
-  setting per line.
+  setting per line. A condition is spaced as a width is, `[ @if: valof(hdr.flag) == 1; ]`.
 - **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
   parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
   on its line: `hdr: Header { id = 0x02; flags = 0x3; };`. A calibration is one line.
@@ -744,7 +875,8 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-conditional fields, CRC polynomial and range, and repeating a field typed by an enum.
+CRC polynomial and range, repeating a field typed by an enum, and conditions combining comparisons
+(`&&`, `||`, ordering and masks, #126).
 Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined

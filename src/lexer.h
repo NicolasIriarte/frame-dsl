@@ -30,6 +30,9 @@ typedef enum {
   TOK_LPAREN,
   TOK_RPAREN,
   TOK_EQUALS,
+  /** @brief `==` and `!=`, which only a condition compares with, `[ @if: valof(x) == 1; ]` (#12). */
+  TOK_EQUAL_EQUAL,
+  TOK_NOT_EQUAL,
   TOK_PLUS,
   TOK_MINUS,
   TOK_STAR,

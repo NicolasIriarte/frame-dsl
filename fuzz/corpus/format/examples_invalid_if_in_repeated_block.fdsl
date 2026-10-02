@@ -1,0 +1,15 @@
+# REJECTED: check 32 -- a repeated block with a conditional field.
+#
+# Element i of a repetition is i times one size in; an element that may leave `extra` out has no one
+# size. A whole repetition may be conditional, but not a part of each element.
+
+block Sample {
+  kind:  8;
+  [ @if: valof(kind) == 1; ]
+  extra: 8;
+};
+
+pkt TM_SAMPLES {
+  id:      8 = 0x65;
+  samples: Sample[4];
+};

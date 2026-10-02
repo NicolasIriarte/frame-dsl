@@ -5,7 +5,7 @@
 
 #include "lexer.h"
 
-const char *const PARSER_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", NULL };
+const char *const PARSER_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "if", NULL };
 static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first" };
 static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian" };
 
@@ -140,6 +140,37 @@ static Expr *expr_new(Parser *parser, ExprKind kind, int line, int column) {
 }
 
 static Expr *parse_expression(Parser *parser);
+static const char *dotted_name(Parser *parser, const char *first, size_t first_length);
+
+/* valof = "valof" "(" dotted_name ")" -- a field of an instance is named through it, `valof(hdr.len)`,
+ * as framedsl_find() names it (#12). */
+static Expr *parse_valof(Parser *parser) {
+  int line = parser->current.line;
+  int column = parser->current.column;
+  advance(parser); /* 'valof' */
+  if (!expect(parser, TOK_LPAREN)) {
+    return NULL;
+  }
+  if (!check(parser, TOK_IDENT)) {
+    error_at_current(parser, "a field name");
+    return NULL;
+  }
+
+  Expr *expr = expr_new(parser, EXPR_VALOF, line, column);
+  Token first = parser->current;
+  advance(parser);
+  const char *name = dotted_name(parser, first.text, first.length);
+  if (expr != NULL) {
+    expr->reference_line = first.line;
+    expr->reference_column = first.column;
+    expr->reference = name;
+    expr->written = name;
+  }
+  if (!expect(parser, TOK_RPAREN)) {
+    return NULL;
+  }
+  return expr;
+}
 
 /* factor = integer | valof | "(" expression ")" */
 static Expr *parse_factor(Parser *parser) {
@@ -155,29 +186,8 @@ static Expr *parse_factor(Parser *parser) {
     return expr;
   }
 
-  if (match(parser, TOK_VALOF)) {
-    if (!expect(parser, TOK_LPAREN)) {
-      return NULL;
-    }
-    if (!check(parser, TOK_IDENT)) {
-      error_at_current(parser, "a field name");
-      return NULL;
-    }
-
-    Expr *expr = expr_new(parser, EXPR_VALOF, line, column);
-    if (expr != NULL) {
-      expr->reference_line = parser->current.line;
-      expr->reference_column = parser->current.column;
-      expr->reference = region_strndup(parser->file->region, parser->current.text, parser->current.length);
-      if (expr->reference == NULL) {
-        parser->out_of_memory = true;
-      }
-    }
-    advance(parser);
-    if (!expect(parser, TOK_RPAREN)) {
-      return NULL;
-    }
-    return expr;
+  if (check(parser, TOK_VALOF)) {
+    return parse_valof(parser);
   }
 
   if (match(parser, TOK_LPAREN)) {
@@ -282,6 +292,15 @@ typedef struct {
   int cal_value_column;
   int cal_end_line;
   int cal_end_column;
+
+  /* `@if:` (#12): the condition in effect, chained to the ones of the groups this declaration is inside.
+   * Unlike everything above it is inherited *and* combined: a field inside an anonymous block under one
+   * `@if` and in front of its own is present only when both hold. `if_written` is whether this group
+   * wrote one, since a second in one group would be a condition dropped. */
+  AstCondition *condition;
+  bool if_written;
+  int if_line;
+  int if_column;
 } Attributes;
 
 /* Everything a declaration inherits arrives with the flags cleared: what the enclosing scope said is
@@ -290,7 +309,25 @@ static Attributes inherited(Attributes scope) {
   scope.bit_written = false;
   scope.byte_written = false;
   scope.cal = NULL;
+  scope.if_written = false;
   return scope;
+}
+
+/* Wherever a group or a bare attribute applies to something that cannot be absent from a frame: a
+ * whole file, a packet, a named block's declaration. Presence belongs to where something is used. */
+static void refuse_if_here(Parser *parser, const Attributes *attrs, const char *where) {
+  if (!attrs->if_written) {
+    return;
+  }
+  diag_add(
+    parser->diags,
+    attrs->if_line,
+    attrs->if_column,
+    0,
+    "'if' makes what follows it present only in some frames, and cannot apply to %s; put it in a "
+    "'[ ... ]' group in front of a field, a block's use or an anonymous 'block { ... };'",
+    where
+  );
 }
 
 /* Called wherever a group or a bare attribute applies to something that is not a single field. */
@@ -423,7 +460,68 @@ static void repeated(
   );
 }
 
-/* attribute = "@" identifier ":" identifier ";" */
+static bool parse_value(Parser *parser, uint64_t *value, const char **name, int *line, int *column);
+
+/* condition = "valof" "(" dotted_name ")" ( "==" | "!=" ) value ";" -- what follows `@if:` (#12). One
+ * comparison: two are combined by nesting one group inside another, and anything more is #126. */
+static bool parse_condition(Parser *parser, Attributes *attrs, int line, int column) {
+  if (!check(parser, TOK_VALOF)) {
+    error_at_current(parser, "a condition, 'valof(name) == value'");
+    return false;
+  }
+
+  AstCondition *condition = region_alloc(parser->file->region, sizeof(AstCondition));
+  if (condition == NULL) {
+    parser->out_of_memory = true;
+    return false;
+  }
+  memset(condition, 0, sizeof(*condition));
+  condition->line = line;
+  condition->column = column;
+  condition->parent = attrs->condition;
+
+  condition->field = parse_valof(parser);
+  if (condition->field == NULL) {
+    return false;
+  }
+  if (check(parser, TOK_EQUAL_EQUAL) || check(parser, TOK_NOT_EQUAL)) {
+    condition->equal = check(parser, TOK_EQUAL_EQUAL);
+    advance(parser);
+  } else {
+    error_at_current(parser, "'==' or '!='");
+    return false;
+  }
+  if (!parse_value(
+        parser, &condition->value, &condition->value_name, &condition->value_line, &condition->value_column
+      )) {
+    return false;
+  }
+  if (!expect(parser, TOK_SEMICOLON)) {
+    return false;
+  }
+
+  /* Not check 34's "the later one wins": for a condition that would be one silently dropped. Read whole
+   * first, so the group goes on cleanly after it. */
+  if (attrs->if_written) {
+    diag_add(
+      parser->diags,
+      line,
+      column,
+      0,
+      "'if' is written twice in one group; to need both, put one in a group in front of an anonymous "
+      "'block { ... };' and the other inside it"
+    );
+    return false;
+  }
+
+  attrs->condition = condition;
+  attrs->if_written = true;
+  attrs->if_line = line;
+  attrs->if_column = column;
+  return true;
+}
+
+/* attribute = "@" identifier ":" identifier ";" | "@" "if" ":" condition */
 static bool parse_attribute(Parser *parser, Attributes *attrs) {
   int line = parser->current.line;
   int column = parser->current.column;
@@ -439,6 +537,30 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
   advance(parser);
 
   if (!expect(parser, TOK_COLON)) {
+    return false;
+  }
+  if (word_is(&name, "if")) {
+    return parse_condition(parser, attrs, line, column);
+  }
+  if (!word_is(&name, "bit_order") && !word_is(&name, "byte_order") && !word_is(&name, "cal")) {
+    size_t index = parser->diags->count;
+    diag_add(
+      parser->diags,
+      name.line,
+      name.column,
+      0,
+      "unknown attribute '%.*s'; this version knows 'bit_order', 'byte_order', 'cal' and 'if'",
+      (int)name.length,
+      name.text
+    );
+    suggest(parser, index, &name, PARSER_ATTRIBUTE_NAMES, 4);
+    /* Its value is passed over whatever it looks like -- a name, or a condition meant for `if` -- so the
+     * one mistake is reported once. */
+    while (!check(parser, TOK_SEMICOLON) && !check(parser, TOK_RBRACKET) && !check(parser, TOK_EOF)
+           && !check(parser, TOK_INVALID)) {
+      advance(parser);
+    }
+    match(parser, TOK_SEMICOLON);
     return false;
   }
   if (!check(parser, TOK_IDENT)) {
@@ -567,19 +689,6 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     attrs->cal_column = column;
     attrs->cal_value_line = value.line;
     attrs->cal_value_column = value.column;
-  } else {
-    size_t index = parser->diags->count;
-    diag_add(
-      parser->diags,
-      name.line,
-      name.column,
-      0,
-      "unknown attribute '%.*s'; this version knows 'bit_order', 'byte_order' and 'cal'",
-      (int)name.length,
-      name.text
-    );
-    suggest(parser, index, &name, PARSER_ATTRIBUTE_NAMES, 3);
-    ok = false;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -870,6 +979,7 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   field->cal_column = attrs.cal_column;
   field->cal_value_line = attrs.cal_value_line;
   field->cal_value_column = attrs.cal_value_column;
+  field->condition = attrs.condition;
 
   if (!check(parser, TOK_IDENT)) {
     error_at_current(parser, "a field name");
@@ -1433,7 +1543,10 @@ AstFile *parse(const char *source, DiagList *diags) {
       recover_to_field_end(&parser);
     }
     refuse_cal_here(&parser, &file_attrs, "a whole file");
+    refuse_if_here(&parser, &file_attrs, "a whole file");
     file_attrs.cal = NULL;
+    file_attrs.condition = NULL;
+    file_attrs.if_written = false;
   }
 
   /* The first declaration, which a bare attribute written after it is told to move above. */
@@ -1487,6 +1600,8 @@ AstFile *parse(const char *source, DiagList *diags) {
         continue;
       }
       refuse_cal_here(&parser, &packet_attrs, check(&parser, TOK_BLOCK) ? "a block" : "a packet");
+      refuse_if_here(&parser, &packet_attrs, check(&parser, TOK_BLOCK) ? "a named block's declaration" : "a packet");
+      packet_attrs.condition = NULL;
     }
 
     const bool is_block = check(&parser, TOK_BLOCK);

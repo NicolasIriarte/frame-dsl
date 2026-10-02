@@ -162,3 +162,26 @@ const AstEnumItem *ast_enum_item(const AstEnum *enumeration, const char *name) {
   }
   return NULL;
 }
+
+bool ast_condition_same(const AstCondition *a, const AstCondition *b) {
+  return a->equal == b->equal && a->value == b->value && a->field != NULL && b->field != NULL
+         && a->field->reference != NULL && b->field->reference != NULL
+         && strcmp(a->field->reference, b->field->reference) == 0;
+}
+
+bool ast_conditions_cover(const AstCondition *outer, const AstCondition *inner) {
+  for (const AstCondition *needed = inner; needed != NULL; needed = needed->parent) {
+    bool found = false;
+    for (const AstCondition *held = outer; held != NULL && !found; held = held->parent) {
+      found = ast_condition_same(held, needed);
+    }
+    if (!found) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ast_conditions_equal(const AstCondition *a, const AstCondition *b) {
+  return ast_conditions_cover(a, b) && ast_conditions_cover(b, a);
+}

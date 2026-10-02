@@ -105,6 +105,21 @@ enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };
 pkt TM_ANTENNA { type: PktType = HK; level: TxLevel; pad: 1; };   # level is 3 bits
 ```
 
+Part of a frame that is there only sometimes -- a secondary header a flag announces -- is conditional,
+and a decoded frame says which parts it carried:
+
+```
+block Time { seconds: 32; subsecs: 16; };
+
+pkt TM_SPACE {
+  id:      8 = 0x08;
+  sec_hdr: 8;
+  [ @if: valof(sec_hdr) == 1; ]
+  time:    Time;                                       # read as absent from a frame without it
+  crc:     16;
+};
+```
+
 Headers, trailers, calibrations and enums shared by several files live in a library that each of them
 imports -- `import "common/link.fdsl";`, or `import "vendor.fdsl" as vendor;` to keep two libraries'
 names apart. See [`examples/imported_device.fdsl`](examples/imported_device.fdsl).
@@ -249,7 +264,8 @@ reply["TC_WRITE.size"]                                      # 2
 
 `frame.eng["PKT.field"]` reads and writes a calibrated field in engineering units, and
 `frame.names["PKT.field"]` a field typed by an enum by its names -- `UnlistedError` for a value the enum
-does not list, which `frame[...]` still reads as a number. A repetition's
+does not list, which `frame[...]` still reads as a number. A conditional field the frame does not hold
+raises `AbsentError`, and `frame.present("PKT.field")` asks first. A repetition's
 elements are `frame["TM_SAMPLES.samples[3].reading"]`, `frame.count("TM_SAMPLES.samples")`, or all of one
 member at once with `frame.elements("TM_SAMPLES.samples.reading")`. `frame.decode_prefix(data)` returns
 the packet and how many bytes it took, for walking a stream. Each error the library reports is its own

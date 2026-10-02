@@ -71,6 +71,7 @@ ERROR_BUFFER = 6
 ERROR_UNRECOGNISED = 7
 ERROR_TRUNCATED = 8
 ERROR_UNLISTED = 9
+ERROR_ABSENT = 10
 
 BIT_ORDER_MSB_FIRST = 0
 BIT_ORDER_LSB_FIRST = 1
@@ -122,6 +123,7 @@ class Field(ctypes.Structure):
         ("element_bits", ctypes.c_uint64),
         ("member_count", ctypes.c_size_t),
         ("enumeration", ctypes.c_char_p),
+        ("condition", ctypes.c_char_p),
     ]
 
 
@@ -199,6 +201,7 @@ _declare("framedsl_frame_reset", None, Frame)
 _declare("framedsl_find", ctypes.c_bool, Definition, ctypes.c_char_p, ctypes.POINTER(FieldId))
 _declare("framedsl_element", ctypes.c_int, Definition, FieldId, ctypes.c_size_t, ctypes.POINTER(FieldId))
 _declare("framedsl_count", ctypes.c_int, Frame, FieldId, _size_p)
+_declare("framedsl_present", ctypes.c_int, Frame, FieldId, ctypes.POINTER(ctypes.c_bool))
 _declare("framedsl_field_id", ctypes.c_bool, Definition, ctypes.c_size_t, ctypes.c_size_t, ctypes.POINTER(FieldId))
 
 # Values.

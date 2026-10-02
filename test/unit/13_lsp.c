@@ -602,9 +602,9 @@ static int us13_tc13_hover_definition_and_completion_are_answered(const TestArgu
              || integer_at(json_get(json_get(definition, "range"), "start"), "line") != 0
              || integer_at(json_get(json_get(definition, "range"), "start"), "character") != 6) {
     failure = __LINE__; /* `H` in the use, onto `block H` */
-  } else if (completion == NULL || completion->kind != JSON_ARRAY || completion->count != 3
+  } else if (completion == NULL || completion->kind != JSON_ARRAY || completion->count != 4
              || integer_at(completion->items[0], "kind") != 10) {
-    failure = __LINE__; /* the three attribute names, as properties */
+    failure = __LINE__; /* the four attribute names, as properties */
   } else if (nothing == NULL || json_get(nothing, "result") == NULL || json_get(nothing, "result")->kind != JSON_NULL) {
     failure = __LINE__; /* a question about `{` is answered with null, not an error */
   }
