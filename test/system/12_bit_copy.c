@@ -26,6 +26,13 @@ static void reference_scalar(uint8_t *out, uint64_t offset, uint64_t width, uint
   }
 }
 
+/* lsb_first puts the value's bit j at the field's stream bit j. */
+static void reference_scalar_lsb_first(uint8_t *out, uint64_t offset, uint64_t width, uint64_t value) {
+  for (uint64_t j = 0; j < width; ++j) {
+    reference_bit(out, offset + j, ((value >> j) & 1) != 0);
+  }
+}
+
 static void reference_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, size_t length) {
   for (size_t i = 0; i < length; ++i) {
     for (uint64_t j = 0; j < 8; ++j) {
@@ -56,6 +63,7 @@ static int round_trip_under(
   const char *field,
   uint64_t width,
   bool bit_string,
+  bool lsb_first,
   uint64_t *state
 ) {
   const uint64_t tail = (8 - (lead + width) % 8) % 8;
@@ -113,7 +121,11 @@ static int round_trip_under(
         failure = __LINE__;
         break;
       }
-      reference_scalar(expected, 8 + lead, width, scalar);
+      if (lsb_first) {
+        reference_scalar_lsb_first(expected, 8 + lead, width, scalar);
+      } else {
+        reference_scalar(expected, 8 + lead, width, scalar);
+      }
     }
     if (tail > 0) {
       framedsl_find(definition, "P.tail", &tail_id);
@@ -154,7 +166,7 @@ static int round_trip_under(
 }
 
 static int round_trip(unsigned lead, const char *field, uint64_t width, bool bit_string, uint64_t *state) {
-  return round_trip_under("", "", lead, field, width, bit_string, state);
+  return round_trip_under("", "", lead, field, width, bit_string, false, state);
 }
 
 static int us12_tc01_whole_byte_scalars_at_every_offset(const TestArguments *args) {
@@ -230,10 +242,30 @@ static int us12_tc04_bit_strings_around_a_word_off_a_boundary(const TestArgument
         const bool bit_string = bytes[b] * 8 > 64;
         char field[64];
         snprintf(field, sizeof(field), "%svalue: %u;", bit_string ? "" : headers[h][1], bytes[b] * 8);
-        int failure = round_trip_under(headers[h][0], headers[h][1], lead, field, bytes[b] * 8, bit_string, &state);
+        int failure =
+          round_trip_under(headers[h][0], headers[h][1], lead, field, bytes[b] * 8, bit_string, false, &state);
         if (failure != 0) {
           return failure;
         }
+      }
+    }
+  }
+  return 0;
+}
+
+/* lsb_first scalars are the value reversed and laid down as msb_first ones are (#108): every width that
+ * is sub-byte, crosses bytes or fills a word, at every offset, against the bit-at-a-time reference. */
+static int us12_tc05_lsb_first_scalars_at_every_offset(const TestArguments *args) {
+  (void)args;
+  uint64_t state = 0x2545F4914F6CDD1Du;
+  const unsigned widths[] = { 1, 3, 7, 8, 9, 12, 13, 16, 17, 24, 31, 32, 33, 48, 63, 64 };
+  for (unsigned lead = 0; lead < 8; ++lead) {
+    for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); ++w) {
+      char field[96];
+      snprintf(field, sizeof(field), "[ @bit_order: lsb_first; ] value: %u;", widths[w]);
+      int failure = round_trip_under("", "", lead, field, widths[w], false, true, &state);
+      if (failure != 0) {
+        return failure;
       }
     }
   }
@@ -253,5 +285,8 @@ void register_user_story12(void) {
     us12_tc04_bit_strings_around_a_word_off_a_boundary,
     "bit strings around a word match the reference off a boundary",
     false
+  );
+  ADD_TEST_CASE(
+    us12_tc05_lsb_first_scalars_at_every_offset, "lsb_first scalars match the reference at every offset", false
   );
 }

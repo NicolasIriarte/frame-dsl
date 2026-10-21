@@ -13,10 +13,6 @@
  * pass already projected each packet's fixed fields onto the stream bits they pin, as a mask and a
  * value in exactly this numbering, so matching is an AND and a compare per byte. */
 
-static bool read_bit(const uint8_t *buffer, uint64_t index) {
-  return ((buffer[index / 8] >> (7 - (index % 8))) & 1) != 0;
-}
-
 /* Reads `width` bits at `offset` back into the value they came from, undoing what encode.c laid
  * down. `lsb_first` is not `msb_first` reversed: each puts a different bit of the value at the
  * earliest stream position, so each has to be undone on its own terms. */
@@ -27,27 +23,22 @@ static uint64_t read_scalar(
   BitOrder bit_order,
   ByteOrder byte_order
 ) {
+  /* The stream holds the value's bits in order, so they come in runs: what is left of the current
+   * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. lsb_first is the same
+   * runs, reversed afterwards (#108). */
   uint64_t value = 0;
-
-  if (bit_order == BIT_ORDER_MSB_FIRST) {
-    /* The stream holds the value's bits in order, so they come in runs: what is left of the current
-     * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. */
-    uint64_t position = offset;
-    uint64_t remaining = width;
-    while (remaining > 0) {
-      uint64_t used = position % 8;
-      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-      uint64_t bits = ((uint64_t)buffer[position / 8] >> (8 - used - run)) & ((1u << run) - 1);
-      value = (value << run) | bits;
-      position += run;
-      remaining -= run;
-    }
-  } else {
-    for (uint64_t j = 0; j < width; ++j) {
-      if (read_bit(buffer, offset + j)) {
-        value |= (uint64_t)1 << j;
-      }
-    }
+  uint64_t position = offset;
+  uint64_t remaining = width;
+  while (remaining > 0) {
+    uint64_t used = position % 8;
+    uint64_t run = 8 - used < remaining ? 8 - used : remaining;
+    uint64_t bits = ((uint64_t)buffer[position / 8] >> (8 - used - run)) & ((1u << run) - 1);
+    value = (value << run) | bits;
+    position += run;
+    remaining -= run;
+  }
+  if (bit_order == BIT_ORDER_LSB_FIRST && width > 0) {
+    value = bits_reverse(value, width);
   }
 
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
