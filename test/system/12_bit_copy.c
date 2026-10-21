@@ -47,19 +47,29 @@ static uint64_t masked(uint64_t value, uint64_t width) {
 }
 
 /* One packet: an 8-bit id, `lead` bits of padding to set the offset, the field under test, and
- * whatever padding brings the whole to a byte multiple. `field` is its declaration. */
-static int round_trip(unsigned lead, const char *field, uint64_t width, bool bit_string, uint64_t *state) {
+ * whatever padding brings the whole to a byte multiple. `field` is its declaration, and `header` what
+ * the file says before the packet. */
+static int round_trip_under(
+  const char *header,
+  const char *scalars,
+  unsigned lead,
+  const char *field,
+  uint64_t width,
+  bool bit_string,
+  uint64_t *state
+) {
   const uint64_t tail = (8 - (lead + width) % 8) % 8;
 
   char source[512];
-  int written = snprintf(source, sizeof(source), "pkt P {\n  id: 8 = 0x5A;\n");
+  int written = snprintf(source, sizeof(source), "%spkt P {\n  %sid: 8 = 0x5A;\n", header, scalars);
   if (lead > 0) {
-    written += snprintf(source + written, sizeof(source) - (size_t)written, "  lead: %u;\n", lead);
+    written += snprintf(source + written, sizeof(source) - (size_t)written, "  %slead: %u;\n", scalars, lead);
   }
   written += snprintf(source + written, sizeof(source) - (size_t)written, "  %s\n", field);
   if (tail > 0) {
-    written +=
-      snprintf(source + written, sizeof(source) - (size_t)written, "  tail: %llu;\n", (unsigned long long)tail);
+    written += snprintf(
+      source + written, sizeof(source) - (size_t)written, "  %stail: %llu;\n", scalars, (unsigned long long)tail
+    );
   }
   snprintf(source + written, sizeof(source) - (size_t)written, "};\n");
 
@@ -143,6 +153,10 @@ static int round_trip(unsigned lead, const char *field, uint64_t width, bool bit
   return failure;
 }
 
+static int round_trip(unsigned lead, const char *field, uint64_t width, bool bit_string, uint64_t *state) {
+  return round_trip_under("", "", lead, field, width, bit_string, state);
+}
+
 static int us12_tc01_whole_byte_scalars_at_every_offset(const TestArguments *args) {
   (void)args;
   uint64_t state = 0x9E3779B97F4A7C15u;
@@ -196,6 +210,36 @@ static int us12_tc03_bit_strings_at_every_offset(const TestArguments *args) {
   return 0;
 }
 
+/* Bit strings off a byte boundary go eight bytes at a time, with a byte loop for what is left (#105):
+ * every offset off a boundary, at lengths either side of one word, two and three, under either bit
+ * order for the file -- which a bit string ignores, and must go on ignoring. Seven and eight bytes are
+ * 56 and 64 bits, which is a scalar rather than a bit string, so those two lengths go through as one. */
+static int us12_tc04_bit_strings_around_a_word_off_a_boundary(const TestArguments *args) {
+  (void)args;
+  uint64_t state = 0xBF58476D1CE4E5B9u;
+  const unsigned bytes[] = { 7, 8, 9, 15, 16, 17, 23, 24, 25 };
+  /* Under an lsb_first file the scalars around the bit string are written msb_first, which is what the
+   * reference lays down; the bit string inherits the file's order, and ignores it. */
+  const char *const headers[][2] = {
+    { "@bit_order: msb_first;\n", ""                            },
+    { "@bit_order: lsb_first;\n", "[ @bit_order: msb_first; ] " },
+  };
+  for (size_t h = 0; h < sizeof(headers) / sizeof(*headers); ++h) {
+    for (unsigned lead = 1; lead < 8; ++lead) {
+      for (size_t b = 0; b < sizeof(bytes) / sizeof(*bytes); ++b) {
+        const bool bit_string = bytes[b] * 8 > 64;
+        char field[64];
+        snprintf(field, sizeof(field), "%svalue: %u;", bit_string ? "" : headers[h][1], bytes[b] * 8);
+        int failure = round_trip_under(headers[h][0], headers[h][1], lead, field, bytes[b] * 8, bit_string, &state);
+        if (failure != 0) {
+          return failure;
+        }
+      }
+    }
+  }
+  return 0;
+}
+
 void register_user_story12(void) {
   START_REGISTERING();
   ADD_TEST_CASE(
@@ -205,4 +249,9 @@ void register_user_story12(void) {
     us12_tc02_odd_width_scalars_at_every_offset, "odd-width scalars match the reference at every offset", false
   );
   ADD_TEST_CASE(us12_tc03_bit_strings_at_every_offset, "bit strings match the reference at every offset", false);
+  ADD_TEST_CASE(
+    us12_tc04_bit_strings_around_a_word_off_a_boundary,
+    "bit strings around a word match the reference off a boundary",
+    false
+  );
 }

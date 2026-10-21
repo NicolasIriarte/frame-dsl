@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include "bits.h"
 #include "bytecode.h"
 #include "definition.h"
 #include "frame.h"
@@ -92,8 +93,33 @@ static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, siz
   }
 
   /* Off one, each byte straddles two: its high bits finish the current output byte and its low bits
-   * start the next. The output was zeroed before the walk, so both halves are OR'd in. */
-  for (size_t i = 0; i < length; ++i) {
+   * start the next. The output was zeroed before the walk, so both halves are OR'd in.
+   *
+   * Eight bytes at a time first (#105): eight source bytes as one big-endian word, shifted right by the
+   * offset, are the same bits landing in eight output bytes, all but the last `shift` of them, which
+   * start the ninth. Those are carried into the next word in a register rather than OR'd into memory,
+   * so each step is one store that nothing reads back -- a byte stored and then loaded as part of a
+   * word stalls the load. The first output byte starts with the bits of the field before this one.
+   * Two words a step while there are two, as read_bytes() in decode.c does. */
+  size_t i = 0;
+  if (length >= 8) {
+    const unsigned back = 8 - shift;
+    uint64_t carry = at[0];
+    for (; i + 16 <= length; i += 16) {
+      uint64_t first = bits_load_be64(bytes + i);
+      uint64_t second = bits_load_be64(bytes + i + 8);
+      bits_store_be64(at + i, carry << 56 | first >> shift);
+      bits_store_be64(at + i + 8, (uint64_t)(uint8_t)(first << back) << 56 | second >> shift);
+      carry = (uint8_t)(second << back);
+    }
+    for (; i + 8 <= length; i += 8) {
+      uint64_t word = bits_load_be64(bytes + i);
+      bits_store_be64(at + i, carry << 56 | word >> shift);
+      carry = (uint8_t)(word << back);
+    }
+    at[i] |= (uint8_t)carry;
+  }
+  for (; i < length; ++i) {
     at[i] |= (uint8_t)(bytes[i] >> shift);
     at[i + 1] |= (uint8_t)(bytes[i] << (8 - shift));
   }
