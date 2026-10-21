@@ -110,6 +110,29 @@ runtime at `4d627c6`), same i5-9400T as below, gcc 13.3 at `-O2`, `powersave` go
 | `element_get` | 60 | whatever the element's size or shape |
 | `elements_all`, 1024 elements | 59875 | ~58 ns an element, 500x the decode |
 
+### Before the performance round, 2026-10-21
+
+[`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv): `944c7b9`,
+whose runtime is `main`'s at v0.1.0, the first run with `mix` and `grid` (#130). Same i5-9400T, but
+Linux 7.0 and gcc 15.2 where the first baseline had 6.8 and 13.3, and the runtime has gained conditional
+fields (#12) since: every accessor now asks whether its field is present. 191 of the 418 points the two
+files share are slower than in the first baseline and 6 faster -- every `get_u64` by 32%, 7.6 to 10.1
+ns -- and nothing tells those three changes apart. So this file, not the first, is what the performance round
+(#105, #108, #101, #106, #107, #109) is measured against.
+
+What the combinations cost, medians in ns:
+
+| Point | encode | decode | What it says |
+| --- | --- | --- | --- |
+| `ccsds_family`, 29 B, first / last of 32 apids | 126 / 255 | 148 / 217 | the last apid pays ~4 ns per packet ahead of it, both ways |
+| `telecommands`, 8 B, first / last of 16, told apart 3 bytes in | 60 / 126 | 92 / 140 | the same, on a family whose first byte is shared |
+| `housekeeping`, 29 B, enum, `little_endian`, calibrated, 12-bit | 194 | 215 | 18 fields at ~11 ns each |
+| `unaligned_lsb_first`, 74 B | 271 | 237 | four `lsb_first` fields and a 64-byte unaligned bit string |
+| `repetition`, 198 B, 32 mixed elements | 634 | 111 | `element_get` 74 ns, `elements_all` 2275 ns |
+| `conditional_all` / `conditional_none`, 37 / 2 B | 179 / 81 | 173 / 123 | |
+| `valof_unaligned`, 203 B | 338 | 371 | a 200-byte payload 5 bits into a byte |
+| `wide`, 148 B, 63 fields of nine shapes | 1010 | 910 | ~15 ns a field |
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.
