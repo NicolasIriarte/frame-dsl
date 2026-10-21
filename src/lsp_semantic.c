@@ -169,6 +169,13 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
     case TOK_EQUALS:
     case TOK_EQUAL_EQUAL:
     case TOK_NOT_EQUAL:
+    case TOK_LESS:
+    case TOK_LESS_EQUAL:
+    case TOK_GREATER:
+    case TOK_GREATER_EQUAL:
+    case TOK_AND_AND:
+    case TOK_OR_OR:
+    case TOK_AMPERSAND:
       type = SEM_OPERATOR;
       break;
     case TOK_LBRACE:

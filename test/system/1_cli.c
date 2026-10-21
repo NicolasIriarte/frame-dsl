@@ -131,6 +131,9 @@ static int us1_tc02_rejects_each_invalid_example_for_its_documented_check(const 
     { "invalid/discriminator_after_condition.fdsl", 11 },
     { "invalid/if_in_repeated_block.fdsl",          32 },
     { "invalid/if_reads_later_field.fdsl",          7  },
+    { "invalid/if_ordering_on_enum.fdsl",           43 },
+    { "invalid/if_mask_too_wide.fdsl",              8  },
+    { "invalid/if_mask_clears_value.fdsl",          8  },
   };
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {

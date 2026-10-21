@@ -33,6 +33,14 @@ typedef enum {
   /** @brief `==` and `!=`, which only a condition compares with, `[ @if: valof(x) == 1; ]` (#12). */
   TOK_EQUAL_EQUAL,
   TOK_NOT_EQUAL,
+  /** @brief The rest of a condition's operators (#126): orderings, `&&`, `||`, and `&` for a mask. */
+  TOK_LESS,
+  TOK_LESS_EQUAL,
+  TOK_GREATER,
+  TOK_GREATER_EQUAL,
+  TOK_AND_AND,
+  TOK_OR_OR,
+  TOK_AMPERSAND,
   TOK_PLUS,
   TOK_MINUS,
   TOK_STAR,

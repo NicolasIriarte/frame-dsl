@@ -296,8 +296,11 @@ reservation on a constant one.
 
 42. A `valof()` -- in a width, a count or a condition -- may name a conditional field only from a
     declaration under the same conditions or stricter ones. Anywhere else it would read a field the
-    frame may not carry. Conditions are compared by what they say, so two groups under the same `@if`
-    count as one.
+    frame may not carry. Conditions are compared by their terms -- what `&&` joins, in an `@if` and in
+    the groups around it -- as written, so two groups under the same `@if` count as one, and a
+    comparison may read what the terms to its left make present (#126).
+43. A field typed by an enum is compared only with `==` and `!=`, and without a mask (#126): its values
+    are names, and an ordering or a bit test would depend on the numbers behind them.
 
 **Shape**
 
@@ -691,7 +694,7 @@ enum's index, resolved when the file loads, as it does a calibration's.
 ## Conditional fields
 
 `[ @if: valof(sec_hdr) == 1; ]` in front of a field, a block's use or an anonymous block (#12) puts it
-on the wire only when the comparison holds.
+on the wire only when the condition holds.
 
 **An attribute, not a declaration.** Presence modifies a declaration rather than describing one, which is
 what an attribute is for, and attaching it as one means it goes in front of anything a group can: a
@@ -701,17 +704,35 @@ it is declared; presence is the exception because it is not layout but a propert
 header may be optional in one packet and always there in another. `if` is then a word only after `@`,
 like every attribute name, and reserves nothing.
 
-**One comparison, nested for AND.** `==` or `!=` against a value, which is a name when the field compared
-is typed by an enum. Nested groups AND their conditions; a second `@if` in one group is an error rather
-than check 34's "the later wins", which here would drop a condition silently. There is no `else`: with a
-single comparison it is always the other operator. Compound conditions are #126.
+**Comparisons of a field with a constant, combined.** Each comparison is `valof(name)`, optionally
+masked with `& number`, against a value with `==`, `!=`, `<`, `<=`, `>` or `>=`; the value is a name when
+the field compared is typed by an enum, which then takes only `==` and `!=` (check 43). `&&`, `||` and
+parentheses combine them (#126). `&` binds tighter than a comparison, unlike C's, where the obvious
+`a & 4 != 0` means `a & (4 != 0)`; `&&` tighter than `||`. No arithmetic and no field against field:
+then every comparison still has a constant to hold to check 8, and the bytecode stays a few
+instructions. Nested groups AND their conditions, as `&&` does; a second `@if` in one group is an error
+rather than check 34's "the later wins", which here would drop a condition silently. There is no `!` and
+no `else`: the opposite of a condition is written out with the other operators.
 
-**Resolved by composition.** A condition is an `AstCondition` chained to the one around it, with the
-field it compares held as a `valof()` expression -- so composition renames it per instance exactly as it
-renames a width, and the checks find what it names exactly as they find a width's reference. Composition
-gives every field its whole chain, re-parented under the condition of the use it arrived through, and
-looks up an enum name in the field it compares. The bytecode gives each field a flat list of
-`(slot, ==/!=, value)`, all of which must hold; a field with none costs the walk one comparison.
+**A chain of terms.** A field's condition is an `AstCondition` chain, every term of which must hold.
+Each `@if` contributes its top-level `&&` operands as terms, and a nested group's terms chain onto the
+ones of the groups around it -- so `@if: a && b;` and `b` nested inside `a` are the same chain, and the
+checks see one shape whatever was written. A term is a comparison, or an `||` (an `&&` inside one) over
+comparisons. Checks 13 and 42 compare chains term by term, structurally and as written: deciding
+whether one condition implies another in general is a satisfiability problem, and "write the same
+condition" is a rule anyone can follow.
+
+**Resolved by composition.** Each comparison holds the field it compares as a `valof()` expression -- so
+composition renames it per instance exactly as it renames a width, and the checks find what it names
+exactly as they find a width's reference. Composition gives every field its whole chain, re-parented
+under the condition of the use it arrived through, and looks up an enum name in the field it compares.
+
+**A jump per comparison.** The bytecode gives each field its comparisons as `(slot, mask, operator,
+value, if true, if false)`, where the last two are the next comparison of the same field's, or the
+answer. `a && b` is `a` going on to `b` when it holds; `a || b` is `a` going on to `b` when it does not.
+That is short-circuit evaluation with no stack and no depth to bound, and a chain of plain comparisons
+is the flat list it was before #126, each one's "true" going on to the next. A field with none costs
+the walk one comparison.
 
 **Presence is worked out, not stored.** A field is present when its conditions hold over the frame's
 values as they are now. That is the same question for a decoded frame and for one being built, it costs

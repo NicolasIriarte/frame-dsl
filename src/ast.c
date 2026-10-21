@@ -164,8 +164,14 @@ const AstEnumItem *ast_enum_item(const AstEnum *enumeration, const char *name) {
 }
 
 bool ast_condition_same(const AstCondition *a, const AstCondition *b) {
-  return a->equal == b->equal && a->value == b->value && a->field != NULL && b->field != NULL
-         && a->field->reference != NULL && b->field->reference != NULL
+  if (a == NULL || b == NULL || a->kind != b->kind) {
+    return false;
+  }
+  if (a->kind != CONDITION_COMPARE) {
+    return ast_condition_same(a->lhs, b->lhs) && ast_condition_same(a->rhs, b->rhs);
+  }
+  return a->op == b->op && a->has_mask == b->has_mask && (!a->has_mask || a->mask == b->mask) && a->value == b->value
+         && a->field != NULL && b->field != NULL && a->field->reference != NULL && b->field->reference != NULL
          && strcmp(a->field->reference, b->field->reference) == 0;
 }
 

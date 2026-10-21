@@ -807,8 +807,9 @@ static void describe_attribute(Buffer *buffer, const Token *name) {
   } else if (spells(name, "if")) {
     put(
       buffer,
-      "**@if**: `valof(name) == value` or `!=` -- what follows is in a frame only when an earlier field has, "
-      "or has not, that value.\n"
+      "**@if**: `valof(name) == value`, or `!=`, `<`, `<=`, `>`, `>=`, with `valof(name) & mask` to test bits, "
+      "combined with `&&`, `||` and parentheses -- what follows is in a frame only when that holds over "
+      "fields already read.\n"
     );
   }
 }
@@ -1238,6 +1239,9 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
     }
   } else if (is(previous, TOK_LPAREN) && is(second, TOK_VALOF)) {
     offer_scalars(&completions, container, line, column);
+  } else if (is(previous, TOK_AND_AND) || is(previous, TOK_OR_OR)) {
+    /* The next comparison of a condition (#126). */
+    offer(&completions, "valof", NAV_KEYWORD, NULL);
   } else if (is(previous, TOK_DOT) && is(second, TOK_IDENT)) {
     char alias[256];
     snprintf(alias, sizeof(alias), "%.*s", (int)second->length, second->text);

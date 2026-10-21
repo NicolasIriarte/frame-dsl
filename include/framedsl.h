@@ -210,9 +210,10 @@ typedef struct {
    */
   const char *enumeration;
 
-  /** @brief For a conditional field (#12), what it is present under, as `valof(sec_hdr) == 1` -- nested
-   * conditions joined by ` && `, outermost first. NULL for a field every frame carries. It points into
-   * the definition.
+  /** @brief For a conditional field (#12), what it is present under, as `valof(sec_hdr) == 1` -- the
+   * conditions of nested groups joined by ` && `, outermost first, each spaced as the formatter spaces it
+   * and an `||` in parentheses when there is more than one (#126). NULL for a field every frame carries.
+   * It points into the definition.
    */
   const char *condition;
 } FramedslField;

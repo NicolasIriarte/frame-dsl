@@ -1,0 +1,37 @@
+# Combined conditions (#126): comparisons joined with `&&` and `||`, ordered with `<`, `<=`, `>` and
+# `>=`, and masked with `&` to test the bits of a flags field.
+#
+# `&` binds tighter than a comparison -- `valof(flags) & 0x1 != 0` is bit 0 of `flags`, not C's
+# `flags & (1 != 0)` -- and `&&` tighter than `||`. A field typed by an enum is compared only with `==`
+# and `!=`: to accept several of its names, write each one.
+
+@bit_order:  msb_first;
+@byte_order: big_endian;
+
+enum Kind: 2 {
+  IDLE;
+  HOUSEKEEPING;
+  EVENT;
+  DUMP;
+};
+
+pkt TM_STATUS {
+  id:      8 = 0x7E;
+  version: 4;
+  flags:   4;
+  kind:    Kind;
+  spare:   6;
+  [ @if: valof(flags) & 0x1 != 0; ]
+  seq:     16;  # bit 0 of flags
+  [ @if: valof(version) >= 2 && valof(version) < 5; ]
+  ext:     8;   # protocol versions 2 to 4
+  [ @if: valof(kind) == HOUSEKEEPING || valof(kind) == EVENT; ]
+  block {
+    n:    8;
+    [ @if: valof(flags) & 0x2 != 0 || valof(version) > 10; ]
+    code: 8;  # also needs the block's own condition
+  };
+  [ @if: (valof(flags) & 0x8 == 0x8 || valof(version) == 0) && valof(kind) != IDLE; ]
+  crc:  16;
+  tail: 8;
+};
