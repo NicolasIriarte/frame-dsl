@@ -19,7 +19,10 @@ There are two tools, for two questions:
 ## The baseline
 
 `bench/baseline.c` generates definitions that vary one thing at a time, with everything else held at a
-small default, and times the public API on each:
+small default, and times the public API on each. The last two dimensions are the exception: no real
+definition looks like one point of the others, so `mix` combines features the way real definitions do,
+and `grid` crosses a field's shape with its alignment and count -- a change that speeds one shape up at
+another's expense shows up there.
 
 | Dimension | What varies | Operations |
 | --- | --- | --- |
@@ -30,6 +33,8 @@ small default, and times the public API on each:
 | `element_shape` | 32 counted 3-byte elements: plain, with a fixed value, `little_endian`, `lsb_first`, sub-byte | the same |
 | `packets` | 1 to 512 packets in the definition; the first and the last declared | encode, decode |
 | `shape` | eight fields of one shape: 3 to 64 bits, sub-byte, `lsb_first`, `little_endian`, calibrated (linear and bytecode) | encode, decode, `set_u64`, `get_u64`, `set_eng`, `get_eng` |
+| `mix` (#130) | definitions written the way real ones are, each combining features: a CCSDS family of 32 apids and a telecommand family of 16 told apart three bytes in (first and last of each); housekeeping with an enum, `little_endian` calibrated and 12-bit calibrated fields; `lsb_first` fields and a bit string off a byte boundary; a counted repetition of mixed members; optional parts all present and all absent; a `valof()` payload off a byte boundary; 63 fields of nine shapes | encode, decode, and `get_u64`, `get_eng`, `set_eng`, `element_get`, `elements_all` where the definition has them |
+| `grid` (#130) | eight or 64 fields of one shape (`u16`, `u12`, `lsb_first` `u16`, `little_endian` `u32`, calibrated `u16`), starting on a byte boundary (`_at0`) or three bits past one (`_at3`); `little_endian` only at 0, since check 10 refuses it off a boundary | encode, decode |
 
 `element_get` is `framedsl_element()` and `framedsl_get_u64()` on one element; `elements_all` is
 `framedsl_count()` and that loop over every element. `build/baseline --dump <dimension>` prints the
