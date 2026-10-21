@@ -153,6 +153,26 @@ half the speed of decode. Against the file before the round: 0 points slower, 47
 An unaligned 4 KiB bit string still costs about 6x the aligned one (161 / 151 ns here), which is a
 `memcpy`; the shift is a handful of instructions a word, two of them variable shifts.
 
+### `lsb_first` scalars by reversal (#108), 2026-10-21
+
+[`performance/2026-10-21-1fbee8d-108.csv`](performance/2026-10-21-1fbee8d-108.csv). An `lsb_first`
+value is its bit-reversal laid down `msb_first`, so it is reversed -- three swaps of ever smaller pieces
+and a byte swap, about ten instructions -- and goes out in the same runs of up to eight bits, at any
+offset. Decode reads the runs and reverses the result.
+
+| Point | Before | After | vs `msb_first` |
+| --- | --- | --- | --- |
+| `shape/u16_lsb_first` encode / decode | 319 / 230 | 136 / 152 | 1.21x / 1.13x (`u16`: 112 / 134) |
+| `shape/u12_lsb_first` encode / decode | 256 / 188 | 136 / 153 | |
+| `grid/u16_lsb_first_at0/64` encode / decode | 2346 / 1392 | 925 / 853 | |
+| `mix/unaligned_lsb_first/74` encode / decode | 202 / 168 | 126 / 150 | (after #105) |
+
+Against the file before the round, 51 points are faster and 2 slower: `size/fixed/384` and `/512`
+encode, by 7%, a `memcpy` this change does not touch. Against #105's run, `fields/u16` decode moved by
+2-8% (32 fields the most), which a second, separate run of both binaries reproduced. Neither is in code
+the change made slower; both look like the layout sensitivity #109 is about, and #106 rewrites that
+path anyway.
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.
