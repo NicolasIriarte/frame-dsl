@@ -140,20 +140,25 @@ static inline void member_put(uint8_t *bytes, uint64_t offset, const MemberInstr
   bits_put(bytes, offset, member->width_bits, value);
 }
 
-/** @brief How a field of a packet's known prefix moves (#106), worked out once at compile time. */
+/**
+ * @brief How a field of a packet's known prefix moves (#106), worked out once at compile time.
+ *
+ * The walk tests these in this order, most common first, with an `if` per kind rather than a `switch`:
+ * with a kind per combination of orders the switch compiled to a jump table, an indirect branch per
+ * field, and decoding slowed by up to a third across the board.
+ */
 typedef enum {
+  /** @brief A scalar of whole bytes on a byte boundary, `msb_first` and big-endian: its bytes as they are. */
+  COPY_BYTES,
   /** @brief Anything else: write_scalar() / read_scalar(), which handle every shape. */
   COPY_GENERAL,
-  /** @brief A scalar of whole bytes on a byte boundary, `msb_first` and big-endian. */
-  COPY_BIG_ENDIAN,
-  /** @brief The same, `little_endian`. */
-  COPY_LITTLE_ENDIAN,
-  /** @brief Whole bytes on a byte boundary, `lsb_first`: the bytes, bit-reversed (#108). */
-  COPY_REVERSED,
-  /** @brief The same, `little_endian` as well. */
-  COPY_REVERSED_LITTLE_ENDIAN,
+  /** @brief Whole bytes on a byte boundary, `little_endian`: its bytes the other way round. */
+  COPY_BYTES_SWAPPED,
   /** @brief A fixed-width bit string: copied, or shifted off a boundary. */
   COPY_STRING,
+  /** @brief Whole bytes on a byte boundary, `lsb_first` (#108): each byte bit-reversed by table, after
+   * a byte swap when the instruction's `copy_swap` says it is `little_endian` too. */
+  COPY_BYTES_REVERSED,
 } CopyKind;
 
 /**
@@ -215,6 +220,8 @@ typedef struct {
   /** @brief For a field of the packet's known prefix (#106): where it starts, and how it moves. */
   uint64_t offset_bits;
   CopyKind copy;
+  /** @brief For COPY_BYTES_REVERSED: `little_endian` as well. */
+  bool copy_swap;
 } FieldInstruction;
 
 typedef struct {
