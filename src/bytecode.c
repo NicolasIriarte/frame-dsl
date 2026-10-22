@@ -184,6 +184,52 @@ static const ElementProgram *element_of(const Program *program, const AstPacket 
   return NULL;
 }
 
+/* The element's fixed values laid into one element's bytes, kept as just the bytes they touch (#101).
+ * Only for an element of whole bytes, which composition makes every repeated block. */
+static bool element_fixed_image(ElementProgram *element) {
+  for (size_t m = 0; m < element->member_count; ++m) {
+    element->fixed_members += element->members[m].has_fixed;
+  }
+  if (element->bits % 8 != 0 || element->fixed_members == 0) {
+    return true;
+  }
+  const size_t bytes = (size_t)(element->bits / 8);
+  uint8_t *mask = calloc(bytes == 0 ? 1 : bytes, 1);
+  uint8_t *value = calloc(bytes == 0 ? 1 : bytes, 1);
+  bool ok = mask != NULL && value != NULL;
+  for (size_t m = 0; ok && m < element->member_count; ++m) {
+    const MemberInstruction *member = &element->members[m];
+    if (member->has_fixed) {
+      bits_put(mask, member->offset_bits, member->width_bits, UINT64_MAX);
+      member_put(value, member->offset_bits, member, member->fixed);
+    }
+  }
+  size_t count = 0;
+  for (size_t i = 0; ok && i < bytes; ++i) {
+    count += mask[i] != 0;
+  }
+  uint8_t *image = ok && count > 0 ? malloc(count * (sizeof(uint32_t) + 2)) : NULL;
+  if (image != NULL) {
+    element->fixed_count = count;
+    element->fixed_at = (uint32_t *)image;
+    element->fixed_mask = image + count * sizeof(uint32_t);
+    element->fixed_value = element->fixed_mask + count;
+    size_t next = 0;
+    for (size_t i = 0; i < bytes; ++i) {
+      if (mask[i] != 0) {
+        element->fixed_at[next] = (uint32_t)i;
+        element->fixed_mask[next] = mask[i];
+        element->fixed_value[next] = value[i];
+        next += 1;
+      }
+    }
+  }
+  ok = ok && (count == 0 || image != NULL);
+  free(mask);
+  free(value);
+  return ok;
+}
+
 static bool compile_element(ElementProgram *element, const AstFile *file, const AstPacket *block) {
   element->block = block;
   element->member_count = block->field_count;
@@ -211,7 +257,7 @@ static bool compile_element(ElementProgram *element, const AstFile *file, const 
     offset += width;
   }
   element->bits = offset;
-  return true;
+  return element_fixed_image(element);
 }
 
 static bool compile_elements(Program *program, const AstFile *file) {
@@ -318,6 +364,9 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .byte_order = field->byte_order,
         .element = field->element != NULL ? element_of(program, field->element) : NULL,
       };
+      if (instruction->element != NULL && instruction->element->bits > 0) {
+        instruction->element_capacity = instruction->max_bits / instruction->element->bits;
+      }
 
       /* Outermost last, as the chain runs; the order does not matter to an AND. */
       if (field->condition != NULL) {
@@ -370,6 +419,7 @@ void program_free(Program *program) {
   }
   for (size_t i = 0; i < program->element_count; ++i) {
     free(program->elements[i].members);
+    free(program->elements[i].fixed_at);
   }
   free(program->elements);
   /* The program *is* the block, so this frees the instructions and the code with it. */

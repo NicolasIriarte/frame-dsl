@@ -26,27 +26,12 @@ static uint64_t read_scalar(
   /* The stream holds the value's bits in order, so they come in runs: what is left of the current
    * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. lsb_first is the same
    * runs, reversed afterwards (#108). */
-  uint64_t value = 0;
-  uint64_t position = offset;
-  uint64_t remaining = width;
-  while (remaining > 0) {
-    uint64_t used = position % 8;
-    uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-    uint64_t bits = ((uint64_t)buffer[position / 8] >> (8 - used - run)) & ((1u << run) - 1);
-    value = (value << run) | bits;
-    position += run;
-    remaining -= run;
-  }
+  uint64_t value = bits_get(buffer, offset, width);
   if (bit_order == BIT_ORDER_LSB_FIRST && width > 0) {
     value = bits_reverse(value, width);
   }
-
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
-    uint64_t swapped = 0;
-    for (uint64_t byte = 0; byte < width / 8; ++byte) {
-      swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
-    }
-    value = swapped;
+    value = bits_swap(value, width);
   }
   return value;
 }

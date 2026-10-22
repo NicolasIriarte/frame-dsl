@@ -173,6 +173,30 @@ encode, by 7%, a `memcpy` this change does not touch. Against #105's run, `field
 the change made slower; both look like the layout sensitivity #109 is about, and #106 rewrites that
 path anyway.
 
+### Repetition elements (#101), 2026-10-22
+
+[`performance/2026-10-22-4b1b66a-101.csv`](performance/2026-10-22-4b1b66a-101.csv). A member is read and
+written through the routines ordinary fields use, now in `src/bits.h`, instead of a bit at a time; those
+gather a field's bytes into one word and shift once, and read a byte-aligned 8-, 16-, 32- or 64-bit
+field straight off its bytes. An element's fixed values are worked out at load as a few masked bytes,
+stamped into every element of a repetition on a byte boundary. The capacity is computed once, and a
+member id is checked in one walk. Against the file before the round: 0 points slower, 358 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `element_shape/bench_sample/32` encode | 565 | 116 | 4.9x |
+| `mix/repetition/198` encode | 634 | 131 | 4.8x |
+| `elements/counted/1024` encode | 15900 | 1914 | 8.3x |
+| `element_bytes/u8_members/32` encode | 1066 | 71 | 15x: no fixed values, nothing to stamp |
+| `element_get` (any shape) | 73.5 | 21.3 | 3.5x |
+| `elements_all`, 1024 elements | 71183 | 18424 | 3.9x |
+| `get_u64`, an ordinary field | 10.1 | 8.5 | the member path is out of line, so this one's entry is lean |
+
+#101 asked for an element read within 2x of an ordinary `get_u64`. It is 2.5x the ordinary read as it is
+now, and 2.1x the one before this change. What is left is the walk itself: `framedsl_element()` and
+the read each go from the definition to the packet, the field, the element and the member, a chain of
+dependent loads; an ordinary read does it once.
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.

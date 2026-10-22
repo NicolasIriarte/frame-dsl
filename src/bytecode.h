@@ -23,6 +23,7 @@
 #include <stdint.h>
 
 #include "ast.h"
+#include "bits.h"
 #include "check.h"
 #include "diag.h"
 
@@ -97,7 +98,47 @@ typedef struct {
   MemberInstruction *members;
   size_t member_count;
   uint64_t bits;
+  /**
+   * @brief The element's fixed values as bytes (#101): of the element's bytes, the `fixed_count` that
+   * hold a fixed bit, at `fixed_at`, with which of their bits are fixed in `fixed_mask` and what to in
+   * `fixed_value`. Encode stamps them into every element of a repetition on a byte boundary, rather
+   * than writing each fixed member of each element in turn. One allocation, at `fixed_at`.
+   */
+  size_t fixed_count;
+  /** @brief How many members are fixed: none is common, and leaves encode nothing to stamp. */
+  size_t fixed_members;
+  uint32_t *fixed_at;
+  uint8_t *fixed_mask;
+  uint8_t *fixed_value;
 } ElementProgram;
+
+/** @brief Whether a member's byte order applies: whole bytes, on a byte boundary within its element. */
+static inline bool member_swapped(const MemberInstruction *member) {
+  return member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0;
+}
+
+/**
+ * @brief A member's value out of wire bytes at bit `offset`, in the order encode.c lays a field down and
+ * decode.c reads it back: reversed for lsb_first, swapped for little_endian (#101).
+ */
+static inline uint64_t member_get(const uint8_t *bytes, uint64_t offset, const MemberInstruction *member) {
+  uint64_t value = bits_get(bytes, offset, member->width_bits);
+  if (member->bit_order == BIT_ORDER_LSB_FIRST && member->width_bits > 0) {
+    value = bits_reverse(value, member->width_bits);
+  }
+  return member_swapped(member) ? bits_swap(value, member->width_bits) : value;
+}
+
+/** @brief Writes a member into wire bytes at bit `offset`, in its own orders, clearing what was there. */
+static inline void member_put(uint8_t *bytes, uint64_t offset, const MemberInstruction *member, uint64_t value) {
+  if (member_swapped(member)) {
+    value = bits_swap(value, member->width_bits);
+  }
+  if (member->bit_order == BIT_ORDER_LSB_FIRST && member->width_bits > 0) {
+    value = bits_reverse(value, member->width_bits);
+  }
+  bits_put(bytes, offset, member->width_bits, value);
+}
 
 /**
  * @brief One field. Everything the runtime needs for it, flat.
@@ -143,6 +184,9 @@ typedef struct {
    * the fixed values its elements carry, which encode writes into every element.
    */
   const ElementProgram *element;
+  /** @brief For a repetition, the most elements it has room for: what it reserves, in whole elements.
+   * Kept here so that reaching an element does not work it out again on every call (#101). */
+  uint64_t element_capacity;
 
   /**
    * @brief What the field's presence depends on (#12): every condition must hold, over values already
