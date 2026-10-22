@@ -177,6 +177,41 @@ static bool resolve_width(
   return true;
 }
 
+/* The known prefix (#106): every field at its place, straight from the arena -- or, for a fixed one,
+ * from the definition -- with no width to work out and no condition to ask. */
+static void encode_prefix(FramedslFrame *frame, const PacketProgram *program, size_t base) {
+  for (size_t f = 0; f < program->prefix_count; ++f) {
+    const FieldInstruction *instruction = &program->fields[f];
+    const uint8_t *from = frame->arena + frame->slots[base + f].offset;
+    uint64_t value = instruction->fixed;
+    if (instruction->is_scalar && !instruction->has_fixed) {
+      memcpy(&value, from, sizeof(value));
+    }
+    uint8_t *at = frame->output + instruction->offset_bits / 8;
+    switch (instruction->copy) {
+    case COPY_BIG_ENDIAN:
+      bits_store_be(at, (unsigned)(instruction->width_bits / 8), value);
+      break;
+    case COPY_LITTLE_ENDIAN:
+      bits_store_be(at, (unsigned)(instruction->width_bits / 8), bits_swap(value, instruction->width_bits));
+      break;
+    case COPY_STRING:
+      write_bytes(frame->output, instruction->offset_bits, from, (size_t)(instruction->width_bits / 8));
+      break;
+    case COPY_GENERAL:
+      write_scalar(
+        frame->output,
+        instruction->offset_bits,
+        instruction->width_bits,
+        value,
+        instruction->bit_order,
+        instruction->byte_order
+      );
+      break;
+    }
+  }
+}
+
 const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length, FramedslStatus *status) {
   FramedslStatus ignored = FRAMEDSL_OK;
   if (status == NULL) {
@@ -199,18 +234,28 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
   const size_t base = frame->packet_base[index];
 
   /* Cleared rather than written over, so a field narrower than the one a previous encode put there
-   * cannot leave a bit of it behind. */
-  memset(frame->output, 0, frame->output_size);
+   * cannot leave a bit of it behind -- as much as this packet can take, not the longest packet's. */
+  memset(frame->output, 0, program->max_bytes);
 
   uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET];
   if (program->field_count > FRAMEDSL_MAX_FIELDS_PER_PACKET) {
     *status = FRAMEDSL_ERROR_RANGE;
     return NULL;
   }
-  gather_slots(frame, index, program->field_count, slots);
+  /* The values a valof() width or a condition reads, gathered only where one does (#106) -- and before
+   * the prefix, not after: gathered after it, a short conditional packet encoded a third slower, for
+   * no more work. */
+  if (program->reads_values) {
+    gather_slots(frame, index, program->field_count, slots);
+  }
+  encode_prefix(frame, program, base);
+  if (program->prefix_count == program->field_count) {
+    *length = (size_t)(program->prefix_bits / 8);
+    return frame->output;
+  }
 
-  uint64_t offset = 0;
-  for (size_t f = 0; f < program->field_count; ++f) {
+  uint64_t offset = program->prefix_bits;
+  for (size_t f = program->prefix_count; f < program->field_count; ++f) {
     const FieldInstruction *instruction = &program->fields[f];
     const Slot *slot = &frame->slots[base + f];
 
@@ -230,7 +275,9 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
        * identify itself, whatever they put in the slot. */
       write_scalar(frame->output, offset, width, instruction->fixed, instruction->bit_order, instruction->byte_order);
     } else if (instruction->is_scalar) {
-      write_scalar(frame->output, offset, width, slots[f], instruction->bit_order, instruction->byte_order);
+      uint64_t value;
+      memcpy(&value, frame->arena + slot->offset, sizeof(value));
+      write_scalar(frame->output, offset, width, value, instruction->bit_order, instruction->byte_order);
     } else if (instruction->element != NULL) {
       /* A repetition (#55): as many elements as the count says, straight from the slot. Unlike a bit
        * string handed over whole, its elements are set one member at a time, so there is no length to

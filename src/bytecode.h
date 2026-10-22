@@ -140,6 +140,18 @@ static inline void member_put(uint8_t *bytes, uint64_t offset, const MemberInstr
   bits_put(bytes, offset, member->width_bits, value);
 }
 
+/** @brief How a field of a packet's known prefix moves (#106), worked out once at compile time. */
+typedef enum {
+  /** @brief Anything else: write_scalar() / read_scalar(), which handle every shape. */
+  COPY_GENERAL,
+  /** @brief A scalar of whole bytes on a byte boundary, `msb_first` and big-endian. */
+  COPY_BIG_ENDIAN,
+  /** @brief The same, `little_endian`. */
+  COPY_LITTLE_ENDIAN,
+  /** @brief A fixed-width bit string: copied, or shifted off a boundary. */
+  COPY_STRING,
+} CopyKind;
+
 /**
  * @brief One field. Everything the runtime needs for it, flat.
  *
@@ -195,11 +207,29 @@ typedef struct {
    */
   const ConditionInstruction *conditions;
   uint32_t condition_count;
+
+  /** @brief For a field of the packet's known prefix (#106): where it starts, and how it moves. */
+  uint64_t offset_bits;
+  CopyKind copy;
 } FieldInstruction;
 
 typedef struct {
   const FieldInstruction *fields;
   size_t field_count;
+  /**
+   * @brief The packet's known prefix (#106): its first `prefix_count` fields sit at a constant offset,
+   * have a constant width and no condition, and are no repetition, and end at bit `prefix_bits`. For
+   * most packets that is every field. The walk moves them without asking any of those questions, and a
+   * decode checks the frame's length against the prefix once instead of field by field.
+   */
+  size_t prefix_count;
+  uint64_t prefix_bits;
+  /** @brief The most bytes a frame of this packet can take, every field at its reservation: what an
+   * encode clears before it starts. */
+  size_t max_bytes;
+  /** @brief Whether anything reads another field's value as the walk goes: a `valof()` width or a
+   * condition. Without one, encode does not gather the values first. */
+  bool reads_values;
 } PacketProgram;
 
 typedef struct {

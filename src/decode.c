@@ -140,19 +140,68 @@ const char *framedsl_decode(
     return NULL;
   }
 
+  /* The known prefix (#106) fits the frame or it does not, and that is one comparison: past it, each
+   * of its fields is read at its place with nothing more to check. */
+  const bool prefix_fits = program->prefix_bits <= (uint64_t)length * 8;
+  const bool all_prefix = program->prefix_count == program->field_count;
+
   /* The walk writes each field into its slot as it goes, so a walk that gives up part-way would
    * otherwise leave this packet holding half of one frame and half of another. Put it aside first
    * and put it back on every way out below: a failed decode changes nothing, which is what lets a
    * read be a plain read. Only this packet can be disturbed -- matches() above reads the buffer
-   * without writing, and check 12 means no second packet is ever tried. */
-  frame_snapshot_packet(frame, index);
+   * without writing, and check 12 means no second packet is ever tried. A packet that is all known
+   * prefix, in a frame long enough for it, cannot give up part-way, and has nothing to put aside. */
+  if (!(all_prefix && prefix_fits)) {
+    frame_snapshot_packet(frame, index);
+  }
 
-  /* Filled in as the walk goes, because a valof() width reads a field this walk has already decoded
-   * -- which check 7 guarantees is one it has passed. */
-  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET] = { 0 };
+  /* Filled in as the walk goes, because a valof() width or a condition reads a field this walk has
+   * already decoded -- which check 7 guarantees is one it has passed, and check 16 a scalar, whose
+   * entry is always written before it can be read. */
+  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET];
 
+  size_t first = 0;
   uint64_t offset = 0;
-  for (size_t f = 0; f < program->field_count; ++f) {
+  if (prefix_fits) {
+    for (size_t f = 0; f < program->prefix_count; ++f) {
+      const FieldInstruction *instruction = &program->fields[f];
+      Slot *slot = &frame->slots[base + f];
+      const uint8_t *at = buffer + instruction->offset_bits / 8;
+      uint64_t value;
+      switch (instruction->copy) {
+      case COPY_BIG_ENDIAN:
+        value = bits_load_be(at, (unsigned)(instruction->width_bits / 8));
+        break;
+      case COPY_LITTLE_ENDIAN:
+        value = bits_swap(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits);
+        break;
+      case COPY_STRING:
+        read_bytes(
+          buffer, instruction->offset_bits, frame->arena + slot->offset, (size_t)(instruction->width_bits / 8)
+        );
+        slots[f] = 0;
+        continue;
+      case COPY_GENERAL:
+      default:
+        value = read_scalar(
+          buffer, instruction->offset_bits, instruction->width_bits, instruction->bit_order, instruction->byte_order
+        );
+        break;
+      }
+      slots[f] = value;
+      memcpy(frame->arena + slot->offset, &value, sizeof(value));
+    }
+    first = program->prefix_count;
+    offset = program->prefix_bits;
+  }
+  if (all_prefix && prefix_fits) {
+    if (consumed != NULL) {
+      *consumed = (size_t)(offset / 8);
+    }
+    return framedsl_packet_name(definition, index);
+  }
+
+  for (size_t f = first; f < program->field_count; ++f) {
     const FieldInstruction *instruction = &program->fields[f];
     Slot *slot = &frame->slots[base + f];
 
@@ -198,6 +247,7 @@ const char *framedsl_decode(
       memcpy(frame->arena + slot->offset, &value, sizeof(value));
     } else {
       size_t bytes = (size_t)(width / 8);
+      slots[f] = 0;
       read_bytes(buffer, offset, frame->arena + slot->offset, bytes);
       /* Whatever an earlier frame left past this one's length is cleared, so a shorter payload never
        * shows the tail of a longer one. */

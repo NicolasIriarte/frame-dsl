@@ -344,6 +344,13 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 
     packets[p].fields = &fields[next_field];
     packets[p].field_count = packet->field_count;
+    bool in_prefix = true;
+    uint64_t max_bits = 0;
+    for (size_t f = 0; f < packet->field_count; ++f) {
+      const FieldLayout *slot = &packet_layout->fields[f];
+      max_bits += slot->variable ? slot->max_bits : slot->width_bits;
+    }
+    packets[p].max_bytes = (size_t)((max_bits + 7) / 8);
 
     for (size_t f = 0; f < packet->field_count; ++f) {
       const AstField *field = &packet->fields[f];
@@ -366,6 +373,25 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
       };
       if (instruction->element != NULL && instruction->element->bits > 0) {
         instruction->element_capacity = instruction->max_bits / instruction->element->bits;
+      }
+
+      /* The known prefix (#106): it ends at the first field whose place or presence a frame decides,
+       * and at the first repetition, whose fixed values the walk stamps on its own. */
+      if (slot->variable || field->condition != NULL) {
+        packets[p].reads_values = true;
+      }
+      in_prefix =
+        in_prefix && !slot->variable && slot->offset_known && field->condition == NULL && instruction->element == NULL;
+      if (in_prefix) {
+        packets[p].prefix_count = f + 1;
+        packets[p].prefix_bits = slot->offset_bits + slot->width_bits;
+        instruction->offset_bits = slot->offset_bits;
+        const bool whole_bytes = slot->offset_bits % 8 == 0 && slot->width_bits % 8 == 0 && slot->width_bits > 0;
+        if (!slot->is_scalar) {
+          instruction->copy = COPY_STRING;
+        } else if (whole_bytes && field->bit_order == BIT_ORDER_MSB_FIRST) {
+          instruction->copy = field->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? COPY_LITTLE_ENDIAN : COPY_BIG_ENDIAN;
+        }
       }
 
       /* Outermost last, as the chain runs; the order does not matter to an AND. */
