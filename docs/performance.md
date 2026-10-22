@@ -13,8 +13,10 @@ There are two tools, for two questions:
 - **`make bench`** times a dozen fixed operations, once each, on one hand-written definition: seconds,
   enough to see a gross regression. Its history is the tables further down.
 - **`make baseline`** (#102) sweeps generated definitions and reports a distribution per point: about
-  7.5 minutes, and the one to use to decide whether a change to the runtime is worth making. See
+  8 minutes, and the one to use to decide whether a change to the runtime is worth making. See
   [The baseline](#the-baseline) next.
+- **`make layout`** (#109) times one decode with the stack and the frame's bytes moved across a page:
+  seconds, for whether a change made decoding sensitive to where memory sits.
 
 ## The baseline
 
@@ -79,13 +81,22 @@ shared runner is noise, and it takes minutes.
 (`--threshold`) *and* the two runs' p10-p90 ranges do not overlap; everything else is within noise.
 It warns when the files differ in machine, governor, compiler, flags or mode. It always exits 0.
 
+### Expected performance
+
+[`performance/2026-10-22-b707e79.csv`](performance/2026-10-22-b707e79.csv) is what the runtime is expected
+to cost today: the full baseline at the end of the performance round (#130), on the i5-9400T below with
+gcc 15.2 at `-O2`. It is the one file to compare against -- `scripts/perf_compare.py
+docs/performance/2026-10-22-b707e79.csv build/performance/<yours>.csv` -- and a point it reports as slower,
+on the same machine, is a regression to explain. On another machine, take a run of the commit it was
+measured at first, and compare against that.
+
 ### When to run it
 
 Before and after any change to the language, the layout, the bytecode, or the encode/decode walk --
 anything under `src/` that a frame passes through -- on the same machine, in the same state. Keep the
-before file. A change proposed as a speed-up is backed by a comparison, not a single run. Record a new
-baseline here when a change that moves numbers lands: copy its CSV into `docs/performance/` and update
-the summary below.
+before file until the change lands. A change proposed as a speed-up is backed by a comparison, not a
+single run. When a change that moves numbers lands, its run becomes the expected performance: replace the
+file above with it, and update the summary below.
 
 ### First baseline, 2026-09-24
 
@@ -110,14 +121,40 @@ runtime at `4d627c6`), same i5-9400T as below, gcc 13.3 at `-O2`, `powersave` go
 | `element_get` | 60 | whatever the element's size or shape |
 | `elements_all`, 1024 elements | 59875 | ~58 ns an element, 500x the decode |
 
+### The performance round, before and after (#130), 2026-10-22
+
+[`performance/2026-10-22-b707e79.csv`](performance/2026-10-22-b707e79.csv), at the end of the round
+(#105, #108, #101, #106, #107, #109), against the run at `944c7b9` before it, on the same machine,
+compiler and flags: **0 points slower, 474 faster, 9 within noise**, of 483. Per dimension, by
+`scripts/perf_compare.py`'s rule, with the median speed-up over every point and operation in it:
+
+| Dimension | Points | Faster | Slower | Within noise | Median speed-up | Largest |
+| --- | --- | --- | --- | --- | --- | --- |
+| `size` | 102 | 97 | 0 | 5 | 1.6x | 6.6x, `fixed_unaligned/4096` decode |
+| `fields` | 64 | 64 | 0 | 0 | 1.3x | 3.2x, `u16/1` decode |
+| `elements` | 88 | 88 | 0 | 0 | 3.4x | 8.6x, `const/512` encode |
+| `element_bytes` | 40 | 40 | 0 | 0 | 2.9x | 15.2x, `u8_members/32` encode |
+| `element_shape` | 28 | 28 | 0 | 0 | 3.4x | 7.7x, `fixed/32` encode |
+| `packets` | 40 | 40 | 0 | 0 | 2.4x | 39.6x, `last/512` encode |
+| `shape` | 56 | 54 | 0 | 2 | 1.2x | 6.3x, `u64_little_endian/8` decode |
+| `mix` | 29 | 27 | 0 | 2 | 2.1x | 5.0x, `repetition/198` encode |
+| `grid` | 36 | 36 | 0 | 0 | 2.0x | 5.6x, `u16_lsb_first_at0/64` encode |
+
+`fields` and `shape` have the lowest medians because half their points are `get_u64` and `set_u64`,
+which were a handful of nanoseconds to start with. The sections below are the round step by step, one
+per change, with their numbers; only the end state's file is kept. Two things the steps record that the
+end state hides: a byte-aligned `lsb_first` field needed its own copy, or #106's speed-up for `msb_first`
+reopened the gap #108 had closed (1.7x, against #108's 1.5x); and one shape of that copy, a `switch` over a
+kind per combination of orders, compiled to a jump table that slowed every decode by up to a third.
+
 ### Before the performance round, 2026-10-21
 
-[`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv): `944c7b9`,
-whose runtime is `main`'s at v0.1.0, the first run with `mix` and `grid` (#130). Same i5-9400T, but
+Measured at `944c7b9`, `main`'s runtime at v0.1.0, in the first run with `mix` and `grid` (#130); the file
+is not kept, only the numbers below. Same i5-9400T, but
 Linux 7.0 and gcc 15.2 where the first baseline had 6.8 and 13.3, and the runtime has gained conditional
 fields (#12) since: every accessor now asks whether its field is present. 191 of the 418 points the two
 files share are slower than in the first baseline and 6 faster -- every `get_u64` by 32%, 7.6 to 10.1
-ns -- and nothing tells those three changes apart. So this file, not the first, is what the performance round
+ns -- and nothing tells those three changes apart. So this run, not the first, is what the performance round
 (#105, #108, #101, #106, #107, #109) is measured against.
 
 What the combinations cost, medians in ns:
@@ -135,12 +172,12 @@ What the combinations cost, medians in ns:
 
 ### Bit strings off a byte boundary a word at a time (#105), 2026-10-21
 
-[`performance/2026-10-21-57c60cb-105.csv`](performance/2026-10-21-57c60cb-105.csv). Off a byte
+Measured at `57c60cb`; only the numbers below are kept. Off a byte
 boundary, a bit string now moves eight bytes a step, two steps a loop, instead of one byte: the source
 as a big-endian word shifted by the offset. Encode carries the bits spilling into the next byte in a
 register rather than OR'ing them into memory -- a first version did that, and every step's one-byte
 store was read back by the next step's eight-byte load, which cannot be forwarded and stalled encode at
-half the speed of decode. Against the file before the round: 0 points slower, 47 faster.
+half the speed of decode. Against the run before the round: 0 points slower, 47 faster.
 
 | Point | Before | After | |
 | --- | --- | --- | --- |
@@ -155,7 +192,7 @@ An unaligned 4 KiB bit string still costs about 6x the aligned one (161 / 151 ns
 
 ### `lsb_first` scalars by reversal (#108), 2026-10-21
 
-[`performance/2026-10-21-1fbee8d-108.csv`](performance/2026-10-21-1fbee8d-108.csv). An `lsb_first`
+Measured at `1fbee8d`; only the numbers below are kept. An `lsb_first`
 value is its bit-reversal laid down `msb_first`, so it is reversed -- three swaps of ever smaller pieces
 and a byte swap, about ten instructions -- and goes out in the same runs of up to eight bits, at any
 offset. Decode reads the runs and reverses the result.
@@ -167,7 +204,7 @@ offset. Decode reads the runs and reverses the result.
 | `grid/u16_lsb_first_at0/64` encode / decode | 2346 / 1392 | 925 / 853 | |
 | `mix/unaligned_lsb_first/74` encode / decode | 202 / 168 | 126 / 150 | (after #105) |
 
-Against the file before the round, 51 points are faster and 2 slower: `size/fixed/384` and `/512`
+Against the run before the round, 51 points are faster and 2 slower: `size/fixed/384` and `/512`
 encode, by 7%, a `memcpy` this change does not touch. Against #105's run, `fields/u16` decode moved by
 2-8% (32 fields the most), which a second, separate run of both binaries reproduced. Neither is in code
 the change made slower; both look like the layout sensitivity #109 is about, and #106 rewrites that
@@ -175,12 +212,12 @@ path anyway.
 
 ### Repetition elements (#101), 2026-10-22
 
-[`performance/2026-10-22-4b1b66a-101.csv`](performance/2026-10-22-4b1b66a-101.csv). A member is read and
+Measured at `4b1b66a`; only the numbers below are kept. A member is read and
 written through the routines ordinary fields use, now in `src/bits.h`, instead of a bit at a time; those
 gather a field's bytes into one word and shift once, and read a byte-aligned 8-, 16-, 32- or 64-bit
 field straight off its bytes. An element's fixed values are worked out at load as a few masked bytes,
 stamped into every element of a repetition on a byte boundary. The capacity is computed once, and a
-member id is checked in one walk. Against the file before the round: 0 points slower, 358 faster.
+member id is checked in one walk. Against the run before the round: 0 points slower, 358 faster.
 
 | Point | Before | After | |
 | --- | --- | --- | --- |
@@ -199,7 +236,7 @@ dependent loads; an ordinary read does it once.
 
 ### The per-field cost (#106), 2026-10-22
 
-[`performance/2026-10-22-8cda2dc-106.csv`](performance/2026-10-22-8cda2dc-106.csv). Profiled first, and
+Measured at `8cda2dc`; only the numbers below are kept. Profiled first, and
 written up on #106: gprof, since `perf` is not allowed on this machine. Per field, decode asked whether
 the field was present, worked out its width and checked it against the buffer; encode first copied every
 value into an array only `valof()` widths and conditions read; and decode put the whole packet aside
@@ -208,7 +245,7 @@ constant offset, of a constant width, without a condition, which is every field 
 worked out at load, with each field's offset and how it moves. Decode checks the frame's length against
 the prefix once and reads it with no per-field checks, and a packet that is all prefix is not put aside:
 past that one check it cannot fail. Encode writes the prefix straight from the arena, and clears only what
-its packet can take. Against the file before the round: 0 points slower, 469 faster.
+its packet can take. Against the run before the round: 0 points slower, 469 faster.
 
 | Point | Before | After | |
 | --- | --- | --- | --- |
@@ -225,7 +262,7 @@ went from 91 to 110 ns, still a fifth of where it started.
 
 ### Finding the packet (#107), 2026-10-22
 
-[`performance/2026-10-22-c7af840-107.csv`](performance/2026-10-22-c7af840-107.csv). A definition carries
+Measured at `c7af840`; only the numbers below are kept. A definition carries
 an index built at load (`src/dispatch.c`). Names are hashed, so an encode costs the same whichever packet
 it names. For decode, the bits every identifiable packet fixes, over the bytes all their discriminators
 cover, are a key -- usually an id, a type or an apid -- and packets are grouped by their value under it:
@@ -247,6 +284,39 @@ slower, for code those never run; the keyed search is out of line, and their dec
 Against #106's run some one-packet decodes still moved, either way -- `shape/u64_little_endian` 18%
 slower, `shape/u8` 15% faster -- in code this change did not touch, which a second, separate run of both
 binaries reproduced. That is #109's question.
+
+### Why decode time moved with memory layout (#109), 2026-10-22
+
+The first baseline saw one decode, `size/fixed/256`, measure anything from 67 to 86 ns from one process
+to the next, and not move with address randomisation off: the reason the baseline pools 20 processes.
+`perf` is not allowed on this machine, so the measurement is of decode time against where things sit,
+one hypothesis at a time, written up on #109. On main's runtime before the round:
+
+- **Across processes** the heap is laid out the same every time: the frame and the caller's buffer land
+  at the same page offsets in every run. Only the stack moves -- and 80 runs spread from 66 to 103 ns.
+- **The caller's buffer against the frame's own buffers**, the obvious suspect, is not it: moving the
+  buffer across a page in one process moves the decode by 5%.
+- **The stack is**: moving it across a page moves the decode by 13% in one process, with a slow band and
+  a fast one. Every decode cleared a 2 KB array of field values on the stack and wrote an entry per field,
+  while reading the frame and writing the arena on the heap -- a store and a load to addresses the same
+  modulo 4096 cannot be told apart early, and the load waits.
+
+#106 stopped clearing the array, and a decode of a fixed-layout packet no longer puts its old values
+aside. After it, the same decode spreads 23.4-25.2 ns over 20 processes, and moving the stack or the
+buffer across a page moves it 4-7%. The baselines' spread for decode, p10-p90 as a share of the median:
+
+| | Before the round | After #107 |
+| --- | --- | --- |
+| `size/fixed` decode, mean / worst | 20.7% / 31.6% | 7.2% / 8.8% |
+| `size/valof` decode, mean / worst | 13.1% / 20.7% | 5.8% / 7.2% |
+| every decode point, mean / worst | 14.4% / 31.8% | 6.5% / 12.0% |
+| `size/fixed` encode, which never moved | 7.1% / 15.7% | 6.9% / 15.9% |
+
+**`make layout`** (`bench/layout.c`) repeats the in-process half: one decode with the stack, then the
+frame's bytes, moved 64 bytes at a time across a page. A change that brings the sensitivity back shows up
+there as a spread well past 7%. The baseline still pools 20 processes; the cost is the same, and code
+alignment still moves single points between *builds* -- by up to 18% this round, in code a change did not
+touch -- which no number of processes averages out.
 
 ## `make bench`: first numbers, 2026-09-21
 
