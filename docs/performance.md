@@ -112,6 +112,33 @@ runtime at `4d627c6`), same i5-9400T as below, gcc 13.3 at `-O2`, `powersave` go
 | `element_get` | 60 | whatever the element's size or shape |
 | `elements_all`, 1024 elements | 59875 | ~58 ns an element, 500x the decode |
 
+### The performance round, before and after (#130), 2026-10-22
+
+[`performance/2026-10-22-b707e79-after.csv`](performance/2026-10-22-b707e79-after.csv), at the end of the
+round (#105, #108, #101, #106, #107, #109), against
+[`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv), the same machine,
+compiler and flags: **0 points slower, 474 faster, 9 within noise**, of 483. Per dimension, by
+`scripts/perf_compare.py`'s rule, with the median speed-up over every point and operation in it:
+
+| Dimension | Points | Faster | Slower | Within noise | Median speed-up | Largest |
+| --- | --- | --- | --- | --- | --- | --- |
+| `size` | 102 | 97 | 0 | 5 | 1.6x | 6.6x, `fixed_unaligned/4096` decode |
+| `fields` | 64 | 64 | 0 | 0 | 1.3x | 3.2x, `u16/1` decode |
+| `elements` | 88 | 88 | 0 | 0 | 3.4x | 8.6x, `const/512` encode |
+| `element_bytes` | 40 | 40 | 0 | 0 | 2.9x | 15.2x, `u8_members/32` encode |
+| `element_shape` | 28 | 28 | 0 | 0 | 3.4x | 7.7x, `fixed/32` encode |
+| `packets` | 40 | 40 | 0 | 0 | 2.4x | 39.6x, `last/512` encode |
+| `shape` | 56 | 54 | 0 | 2 | 1.2x | 6.3x, `u64_little_endian/8` decode |
+| `mix` | 29 | 27 | 0 | 2 | 2.1x | 5.0x, `repetition/198` encode |
+| `grid` | 36 | 36 | 0 | 0 | 2.0x | 5.6x, `u16_lsb_first_at0/64` encode |
+
+`fields` and `shape` have the lowest medians because half their points are `get_u64` and `set_u64`,
+which were a handful of nanoseconds to start with. The sections below are the round step by step, one
+per change; the intermediate files are in `docs/performance/` too. Two things the steps record that the
+end state hides: a byte-aligned `lsb_first` field needed its own copy, or #106's speed-up for `msb_first`
+reopened the gap #108 had closed (1.7x, against #108's 1.5x); and one shape of that copy, a `switch` over a
+kind per combination of orders, compiled to a jump table that slowed every decode by up to a third.
+
 ### Before the performance round, 2026-10-21
 
 [`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv): `944c7b9`,
