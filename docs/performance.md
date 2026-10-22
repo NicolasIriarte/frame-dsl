@@ -133,6 +133,26 @@ What the combinations cost, medians in ns:
 | `valof_unaligned`, 203 B | 338 | 371 | a 200-byte payload 5 bits into a byte |
 | `wide`, 148 B, 63 fields of nine shapes | 1010 | 910 | ~15 ns a field |
 
+### Bit strings off a byte boundary a word at a time (#105), 2026-10-21
+
+[`performance/2026-10-21-57c60cb-105.csv`](performance/2026-10-21-57c60cb-105.csv). Off a byte
+boundary, a bit string now moves eight bytes a step, two steps a loop, instead of one byte: the source
+as a big-endian word shifted by the offset. Encode carries the bits spilling into the next byte in a
+register rather than OR'ing them into memory -- a first version did that, and every step's one-byte
+store was read back by the next step's eight-byte load, which cannot be forwarded and stalled encode at
+half the speed of decode. Against the file before the round: 0 points slower, 47 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `size/fixed_unaligned/4096` encode | 6026 | 1031 | 5.8x (6.0x on the first baseline's 6154) |
+| `size/fixed_unaligned/4096` decode | 5181 | 854 | 6.1x (5.3x on the first baseline's 4559) |
+| `size/fixed_unaligned/256` encode / decode | 382 / 400 | 113 / 133 | |
+| `mix/valof_unaligned/203` encode / decode | 338 / 371 | 122 / 151 | |
+| `mix/unaligned_lsb_first/74` encode / decode | 271 / 237 | 202 / 168 | the bit string's share; the `lsb_first` fields are #108 |
+
+An unaligned 4 KiB bit string still costs about 6x the aligned one (161 / 151 ns here), which is a
+`memcpy`; the shift is a handful of instructions a word, two of them variable shifts.
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.

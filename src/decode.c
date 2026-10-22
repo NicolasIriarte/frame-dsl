@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include "bits.h"
 #include "bytecode.h"
 #include "definition.h"
 #include "frame.h"
@@ -72,7 +73,22 @@ static void read_bytes(const uint8_t *buffer, uint64_t offset, uint8_t *out, siz
     return;
   }
 
-  for (size_t i = 0; i < length; ++i) {
+  /* Eight bytes at a time first (#105), the mirror of write_bytes(): eight buffer bytes as a big-endian
+   * word, shifted left by the offset, with the top of the ninth shifted in below. The field reaches
+   * buffer byte `length`, so the ninth byte of every step is inside it. Two words a step while there
+   * are two, which halves the loop's own cost: each word is only a handful of instructions. */
+  size_t i = 0;
+  const unsigned back = 8 - shift;
+  for (; i + 16 <= length; i += 16) {
+    uint64_t first = bits_load_be64(at + i) << shift | (uint64_t)(at[i + 8] >> back);
+    uint64_t second = bits_load_be64(at + i + 8) << shift | (uint64_t)(at[i + 16] >> back);
+    bits_store_be64(out + i, first);
+    bits_store_be64(out + i + 8, second);
+  }
+  for (; i + 8 <= length; i += 8) {
+    bits_store_be64(out + i, bits_load_be64(at + i) << shift | (uint64_t)(at[i + 8] >> back));
+  }
+  for (; i < length; ++i) {
     out[i] = (uint8_t)((at[i] << shift) | (at[i + 1] >> (8 - shift)));
   }
 }
