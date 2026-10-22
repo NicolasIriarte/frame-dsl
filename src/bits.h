@@ -32,6 +32,27 @@ static inline void bits_store_be64(uint8_t *bytes, uint64_t value) {
   memcpy(bytes, &value, sizeof(value));
 }
 
+/** @brief Each byte's bits reversed, by the byte. */
+extern const uint8_t bits_reversed_byte[256];
+
+/** @brief The low `bytes` bytes of `value`, 1 to 8, bit-reversed as one number and written big-endian:
+ * byte i is the value's byte i from the least significant end, each reversed. A table lookup a byte,
+ * rather than bits_reverse()'s word of shifts, for a whole-byte lsb_first field (#108). */
+static inline void bits_store_reversed(uint8_t *at, unsigned bytes, uint64_t value) {
+  for (unsigned i = 0; i < bytes; ++i) {
+    at[i] = bits_reversed_byte[(value >> (8 * i)) & 0xFF];
+  }
+}
+
+/** @brief The inverse of bits_store_reversed(). */
+static inline uint64_t bits_load_reversed(const uint8_t *at, unsigned bytes) {
+  uint64_t value = 0;
+  for (unsigned i = 0; i < bytes; ++i) {
+    value |= (uint64_t)bits_reversed_byte[at[i]] << (8 * i);
+  }
+  return value;
+}
+
 /**
  * @brief The low `width` bits of `value` in the opposite order, 1 <= width <= 64 (#108).
  *
@@ -159,4 +180,53 @@ static inline uint64_t bits_get(const uint8_t *in, uint64_t offset, uint64_t wid
     remaining -= run;
   }
   return value;
+}
+
+/** @brief `bytes` bytes, 1 to 8, as the big-endian number they spell (#106). */
+static inline uint64_t bits_load_be(const uint8_t *at, unsigned bytes) {
+  switch (bytes) {
+  case 1:
+    return at[0];
+  case 2:
+    return (uint64_t)at[0] << 8 | at[1];
+  case 4:
+    return (uint64_t)at[0] << 24 | (uint64_t)at[1] << 16 | (uint64_t)at[2] << 8 | at[3];
+  case 8:
+    return bits_load_be64(at);
+  default: {
+    uint64_t value = 0;
+    for (unsigned i = 0; i < bytes; ++i) {
+      value = value << 8 | at[i];
+    }
+    return value;
+  }
+  }
+}
+
+/** @brief The low `bytes` bytes of `value`, 1 to 8, written big-endian: the inverse of bits_load_be(). */
+static inline void bits_store_be(uint8_t *at, unsigned bytes, uint64_t value) {
+  switch (bytes) {
+  case 1:
+    at[0] = (uint8_t)value;
+    return;
+  case 2:
+    at[0] = (uint8_t)(value >> 8);
+    at[1] = (uint8_t)value;
+    return;
+  case 4:
+    at[0] = (uint8_t)(value >> 24);
+    at[1] = (uint8_t)(value >> 16);
+    at[2] = (uint8_t)(value >> 8);
+    at[3] = (uint8_t)value;
+    return;
+  case 8:
+    bits_store_be64(at, value);
+    return;
+  default:
+    for (unsigned i = bytes; i-- > 0;) {
+      at[i] = (uint8_t)value;
+      value >>= 8;
+    }
+    return;
+  }
 }

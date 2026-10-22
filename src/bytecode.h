@@ -141,6 +141,27 @@ static inline void member_put(uint8_t *bytes, uint64_t offset, const MemberInstr
 }
 
 /**
+ * @brief How a field of a packet's known prefix moves (#106), worked out once at compile time.
+ *
+ * The walk tests these in this order, most common first, with an `if` per kind rather than a `switch`:
+ * with a kind per combination of orders the switch compiled to a jump table, an indirect branch per
+ * field, and decoding slowed by up to a third across the board.
+ */
+typedef enum {
+  /** @brief A scalar of whole bytes on a byte boundary, `msb_first` and big-endian: its bytes as they are. */
+  COPY_BYTES,
+  /** @brief Anything else: write_scalar() / read_scalar(), which handle every shape. */
+  COPY_GENERAL,
+  /** @brief Whole bytes on a byte boundary, `little_endian`: its bytes the other way round. */
+  COPY_BYTES_SWAPPED,
+  /** @brief A fixed-width bit string: copied, or shifted off a boundary. */
+  COPY_STRING,
+  /** @brief Whole bytes on a byte boundary, `lsb_first` (#108): each byte bit-reversed by table, after
+   * a byte swap when the instruction's `copy_swap` says it is `little_endian` too. */
+  COPY_BYTES_REVERSED,
+} CopyKind;
+
+/**
  * @brief One field. Everything the runtime needs for it, flat.
  *
  * There is no arena offset here. A program describes a definition, not a frame, and several frames
@@ -195,11 +216,31 @@ typedef struct {
    */
   const ConditionInstruction *conditions;
   uint32_t condition_count;
+
+  /** @brief For a field of the packet's known prefix (#106): where it starts, and how it moves. */
+  uint64_t offset_bits;
+  CopyKind copy;
+  /** @brief For COPY_BYTES_REVERSED: `little_endian` as well. */
+  bool copy_swap;
 } FieldInstruction;
 
 typedef struct {
   const FieldInstruction *fields;
   size_t field_count;
+  /**
+   * @brief The packet's known prefix (#106): its first `prefix_count` fields sit at a constant offset,
+   * have a constant width and no condition, and are no repetition, and end at bit `prefix_bits`. For
+   * most packets that is every field. The walk moves them without asking any of those questions, and a
+   * decode checks the frame's length against the prefix once instead of field by field.
+   */
+  size_t prefix_count;
+  uint64_t prefix_bits;
+  /** @brief The most bytes a frame of this packet can take, every field at its reservation: what an
+   * encode clears before it starts. */
+  size_t max_bytes;
+  /** @brief Whether anything reads another field's value as the walk goes: a `valof()` width or a
+   * condition. Without one, encode does not gather the values first. */
+  bool reads_values;
 } PacketProgram;
 
 typedef struct {
