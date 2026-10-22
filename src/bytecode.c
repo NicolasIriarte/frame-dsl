@@ -389,8 +389,13 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         const bool whole_bytes = slot->offset_bits % 8 == 0 && slot->width_bits % 8 == 0 && slot->width_bits > 0;
         if (!slot->is_scalar) {
           instruction->copy = COPY_STRING;
-        } else if (whole_bytes && field->bit_order == BIT_ORDER_MSB_FIRST) {
-          instruction->copy = field->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? COPY_LITTLE_ENDIAN : COPY_BIG_ENDIAN;
+        } else if (whole_bytes) {
+          const bool little = field->byte_order == BYTE_ORDER_LITTLE_ENDIAN;
+          if (field->bit_order == BIT_ORDER_MSB_FIRST) {
+            instruction->copy = little ? COPY_LITTLE_ENDIAN : COPY_BIG_ENDIAN;
+          } else {
+            instruction->copy = little ? COPY_REVERSED_LITTLE_ENDIAN : COPY_REVERSED;
+          }
         }
       }
 

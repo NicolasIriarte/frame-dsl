@@ -148,6 +148,10 @@ typedef enum {
   COPY_BIG_ENDIAN,
   /** @brief The same, `little_endian`. */
   COPY_LITTLE_ENDIAN,
+  /** @brief Whole bytes on a byte boundary, `lsb_first`: the bytes, bit-reversed (#108). */
+  COPY_REVERSED,
+  /** @brief The same, `little_endian` as well. */
+  COPY_REVERSED_LITTLE_ENDIAN,
   /** @brief A fixed-width bit string: copied, or shifted off a boundary. */
   COPY_STRING,
 } CopyKind;

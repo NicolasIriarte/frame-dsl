@@ -195,6 +195,16 @@ static void encode_prefix(FramedslFrame *frame, const PacketProgram *program, si
     case COPY_LITTLE_ENDIAN:
       bits_store_be(at, (unsigned)(instruction->width_bits / 8), bits_swap(value, instruction->width_bits));
       break;
+    case COPY_REVERSED:
+      bits_store_be(at, (unsigned)(instruction->width_bits / 8), bits_reverse(value, instruction->width_bits));
+      break;
+    case COPY_REVERSED_LITTLE_ENDIAN:
+      bits_store_be(
+        at,
+        (unsigned)(instruction->width_bits / 8),
+        bits_reverse(bits_swap(value, instruction->width_bits), instruction->width_bits)
+      );
+      break;
     case COPY_STRING:
       write_bytes(frame->output, instruction->offset_bits, from, (size_t)(instruction->width_bits / 8));
       break;
