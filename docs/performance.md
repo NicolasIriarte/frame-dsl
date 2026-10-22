@@ -197,6 +197,32 @@ now, and 2.1x the one before this change. What is left is the walk itself: `fram
 the read each go from the definition to the packet, the field, the element and the member, a chain of
 dependent loads; an ordinary read does it once.
 
+### The per-field cost (#106), 2026-10-22
+
+[`performance/2026-10-22-8cda2dc-106.csv`](performance/2026-10-22-8cda2dc-106.csv). Profiled first, and
+written up on #106: gprof, since `perf` is not allowed on this machine. Per field, decode asked whether
+the field was present, worked out its width and checked it against the buffer; encode first copied every
+value into an array only `valof()` widths and conditions read; and decode put the whole packet aside
+before starting, in case it failed part-way. Each packet's **known prefix** -- the leading fields at a
+constant offset, of a constant width, without a condition, which is every field of most packets -- is now
+worked out at load, with each field's offset and how it moves. Decode checks the frame's length against
+the prefix once and reads it with no per-field checks, and a packet that is all prefix is not put aside:
+past that one check it cannot fail. Encode writes the prefix straight from the arena, and clears only what
+its packet can take. Against the file before the round: 0 points slower, 469 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `fields/u16/255` encode / decode | 2848 / 2721 | 1205 / 1040 | 2.4x / 2.6x (2.2x / 2.4x on the first baseline's 2656 / 2473) |
+| `fields/u16/1` encode / decode | 37 / 67 | 27 / 19 | the fixed cost of a frame |
+| `size/fixed/16` encode / decode | 45 / 73 | 32 / 24 | |
+| `mix/housekeeping/29` encode / decode | 194 / 215 | 96 / 90 | |
+| `mix/wide/148` encode / decode | 1010 / 910 | 412 / 423 | |
+
+One measurement worth keeping: a first version gathered the values after the prefix rather than before,
+for the same work, and a short conditional packet's encode (`mix/conditional_none`) came out 31% slower
+than before the round; gathering first puts it back where it was, 81 to 79 ns. Against #101's run, `elements/const/32` encode
+went from 91 to 110 ns, still a fifth of where it started.
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.
