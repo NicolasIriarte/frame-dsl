@@ -13,8 +13,10 @@ There are two tools, for two questions:
 - **`make bench`** times a dozen fixed operations, once each, on one hand-written definition: seconds,
   enough to see a gross regression. Its history is the tables further down.
 - **`make baseline`** (#102) sweeps generated definitions and reports a distribution per point: about
-  7.5 minutes, and the one to use to decide whether a change to the runtime is worth making. See
+  8 minutes, and the one to use to decide whether a change to the runtime is worth making. See
   [The baseline](#the-baseline) next.
+- **`make layout`** (#109) times one decode with the stack and the frame's bytes moved across a page:
+  seconds, for whether a change made decoding sensitive to where memory sits.
 
 ## The baseline
 
@@ -247,6 +249,39 @@ slower, for code those never run; the keyed search is out of line, and their dec
 Against #106's run some one-packet decodes still moved, either way -- `shape/u64_little_endian` 18%
 slower, `shape/u8` 15% faster -- in code this change did not touch, which a second, separate run of both
 binaries reproduced. That is #109's question.
+
+### Why decode time moved with memory layout (#109), 2026-10-22
+
+The first baseline saw one decode, `size/fixed/256`, measure anything from 67 to 86 ns from one process
+to the next, and not move with address randomisation off: the reason the baseline pools 20 processes.
+`perf` is not allowed on this machine, so the measurement is of decode time against where things sit,
+one hypothesis at a time, written up on #109. On main's runtime before the round:
+
+- **Across processes** the heap is laid out the same every time: the frame and the caller's buffer land
+  at the same page offsets in every run. Only the stack moves -- and 80 runs spread from 66 to 103 ns.
+- **The caller's buffer against the frame's own buffers**, the obvious suspect, is not it: moving the
+  buffer across a page in one process moves the decode by 5%.
+- **The stack is**: moving it across a page moves the decode by 13% in one process, with a slow band and
+  a fast one. Every decode cleared a 2 KB array of field values on the stack and wrote an entry per field,
+  while reading the frame and writing the arena on the heap -- a store and a load to addresses the same
+  modulo 4096 cannot be told apart early, and the load waits.
+
+#106 stopped clearing the array, and a decode of a fixed-layout packet no longer puts its old values
+aside. After it, the same decode spreads 23.4-25.2 ns over 20 processes, and moving the stack or the
+buffer across a page moves it 4-7%. The baselines' spread for decode, p10-p90 as a share of the median:
+
+| | Before the round | After #107 |
+| --- | --- | --- |
+| `size/fixed` decode, mean / worst | 20.7% / 31.6% | 7.2% / 8.8% |
+| `size/valof` decode, mean / worst | 13.1% / 20.7% | 5.8% / 7.2% |
+| every decode point, mean / worst | 14.4% / 31.8% | 6.5% / 12.0% |
+| `size/fixed` encode, which never moved | 7.1% / 15.7% | 6.9% / 15.9% |
+
+**`make layout`** (`bench/layout.c`) repeats the in-process half: one decode with the stack, then the
+frame's bytes, moved 64 bytes at a time across a page. A change that brings the sensitivity back shows up
+there as a spread well past 7%. The baseline still pools 20 processes; the cost is the same, and code
+alignment still moves single points between *builds* -- by up to 18% this round, in code a change did not
+touch -- which no number of processes averages out.
 
 ## `make bench`: first numbers, 2026-09-21
 
