@@ -193,34 +193,24 @@ const char *framedsl_decode(
       Slot *slot = &frame->slots[base + f];
       const uint8_t *at = buffer + instruction->offset_bits / 8;
       uint64_t value;
-      switch (instruction->copy) {
-      case COPY_BIG_ENDIAN:
-        value = bits_load_be(at, (unsigned)(instruction->width_bits / 8));
-        break;
-      case COPY_LITTLE_ENDIAN:
-        value = bits_swap(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits);
-        break;
-      case COPY_REVERSED:
-        value = bits_reverse(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits);
-        break;
-      case COPY_REVERSED_LITTLE_ENDIAN:
-        value = bits_swap(
-          bits_reverse(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits),
-          instruction->width_bits
-        );
-        break;
-      case COPY_STRING:
-        read_bytes(
-          buffer, instruction->offset_bits, frame->arena + slot->offset, (size_t)(instruction->width_bits / 8)
-        );
-        slots[f] = 0;
-        continue;
-      case COPY_GENERAL:
-      default:
+      const unsigned bytes = (unsigned)(instruction->width_bits / 8);
+      if (instruction->copy == COPY_BYTES) {
+        value = bits_load_be(at, bytes);
+      } else if (instruction->copy == COPY_GENERAL) {
         value = read_scalar(
           buffer, instruction->offset_bits, instruction->width_bits, instruction->bit_order, instruction->byte_order
         );
-        break;
+      } else if (instruction->copy == COPY_BYTES_SWAPPED) {
+        value = bits_swap(bits_load_be(at, bytes), instruction->width_bits);
+      } else if (instruction->copy == COPY_STRING) {
+        read_bytes(buffer, instruction->offset_bits, frame->arena + slot->offset, bytes);
+        slots[f] = 0;
+        continue;
+      } else {
+        value = bits_load_reversed(at, bytes);
+        if (instruction->copy_swap) {
+          value = bits_swap(value, instruction->width_bits);
+        }
       }
       slots[f] = value;
       memcpy(frame->arena + slot->offset, &value, sizeof(value));
