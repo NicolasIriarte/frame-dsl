@@ -16,6 +16,7 @@
 #   make bench        time a dozen operations once each, in seconds
 #   make baseline     the performance baseline (#102): minutes, by hand; see docs/performance.md
 #   make baseline-quick    the same sweep reduced to a few points, in seconds
+#   make layout       decode time with the stack, then the frame's bytes, moved across a page (#109)
 #   make clean        remove build output
 #
 # Tests come at two levels. Unit tests reach into a module directly and are compiled with src/ on
@@ -77,6 +78,7 @@ SYSTEM_REGISTRY := $(BUILD)/inc/system/testsuite_registry.h
 EXAMPLE_UART_DEVICE := $(BUILD)/uart_device
 BENCH := $(BUILD)/bench
 BASELINE := $(BUILD)/baseline
+LAYOUT := $(BUILD)/layout
 
 # Fuzzing (#59). The targets are fuzz/fuzz_*.c. `make fuzz` runs them under libFuzzer, which needs
 # clang; the replay binaries run every saved input through the same targets with the ordinary compiler,
@@ -184,6 +186,7 @@ SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclu
 	all \
 	baseline \
 	baseline-quick \
+	layout \
 	bench \
 	changelog \
 	changelog-preview \
@@ -462,6 +465,15 @@ $(BASELINE): bench/baseline.c $(LIB_ARCHIVE)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Iinclude '-DBASELINE_CC="$(CC)"' '-DBASELINE_CFLAGS="$(CFLAGS)"' bench/baseline.c \
 	  -L$(BUILD) -l:libframedsl.a -o $@
+
+# Built like the baseline, and run by hand like it: a measurement, not a test (#109).
+$(LAYOUT): bench/layout.c $(LIB_ARCHIVE)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Iinclude bench/layout.c -L$(BUILD) -l:libframedsl.a -o $@
+
+layout: $(LAYOUT)
+	$(LAYOUT) stack
+	$(LAYOUT) buffer
 
 # The library is compiled into each fuzz binary from source rather than linked from the archive: the
 # sanitizers and libFuzzer's coverage instrumentation have to reach inside it to see anything.

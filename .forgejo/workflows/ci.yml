@@ -71,7 +71,7 @@ jobs:
       # compiles would only be noticed the next time somebody wanted a number. The same goes for the
       # performance baseline (#102), which is run by hand.
       - name: Build the benchmarks
-        run: make build/bench build/baseline
+        run: make build/bench build/baseline build/layout
 
       # The release archive (#128), built and checked the same way a release is: the tool, the library,
       # the completions and every editor's support, the VS Code extension among them -- which needs no
