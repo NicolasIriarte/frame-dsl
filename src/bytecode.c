@@ -386,15 +386,17 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         packets[p].prefix_count = f + 1;
         packets[p].prefix_bits = slot->offset_bits + slot->width_bits;
         instruction->offset_bits = slot->offset_bits;
+        instruction->copy = COPY_GENERAL;
         const bool whole_bytes = slot->offset_bits % 8 == 0 && slot->width_bits % 8 == 0 && slot->width_bits > 0;
         if (!slot->is_scalar) {
           instruction->copy = COPY_STRING;
         } else if (whole_bytes) {
-          const bool little = field->byte_order == BYTE_ORDER_LITTLE_ENDIAN;
-          if (field->bit_order == BIT_ORDER_MSB_FIRST) {
-            instruction->copy = little ? COPY_LITTLE_ENDIAN : COPY_BIG_ENDIAN;
+          const bool swap = field->byte_order == BYTE_ORDER_LITTLE_ENDIAN;
+          if (field->bit_order == BIT_ORDER_LSB_FIRST) {
+            instruction->copy = COPY_BYTES_REVERSED;
+            instruction->copy_swap = swap;
           } else {
-            instruction->copy = little ? COPY_REVERSED_LITTLE_ENDIAN : COPY_REVERSED;
+            instruction->copy = swap ? COPY_BYTES_SWAPPED : COPY_BYTES;
           }
         }
       }

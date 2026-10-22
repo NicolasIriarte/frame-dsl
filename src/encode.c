@@ -188,27 +188,10 @@ static void encode_prefix(FramedslFrame *frame, const PacketProgram *program, si
       memcpy(&value, from, sizeof(value));
     }
     uint8_t *at = frame->output + instruction->offset_bits / 8;
-    switch (instruction->copy) {
-    case COPY_BIG_ENDIAN:
-      bits_store_be(at, (unsigned)(instruction->width_bits / 8), value);
-      break;
-    case COPY_LITTLE_ENDIAN:
-      bits_store_be(at, (unsigned)(instruction->width_bits / 8), bits_swap(value, instruction->width_bits));
-      break;
-    case COPY_REVERSED:
-      bits_store_be(at, (unsigned)(instruction->width_bits / 8), bits_reverse(value, instruction->width_bits));
-      break;
-    case COPY_REVERSED_LITTLE_ENDIAN:
-      bits_store_be(
-        at,
-        (unsigned)(instruction->width_bits / 8),
-        bits_reverse(bits_swap(value, instruction->width_bits), instruction->width_bits)
-      );
-      break;
-    case COPY_STRING:
-      write_bytes(frame->output, instruction->offset_bits, from, (size_t)(instruction->width_bits / 8));
-      break;
-    case COPY_GENERAL:
+    const unsigned bytes = (unsigned)(instruction->width_bits / 8);
+    if (instruction->copy == COPY_BYTES) {
+      bits_store_be(at, bytes, value);
+    } else if (instruction->copy == COPY_GENERAL) {
       write_scalar(
         frame->output,
         instruction->offset_bits,
@@ -217,7 +200,12 @@ static void encode_prefix(FramedslFrame *frame, const PacketProgram *program, si
         instruction->bit_order,
         instruction->byte_order
       );
-      break;
+    } else if (instruction->copy == COPY_BYTES_SWAPPED) {
+      bits_store_be(at, bytes, bits_swap(value, instruction->width_bits));
+    } else if (instruction->copy == COPY_STRING) {
+      write_bytes(frame->output, instruction->offset_bits, from, bytes);
+    } else {
+      bits_store_reversed(at, bytes, instruction->copy_swap ? bits_swap(value, instruction->width_bits) : value);
     }
   }
 }
