@@ -91,6 +91,26 @@ static bool matches(const PacketLayout *packet, const uint8_t *buffer, size_t le
   return true;
 }
 
+/* The packet a frame is, through the index (#107): only the packets whose shared fixed bits agree with
+ * the frame's are matched in full -- usually one. Out of line, because inlined into framedsl_decode() it
+ * made every decode of a definition without a key 2-4 ns slower, for code those never run. */
+__attribute__((noinline)) static bool find_keyed(
+  const FramedslDefinition *definition,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *index
+) {
+  size_t count = 0;
+  const uint32_t *candidates = packet_index_candidates(definition->index, buffer, length, &count);
+  for (size_t c = 0; c < count; ++c) {
+    if (matches(&definition->layout->packets[candidates[c]], buffer, length)) {
+      *index = candidates[c];
+      return true;
+    }
+  }
+  return false;
+}
+
 const char *framedsl_decode(
   FramedslFrame *frame,
   const uint8_t *buffer,
@@ -113,15 +133,20 @@ const char *framedsl_decode(
   const Layout *layout = definition->layout;
 
   /* Check 12 guarantees at most one packet can match, so the first hit is the answer and there is
-   * nothing to disambiguate. */
+   * nothing to disambiguate. A definition of a few packets, or of packets sharing no fixed bit, tries
+   * each in turn; any other goes through the index (#107). */
   size_t index = 0;
   bool found = false;
-  for (size_t p = 0; p < layout->packet_count; ++p) {
-    if (matches(&layout->packets[p], buffer, length)) {
-      index = p;
-      found = true;
-      break;
+  if (!definition->index->keyed) {
+    for (size_t p = 0; p < layout->packet_count; ++p) {
+      if (matches(&layout->packets[p], buffer, length)) {
+        index = p;
+        found = true;
+        break;
+      }
     }
+  } else {
+    found = find_keyed(definition, buffer, length, &index);
   }
 
   if (!found) {
