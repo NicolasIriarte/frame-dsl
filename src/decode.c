@@ -200,6 +200,15 @@ const char *framedsl_decode(
       case COPY_LITTLE_ENDIAN:
         value = bits_swap(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits);
         break;
+      case COPY_REVERSED:
+        value = bits_reverse(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits);
+        break;
+      case COPY_REVERSED_LITTLE_ENDIAN:
+        value = bits_swap(
+          bits_reverse(bits_load_be(at, (unsigned)(instruction->width_bits / 8)), instruction->width_bits),
+          instruction->width_bits
+        );
+        break;
       case COPY_STRING:
         read_bytes(
           buffer, instruction->offset_bits, frame->arena + slot->offset, (size_t)(instruction->width_bits / 8)
