@@ -287,6 +287,49 @@ static bool compile_elements(Program *program, const AstFile *file) {
   return true;
 }
 
+/* How many comparisons a term holds, and so instructions it compiles to (#126). */
+static size_t count_comparisons(const AstCondition *condition) {
+  if (condition->kind == CONDITION_COMPARE) {
+    return 1;
+  }
+  return count_comparisons(condition->lhs) + count_comparisons(condition->rhs);
+}
+
+typedef struct {
+  const AstPacket *packet;
+  ConditionInstruction *code;
+  uint32_t length;
+} ConditionCompiler;
+
+/* Compiles `condition` to go to `if_true` when it holds and `if_false` when it does not, and returns
+ * where it starts. `a && b` is `a`, going on to `b` when it holds; `a || b` is `a`, going on to `b`
+ * when it does not. */
+static uint32_t compile_condition(
+  ConditionCompiler *compiler,
+  const AstCondition *condition,
+  uint32_t if_true,
+  uint32_t if_false
+) {
+  if (condition->kind == CONDITION_AND) {
+    uint32_t rhs = compile_condition(compiler, condition->rhs, if_true, if_false);
+    return compile_condition(compiler, condition->lhs, rhs, if_false);
+  }
+  if (condition->kind == CONDITION_OR) {
+    uint32_t rhs = compile_condition(compiler, condition->rhs, if_true, if_false);
+    return compile_condition(compiler, condition->lhs, if_true, rhs);
+  }
+  uint32_t at = compiler->length++;
+  compiler->code[at] = (ConditionInstruction){
+    .field = (uint32_t)slot_of(compiler->packet, condition->field->reference),
+    .op = condition->op,
+    .mask = condition->has_mask ? condition->mask : UINT64_MAX,
+    .value = condition->value,
+    .if_true = if_true,
+    .if_false = if_false,
+  };
+  return at;
+}
+
 Program *program_compile(const AstFile *file, const Layout *layout, DiagList *diags) {
   if (file == NULL || layout == NULL) {
     return NULL;
@@ -303,7 +346,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         code_total += measure(packet->fields[f].width);
       }
       for (const AstCondition *c = packet->fields[f].condition; c != NULL; c = c->parent) {
-        condition_total += 1;
+        condition_total += count_comparisons(c);
       }
     }
   }
@@ -401,17 +444,17 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         }
       }
 
-      /* Outermost last, as the chain runs; the order does not matter to an AND. */
+      /* The chain's terms all hold, so each one's "true" goes on to the next: compiled innermost first,
+       * so the outermost -- the one an enclosing group wrote -- is where the walk starts. */
+      instruction->condition_entry = CONDITION_TRUE;
       if (field->condition != NULL) {
-        instruction->conditions = &conditions[next_condition];
+        ConditionCompiler compiler = { .packet = packet, .code = &conditions[next_condition] };
         for (const AstCondition *c = field->condition; c != NULL; c = c->parent) {
-          conditions[next_condition++] = (ConditionInstruction){
-            .field = (uint32_t)slot_of(packet, c->field->reference),
-            .equal = c->equal,
-            .value = c->value,
-          };
-          instruction->condition_count += 1;
+          instruction->condition_entry = compile_condition(&compiler, c, instruction->condition_entry, CONDITION_FALSE);
         }
+        instruction->conditions = compiler.code;
+        instruction->condition_count = compiler.length;
+        next_condition += compiler.length;
       }
 
       if (!slot->variable) {

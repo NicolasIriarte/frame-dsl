@@ -213,7 +213,7 @@ Anything that modifies a declaration rather than describing it is an attribute, 
 | `@bit_order` | `msb_first`, `lsb_first` | `msb_first` | the order a field's bits enter the stream |
 | `@byte_order` | `big_endian`, `little_endian` | `big_endian` | the order the bytes of a multi-byte value appear |
 | `@cal` | the name of a `cal` | none | the curve between a field's raw and engineering value -- see [Calibrations](#calibrations) |
-| `@if` | `valof(name) == value` or `!=` | none | whether what follows is in a frame at all -- see [Conditional fields](#conditional-fields) |
+| `@if` | a condition: `valof(name) == value`, other comparisons, `&`, `&&`, `\|\|` | none | whether what follows is in a frame at all -- see [Conditional fields](#conditional-fields) |
 
 Attribute names are **not** reserved words -- they mean something only after `@`. A field may be
 called `bit_order` if that is what the specification calls it.
@@ -716,15 +716,32 @@ pkt TM_OPTIONAL {
 
 That is [`examples/optional_fields.fdsl`](../examples/optional_fields.fdsl).
 
-**A condition is one comparison.** `valof(name) == value`, or `!=` for its opposite -- which is also
-how an "otherwise" is written: two groups, `==` and `!=`. The field compared is one declared above,
-in the same packet, and a scalar (checks 7 and 16), named through an instance where it is in one,
+**A condition compares fields with constants.** `valof(name) == value` is the simplest, and `!=`,
+`<`, `<=`, `>` and `>=` compare the same way. The field compared is one declared above, in the same
+packet, and a scalar (checks 7 and 16), named through an instance where it is in one,
 `valof(hdr.sec_hdr)`. The value is a number that fits it (check 8), or -- when it is typed by an enum
--- one of the enum's names, as a fixed value would be (check 39). Combining comparisons in one
-condition is #126.
+-- one of the enum's names, as a fixed value would be (check 39). Comparisons combine with `&&` and
+`||`, and parentheses group them (#126):
 
-**Groups nest**, and what is inside needs every condition around it. One group takes one `@if`; two
-would leave a reader wondering which wins, so it is an error, and nesting is how both are asked for.
+```
+[ @if: valof(flags) & 0x4 != 0; ]                  # bit 2 of flags is set
+[ @if: valof(version) >= 2 && valof(version) < 5; ]
+[ @if: (valof(kind) == HK || valof(kind) == EVENT) && valof(sec_hdr) == 1; ]
+```
+
+- **`valof(name) & mask`** tests bits: the field's value ANDed with a number, before it is compared.
+  `&` binds tighter than the comparison -- unlike C, where `a & 4 != 0` means `a & (4 != 0)` -- then
+  `&&`, then `||`, as in Go, Rust and Python. The mask fits the field (check 8), and an equality the
+  mask alone decides, `valof(f) & 0x4 == 0x8`, is refused too: it could never hold.
+- **A field typed by an enum** is compared with `==` and `!=` only, without a mask (check 43). Its
+  values are names, not quantities; to accept several, write each: `valof(kind) == HK || valof(kind)
+  == EVENT`.
+- **There is no `!` and no "otherwise".** The opposite of a condition is written out with the other
+  operators: the opposite of `valof(a) == 1 && valof(b) > 2` is `valof(a) != 1 || valof(b) <= 2`.
+
+**Groups nest**, and what is inside needs every condition around it -- as if they were joined with
+`&&`. One group takes one `@if`; two would leave a reader wondering which wins, so it is an error, and
+`&&` or nesting is how both are asked for.
 `@if` shares its group with any other attribute, in any order. It goes in front of what may be absent
 -- a field, a use, an anonymous block -- and not in front of a packet, a named block's declaration or
 at the top of a file.
@@ -747,7 +764,11 @@ c: 4;                               # rejected: the packet would be 4 bits off w
 
 **Reading what may not be there.** A `valof()` -- in a width, a count or a condition -- may name a
 conditional field only from under the same conditions, or stricter ones (check 42). Elsewhere it would
-read a field the frame may not carry:
+read a field the frame may not carry. "The same" is judged by the terms written, where a condition's
+terms are what `&&` joins, in its own `@if` and in every group around it: each term the field read
+needs must be among the reader's, written the same way. So `valof(kind) == HK` does not count as
+covering a field under `valof(kind) == HK || valof(kind) == EVENT`, even though it implies it -- write
+the same condition:
 
 ```
 [ @if: valof(has_len) == 1; ]
@@ -755,6 +776,16 @@ block {
   len:      8;
   data[16]: valof(len) * 8;         # fine: both there, or neither
 };
+```
+
+Within one `@if`, a comparison may read a field that is there under the terms to its left, since `&&`
+asks them first:
+
+```
+[ @if: valof(has_ext) == 1; ]
+ext_kind: 8;
+[ @if: valof(has_ext) == 1 && valof(ext_kind) == 2; ]
+ext_data: 32;                       # fine: ext_kind is read only when has_ext says it is there
 ```
 
 **Identifying a packet.** Nothing at or after a conditional field sits at a known offset, as after a
@@ -831,7 +862,8 @@ pkt TM_STATUS {
   their own. File settings align on their values the same way, and so do the settings of a group.
 - **Trailing comments align too**, two spaces past the longest line of the run that has one.
 - **One setting in a group stays on one line**, `[ @byte_order: big_endian; ]`; more than one is one
-  setting per line. A condition is spaced as a width is, `[ @if: valof(hdr.flag) == 1; ]`.
+  setting per line. A condition is spaced as a width is, with a space around every operator and the
+  parentheses kept as written, `[ @if: (valof(a) & 0x4 != 0 || valof(b) >= 2) && valof(c) == 1; ]`.
 - **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
   parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
   on its line: `hdr: Header { id = 0x02; flags = 0x3; };`. A calibration is one line.
@@ -875,8 +907,7 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 ## Not in v1
 
 Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-CRC polynomial and range, repeating a field typed by an enum, and conditions combining comparisons
-(`&&`, `||`, ordering and masks, #126).
+CRC polynomial and range, and repeating a field typed by an enum.
 Calibrations have no lookup tables, domain checks or built-in functions yet.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined

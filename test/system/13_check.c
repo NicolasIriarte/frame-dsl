@@ -331,6 +331,9 @@ static int us13_tc10_every_span_is_well_formed(const TestArguments *args) {
     "discriminator_after_condition.fdsl",
     "if_in_repeated_block.fdsl",
     "if_reads_later_field.fdsl",
+    "if_ordering_on_enum.fdsl",
+    "if_mask_too_wide.fdsl",
+    "if_mask_clears_value.fdsl",
   };
   for (size_t i = 0; i < sizeof(names) / sizeof(*names); ++i) {
     char path[512];

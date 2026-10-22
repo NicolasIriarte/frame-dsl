@@ -82,6 +82,28 @@ static Expr *rename_expr(Composer *composer, const Expr *expr, const char *prefi
   return copy;
 }
 
+/* A term's insides, copied for an instance: the field each comparison reads renamed, as in place(). The
+ * operands of an `||` belong to the one term, so they are copied with it rather than shared. */
+static void copy_operands(Composer *composer, AstCondition *copy, const char *prefix) {
+  if (copy->kind == CONDITION_COMPARE) {
+    copy->field = rename_expr(composer, copy->field, prefix);
+    return;
+  }
+  AstCondition *operands[2] = { copy->lhs, copy->rhs };
+  for (int i = 0; i < 2; ++i) {
+    AstCondition *operand = region_alloc(composer->file->region, sizeof(AstCondition));
+    if (operand == NULL) {
+      fail(composer, 1, 1, 0, "out of memory");
+      return;
+    }
+    *operand = *operands[i];
+    copy_operands(composer, operand, prefix);
+    operands[i] = operand;
+  }
+  copy->lhs = operands[0];
+  copy->rhs = operands[1];
+}
+
 /* A field's conditions (#12) as they apply where it lands: each `valof()` renamed for the instance, as
  * a width is, and the chain hung under `outer` -- the conditions of the use it arrived through -- so a
  * field of a block used under `@if` is present only when the use is. Copied even where nothing changes,
@@ -107,7 +129,7 @@ static AstCondition *place(Composer *composer, const AstCondition *condition, co
     return outer;
   }
   *copy = *condition;
-  copy->field = rename_expr(composer, condition->field, prefix);
+  copy_operands(composer, copy, prefix);
   copy->parent = place(composer, condition->parent, prefix, outer);
   copy->text = NULL;
 
@@ -965,47 +987,109 @@ static void check_enums(Composer *composer) {
   }
 }
 
-/* ---- Conditions (#12) -----------------------------------------------------------------------------
+/* ---- Conditions (#12, #126) ------------------------------------------------------------------------
  *
- * A condition compares a field's value with a number, or -- on a field typed by an enum -- with one of
+ * A comparison compares a field's value with a number, or -- on a field typed by an enum -- with one of
  * its names, as a fixed value does (check 39). Which it is depends on the field it names, known only
  * once the packet or block is flat, so it is looked up here. A name naming no earlier field is check
  * 7's, reported by the checker; it is left alone here. */
+
+static bool is_ordering(CompareOp op) {
+  return op != COMPARE_EQ && op != COMPARE_NE;
+}
+
+static const char *compare_spelling(CompareOp op) {
+  switch (op) {
+  case COMPARE_EQ:
+    return "==";
+  case COMPARE_NE:
+    return "!=";
+  case COMPARE_LT:
+    return "<";
+  case COMPARE_LE:
+    return "<=";
+  case COMPARE_GT:
+    return ">";
+  case COMPARE_GE:
+    return ">=";
+  }
+  return "==";
+}
+
+static void resolve_comparison(Composer *composer, const AstField *fields, size_t before, AstCondition *condition) {
+  if (condition->kind != CONDITION_COMPARE) {
+    resolve_comparison(composer, fields, before, condition->lhs);
+    resolve_comparison(composer, fields, before, condition->rhs);
+    return;
+  }
+  if (condition->resolved || condition->field == NULL) {
+    return;
+  }
+  const AstField *compared = NULL;
+  for (size_t j = 0; j < before && compared == NULL; ++j) {
+    if (strcmp(fields[j].name, condition->field->reference) == 0) {
+      compared = &fields[j];
+    }
+  }
+  if (compared == NULL) {
+    return;
+  }
+  condition->resolved = true;
+
+  const AstEnum *enumeration = ast_find_enum(composer->file, compared->enumeration);
+  if (enumeration == NULL) {
+    if (condition->value_name != NULL) {
+      refuse_name(composer, compared->name, condition->value_name, condition->value_line, condition->value_column);
+    }
+    return;
+  }
+  /* Check 43 (#126): an enum's values are names, not quantities, so they are equal or not -- whatever
+   * order or bits the numbers behind them happen to have. */
+  if (condition->has_mask || is_ordering(condition->op)) {
+    const char *written = condition->field->written != NULL ? condition->field->written : compared->name;
+    const char *first = enumeration->item_count > 0 ? enumeration->items[0].name : "A";
+    const char *second = enumeration->item_count > 1 ? enumeration->items[1].name : first;
+    char message[512];
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is typed by enum '%s', whose values are names: a condition compares it only with '==' or "
+      "'!=', so write each name that qualifies, 'valof(%s) == %s || valof(%s) == %s'",
+      compared->name,
+      enumeration->name,
+      written,
+      first,
+      written,
+      second
+    );
+    fail(
+      composer,
+      condition->has_mask ? condition->mask_line : condition->line,
+      condition->has_mask ? condition->mask_column : condition->column,
+      43,
+      message
+    );
+    return;
+  }
+  uint64_t value = 0;
+  if (enum_value(
+        composer,
+        enumeration,
+        compared->name,
+        condition->value_name,
+        condition->value,
+        condition->value_line,
+        condition->value_column,
+        &value
+      )) {
+    condition->value = value;
+  }
+}
+
 static void resolve_conditions(Composer *composer, const AstField *fields, size_t count) {
   for (size_t i = 0; i < count; ++i) {
     for (AstCondition *condition = fields[i].condition; condition != NULL; condition = condition->parent) {
-      if (condition->resolved || condition->field == NULL) {
-        continue;
-      }
-      const AstField *compared = NULL;
-      for (size_t j = 0; j < i && compared == NULL; ++j) {
-        if (strcmp(fields[j].name, condition->field->reference) == 0) {
-          compared = &fields[j];
-        }
-      }
-      if (compared == NULL) {
-        continue;
-      }
-      condition->resolved = true;
-
-      const AstEnum *enumeration = ast_find_enum(composer->file, compared->enumeration);
-      if (enumeration != NULL) {
-        uint64_t value = 0;
-        if (enum_value(
-              composer,
-              enumeration,
-              compared->name,
-              condition->value_name,
-              condition->value,
-              condition->value_line,
-              condition->value_column,
-              &value
-            )) {
-          condition->value = value;
-        }
-      } else if (condition->value_name != NULL) {
-        refuse_name(composer, compared->name, condition->value_name, condition->value_line, condition->value_column);
-      }
+      resolve_comparison(composer, fields, i, condition);
     }
   }
 }
@@ -1014,52 +1098,107 @@ static void resolve_conditions(Composer *composer, const AstField *fields, size_
  * it, so without a limit the text would grow with the square of how deeply conditions nest. */
 #define CONDITION_TEXT_MAX 256
 
-/* What FramedslField.condition shows: the chain, outermost first. */
+typedef struct {
+  char *text;
+  size_t length;
+  size_t capacity;
+  bool failed;
+} Spelling;
+
+static void spell(Spelling *out, const char *piece) {
+  size_t length = strlen(piece);
+  if (out->length + length + 1 > out->capacity) {
+    size_t capacity = (out->capacity + length + 1) * 2;
+    char *text = realloc(out->text, capacity);
+    if (text == NULL) {
+      out->failed = true;
+      return;
+    }
+    out->text = text;
+    out->capacity = capacity;
+  }
+  memcpy(out->text + out->length, piece, length + 1);
+  out->length += length;
+}
+
+/* One term, as written but spaced as the formatter spaces it: an `&&` inside an `||` in parentheses,
+ * which it needs no more than `1 + 2 * 3` does, but which is how anyone would read it. */
+static void spell_condition(Spelling *out, const AstCondition *condition, bool inside_or) {
+  if (condition->kind == CONDITION_COMPARE) {
+    char number[64];
+    spell(out, "valof(");
+    spell(out, condition->field != NULL && condition->field->reference != NULL ? condition->field->reference : "");
+    spell(out, ")");
+    if (condition->has_mask) {
+      snprintf(number, sizeof(number), " & %#llx", (unsigned long long)condition->mask);
+      spell(out, number);
+    }
+    spell(out, " ");
+    spell(out, compare_spelling(condition->op));
+    spell(out, " ");
+    if (condition->value_name != NULL) {
+      spell(out, condition->value_name);
+    } else {
+      snprintf(number, sizeof(number), "%llu", (unsigned long long)condition->value);
+      spell(out, number);
+    }
+    return;
+  }
+  bool parenthesised = condition->kind == CONDITION_AND && inside_or;
+  if (parenthesised) {
+    spell(out, "(");
+  }
+  spell_condition(out, condition->lhs, condition->kind == CONDITION_OR);
+  spell(out, condition->kind == CONDITION_OR ? " || " : " && ");
+  spell_condition(out, condition->rhs, condition->kind == CONDITION_OR);
+  if (parenthesised) {
+    spell(out, ")");
+  }
+}
+
+/* What FramedslField.condition shows: the chain's terms joined by " && ", outermost first, an `||` in
+ * parentheses once there is more than one term. */
 static const char *condition_text(Composer *composer, AstCondition *condition) {
   if (condition->text != NULL) {
     return condition->text;
   }
-  const char *outer = condition->parent != NULL ? condition_text(composer, condition->parent) : NULL;
-  static const char ELLIPSIS[] = " && ...";
-  if (outer != NULL && strlen(outer) > CONDITION_TEXT_MAX) {
-    size_t length = strlen(outer);
-    if (length >= sizeof(ELLIPSIS) - 1 && strcmp(outer + length - (sizeof(ELLIPSIS) - 1), ELLIPSIS) == 0) {
-      condition->text = outer;
-      return outer;
-    }
-    char *cut = region_alloc(composer->file->region, length + sizeof(ELLIPSIS));
-    if (cut == NULL) {
-      fail(composer, 1, 1, 0, "out of memory");
-      return "";
-    }
-    memcpy(cut, outer, length);
-    memcpy(cut + length, ELLIPSIS, sizeof(ELLIPSIS));
-    condition->text = cut;
-    return cut;
+  size_t count = 0;
+  for (const AstCondition *term = condition; term != NULL; term = term->parent) {
+    count += 1;
   }
-  char value[32];
-  if (condition->value_name == NULL) {
-    snprintf(value, sizeof(value), "%llu", (unsigned long long)condition->value);
-  }
-  const char *reference =
-    condition->field != NULL && condition->field->reference != NULL ? condition->field->reference : "";
-  const char *shown = condition->value_name != NULL ? condition->value_name : value;
-  size_t length = (outer != NULL ? strlen(outer) + 4 : 0) + strlen(reference) + strlen(shown) + 16;
-  char *text = region_alloc(composer->file->region, length);
-  if (text == NULL) {
+  const AstCondition **terms = malloc(count * sizeof(*terms));
+  if (terms == NULL) {
     fail(composer, 1, 1, 0, "out of memory");
     return "";
   }
-  snprintf(
-    text,
-    length,
-    "%s%svalof(%s) %s %s",
-    outer != NULL ? outer : "",
-    outer != NULL ? " && " : "",
-    reference,
-    condition->equal ? "==" : "!=",
-    shown
-  );
+  size_t k = count;
+  for (const AstCondition *term = condition; term != NULL; term = term->parent) {
+    terms[--k] = term;
+  }
+
+  Spelling out = { 0 };
+  spell(&out, "");
+  for (size_t t = 0; t < count; ++t) {
+    if (t > 0 && out.length > CONDITION_TEXT_MAX) {
+      spell(&out, " && ...");
+      break;
+    }
+    bool parenthesised = count > 1 && terms[t]->kind == CONDITION_OR;
+    spell(&out, t > 0 ? " && " : "");
+    spell(&out, parenthesised ? "(" : "");
+    spell_condition(&out, terms[t], false);
+    spell(&out, parenthesised ? ")" : "");
+  }
+  free(terms);
+
+  char *text = out.failed ? NULL : region_alloc(composer->file->region, out.length + 1);
+  if (text == NULL) {
+    free(out.text);
+    fail(composer, 1, 1, 0, "out of memory");
+    return "";
+  }
+  memcpy(text, out.text, out.length + 1);
+  free(out.text);
   condition->text = text;
   return text;
 }

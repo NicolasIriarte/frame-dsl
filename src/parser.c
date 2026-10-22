@@ -462,38 +462,157 @@ static void repeated(
 
 static bool parse_value(Parser *parser, uint64_t *value, const char **name, int *line, int *column);
 
-/* condition = "valof" "(" dotted_name ")" ( "==" | "!=" ) value ";" -- what follows `@if:` (#12). One
- * comparison: two are combined by nesting one group inside another, and anything more is #126. */
-static bool parse_condition(Parser *parser, Attributes *attrs, int line, int column) {
-  if (!check(parser, TOK_VALOF)) {
-    error_at_current(parser, "a condition, 'valof(name) == value'");
-    return false;
-  }
-
+static AstCondition *condition_new(Parser *parser, ConditionKind kind, int line, int column) {
   AstCondition *condition = region_alloc(parser->file->region, sizeof(AstCondition));
   if (condition == NULL) {
     parser->out_of_memory = true;
-    return false;
+    return NULL;
   }
   memset(condition, 0, sizeof(*condition));
+  condition->kind = kind;
   condition->line = line;
   condition->column = column;
-  condition->parent = attrs->condition;
+  return condition;
+}
 
+static AstCondition *parse_condition_or(Parser *parser);
+
+/* The operator a comparison is written with, or false when the current token is not one. */
+static bool compare_op(const Parser *parser, CompareOp *op) {
+  switch (parser->current.kind) {
+  case TOK_EQUAL_EQUAL:
+    *op = COMPARE_EQ;
+    return true;
+  case TOK_NOT_EQUAL:
+    *op = COMPARE_NE;
+    return true;
+  case TOK_LESS:
+    *op = COMPARE_LT;
+    return true;
+  case TOK_LESS_EQUAL:
+    *op = COMPARE_LE;
+    return true;
+  case TOK_GREATER:
+    *op = COMPARE_GT;
+    return true;
+  case TOK_GREATER_EQUAL:
+    *op = COMPARE_GE;
+    return true;
+  default:
+    return false;
+  }
+}
+
+/* comparison = valof [ "&" integer ] ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) value
+ *
+ * `&` binds tighter than the comparison (#126), as in Go, Rust and Python and unlike C, where
+ * `a & 4 != 0` would be `a & (4 != 0)`. */
+static AstCondition *parse_comparison(Parser *parser) {
+  if (!check(parser, TOK_VALOF)) {
+    error_at_current(parser, "a condition, 'valof(name) == value'");
+    return NULL;
+  }
+  AstCondition *condition = condition_new(parser, CONDITION_COMPARE, parser->current.line, parser->current.column);
+  if (condition == NULL) {
+    return NULL;
+  }
   condition->field = parse_valof(parser);
   if (condition->field == NULL) {
-    return false;
+    return NULL;
   }
-  if (check(parser, TOK_EQUAL_EQUAL) || check(parser, TOK_NOT_EQUAL)) {
-    condition->equal = check(parser, TOK_EQUAL_EQUAL);
+  if (match(parser, TOK_AMPERSAND)) {
+    if (!check(parser, TOK_INT)) {
+      error_at_current(parser, "a number to mask the field with");
+      return NULL;
+    }
+    condition->has_mask = true;
+    condition->mask = parser->current.value;
+    condition->mask_line = parser->current.line;
+    condition->mask_column = parser->current.column;
     advance(parser);
-  } else {
-    error_at_current(parser, "'==' or '!='");
-    return false;
   }
+  if (!compare_op(parser, &condition->op)) {
+    error_at_current(parser, "a comparison: '==', '!=', '<', '<=', '>' or '>='");
+    return NULL;
+  }
+  advance(parser);
   if (!parse_value(
         parser, &condition->value, &condition->value_name, &condition->value_line, &condition->value_column
       )) {
+    return NULL;
+  }
+  return condition;
+}
+
+/* term = "(" or ")" | comparison */
+static AstCondition *parse_condition_term(Parser *parser) {
+  if (match(parser, TOK_LPAREN)) {
+    AstCondition *inner = parse_condition_or(parser);
+    if (inner == NULL || !expect(parser, TOK_RPAREN)) {
+      return NULL;
+    }
+    return inner;
+  }
+  return parse_comparison(parser);
+}
+
+/* and = term { "&&" term } -- tighter than `||`, as in every language that has both. */
+static AstCondition *parse_condition_and(Parser *parser) {
+  AstCondition *lhs = parse_condition_term(parser);
+  while (lhs != NULL && check(parser, TOK_AND_AND)) {
+    AstCondition *both = condition_new(parser, CONDITION_AND, lhs->line, lhs->column);
+    advance(parser);
+    AstCondition *rhs = parse_condition_term(parser);
+    if (both == NULL || rhs == NULL) {
+      return NULL;
+    }
+    both->lhs = lhs;
+    both->rhs = rhs;
+    lhs = both;
+  }
+  return lhs;
+}
+
+/* or = and { "||" and } */
+static AstCondition *parse_condition_or(Parser *parser) {
+  AstCondition *lhs = parse_condition_and(parser);
+  while (lhs != NULL && check(parser, TOK_OR_OR)) {
+    AstCondition *either = condition_new(parser, CONDITION_OR, lhs->line, lhs->column);
+    advance(parser);
+    AstCondition *rhs = parse_condition_and(parser);
+    if (either == NULL || rhs == NULL) {
+      return NULL;
+    }
+    either->lhs = lhs;
+    either->rhs = rhs;
+    lhs = either;
+  }
+  return lhs;
+}
+
+/* Hangs a condition's top-level `&&` operands onto `chain` as terms, each one of them, so that a nested
+ * group and an `&&` say the same thing the same way: `@if: a && b;` is a field under `a` and under `b`,
+ * as it would be with `b` in a group inside `a`'s -- which is what lets check 42 compare by terms. An
+ * `&&` inside parentheses at the top is the same `&&`. */
+static AstCondition *chain_terms(AstCondition *condition, AstCondition *chain) {
+  if (condition->kind == CONDITION_AND) {
+    return chain_terms(condition->rhs, chain_terms(condition->lhs, chain));
+  }
+  condition->parent = chain;
+  return condition;
+}
+
+/* condition = or ";" -- what follows `@if:` (#12, #126):
+ *
+ *   or         = and { "||" and }
+ *   and        = term { "&&" term }
+ *   term       = "(" or ")" | comparison
+ *   comparison = valof [ "&" integer ] op value
+ *
+ * Two conditions are also combined by nesting one group inside another, which is an `&&`. */
+static bool parse_condition(Parser *parser, Attributes *attrs, int line, int column) {
+  AstCondition *condition = parse_condition_or(parser);
+  if (condition == NULL) {
     return false;
   }
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -508,13 +627,12 @@ static bool parse_condition(Parser *parser, Attributes *attrs, int line, int col
       line,
       column,
       0,
-      "'if' is written twice in one group; to need both, put one in a group in front of an anonymous "
-      "'block { ... };' and the other inside it"
+      "'if' is written twice in one group; to need both, join them with '&&' in one '@if'"
     );
     return false;
   }
 
-  attrs->condition = condition;
+  attrs->condition = chain_terms(condition, attrs->condition);
   attrs->if_written = true;
   attrs->if_line = line;
   attrs->if_column = column;

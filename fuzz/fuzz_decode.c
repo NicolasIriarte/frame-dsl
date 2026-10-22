@@ -58,6 +58,17 @@ static const char *const DEFINITIONS[] = {
   "  len: 8; [ @if: valof(len) != 0; ] d[32]: valof(len) * 8; };\n"
   "pkt C2 { h: H { type = 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
   "  [ @if: valof(h.f) == 2; @byte_order: little_endian; ] w: 32; tail: 8; };\n",
+
+  /* Combined conditions (#126): `&&` and `||` with parentheses, orderings, masks, and an enum compared
+   * by name, on a field, an anonymous block and a field nested in it. */
+  "enum K2: 2 { IDLE; HK; EVENT; DUMP; };\n"
+  "pkt CC { id: 8 = 0x7E; version: 4; flags: 4; kind: K2; spare: 6;\n"
+  "  [ @if: valof(flags) & 0x1 != 0; ] seq: 16;\n"
+  "  [ @if: valof(version) >= 2 && valof(version) < 5; ] ext: 8;\n"
+  "  [ @if: valof(kind) == HK || valof(kind) == EVENT; ] block { n: 8;\n"
+  "    [ @if: valof(flags) & 0x2 != 0 || valof(version) > 10; ] code: 8; };\n"
+  "  [ @if: (valof(flags) & 0x8 == 0x8 || valof(version) == 0) && valof(kind) != IDLE; ] crc: 16;\n"
+  "  tail: 8; };\n",
 };
 
 #define DEFINITION_COUNT (sizeof(DEFINITIONS) / sizeof(*DEFINITIONS))

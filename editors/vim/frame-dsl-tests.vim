@@ -116,6 +116,15 @@ function! s:TestConditionSyntax() abort
   call assert_equal('fdslOperator', s:GroupAt(2, 26), '!=')
   call assert_equal('fdslNumber', s:GroupAt(2, 29), 'the value')
   bwipeout!
+  " Combined (#126): a mask, an ordering, `&&' and `||' are operators too.
+  call s:Open(['pkt TM {', '  [ @if: valof(f) & 4 != 0 && valof(g) >= 2 || valof(g) < 1; ] e: 8;', '};'])
+  call assert_equal('fdslOperator', s:GroupAt(2, 19), '&')
+  call assert_equal('fdslOperator', s:GroupAt(2, 28), '&&')
+  call assert_equal('fdslOperator', s:GroupAt(2, 40), '>=')
+  call assert_equal('fdslOperator', s:GroupAt(2, 45), '||')
+  call assert_equal('fdslOperator', s:GroupAt(2, 57), '<')
+  call assert_equal('fdslNumber', s:GroupAt(2, 59), 'the value')
+  bwipeout!
 endfunction
 
 " Reindenting every example changes nothing: the examples are what the formatter writes, so this says

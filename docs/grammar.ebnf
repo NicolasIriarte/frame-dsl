@@ -41,15 +41,24 @@ dotted_name        = identifier , { "." , identifier } ;
  * little_endian), `cal` (the name of a calibration, on a field only) and `if` (a condition, #12); an
  * unknown one is reported by name.
  *
- * `if` takes a comparison where the others take a name. It goes in a group in front of a field, a use
+ * `if` takes a condition where the others take a name. It goes in a group in front of a field, a use
  * or an anonymous block -- not at file scope, nor in front of a packet or a named block -- and is the
  * one attribute a block's use may carry. A group holds at most one; groups nest, and a nested one's
- * condition is ANDed with those around it. Conditions combining comparisons are #126.
+ * condition is ANDed with those around it.
+ *
+ * A condition (#126) is comparisons of a field with a constant, combined with `&&` and `||` and grouped
+ * with parentheses. `&` binds tighter than a comparison -- unlike C, `valof(f) & 0x4 != 0` is
+ * `(valof(f) & 0x4) != 0` -- and `&&` tighter than `||`. On a field typed by an enum, only `==` and `!=`
+ * apply, without a mask (check 43).
  *)
 
 attribute          = "@" , identifier , ":" , identifier , ";"
                    | "@" , "if" , ":" , condition , ";" ;
-condition          = valof , ( "==" | "!=" ) , value ;
+condition          = condition_and , { "||" , condition_and } ;
+condition_and      = condition_term , { "&&" , condition_term } ;
+condition_term     = "(" , condition , ")" | comparison ;
+comparison         = valof , [ "&" , integer ] , compare_op , value ;
+compare_op         = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 attribute_group    = "[" , attribute , { attribute } , "]" ;
 
 (* --- Packets --------------------------------------------------------------------------------

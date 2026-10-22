@@ -1,0 +1,19 @@
+# REJECTED: check 43 -- an ordering on a field typed by an enum.
+#
+# An enum's values are names, not quantities, so a condition asks only whether a field is one of them:
+# `valof(kind) == EVENT || valof(kind) == DUMP`.
+
+enum Kind: 2 {
+  IDLE;
+  HOUSEKEEPING;
+  EVENT;
+  DUMP;
+};
+
+pkt TM_KIND {
+  id:   8 = 0x64;
+  kind: Kind;
+  pad:  6;
+  [ @if: valof(kind) >= EVENT; ]
+  ext:  8;
+};

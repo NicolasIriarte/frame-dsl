@@ -160,29 +160,62 @@ typedef struct AstImport {
   struct AstImport *next;
 } AstImport;
 
+/** @brief How a comparison in a condition compares (#12, #126). */
+typedef enum {
+  COMPARE_EQ,
+  COMPARE_NE,
+  COMPARE_LT,
+  COMPARE_LE,
+  COMPARE_GT,
+  COMPARE_GE,
+} CompareOp;
+
+typedef enum {
+  /** @brief `valof(name) == value`, or another operator, optionally masked: `valof(f) & 0x4 != 0`. */
+  CONDITION_COMPARE,
+  /** @brief `lhs && rhs`, where it is inside an `||` -- at the top of a condition it is split instead. */
+  CONDITION_AND,
+  /** @brief `lhs || rhs`. */
+  CONDITION_OR,
+} ConditionKind;
+
 /**
  * @brief `[ @if: valof(name) == value; ]` (#12): the field, block use or anonymous block it is in front
- * of is present only when this holds, and every enclosing `@if` with it. Nested groups chain through
- * `parent`, which is how two conditions are ANDed.
+ * of is present only when this holds, and every enclosing `@if` with it.
+ *
+ * A field's condition is a chain of *terms* through `parent`, every one of which must hold: each `@if`
+ * contributes its top-level `&&` operands (#126), and a nested group's terms are chained to the ones of
+ * the groups around it. A term is a comparison, or an `||` (or an `&&` inside one) whose operands are
+ * themselves conditions, through `lhs` and `rhs`; only a term has a `parent` or a `text`.
  */
 typedef struct AstCondition {
+  ConditionKind kind;
+  /** @brief CONDITION_AND and CONDITION_OR: the operands, outside any chain. */
+  struct AstCondition *lhs;
+  struct AstCondition *rhs;
+
   /** @brief The field compared: an EXPR_VALOF, so it is renamed per instance as a width is. */
   Expr *field;
-  /** @brief `==` when true, `!=` when false. */
-  bool equal;
+  CompareOp op;
+  /** @brief `valof(f) & mask`: the comparison is of the field's value ANDed with this (#126). */
+  bool has_mask;
+  uint64_t mask;
+  int mask_line;
+  int mask_column;
   uint64_t value;
   /** @brief The value written as a name of the compared field's enum, or NULL for a number. */
   const char *value_name;
   /** @brief Whether composition has looked `value_name` up: a block's conditions are resolved once, at
    * the block, and every instance copies the result. */
   bool resolved;
-  /** @brief Where the `@` is. */
+  /** @brief Where the term or comparison starts. */
   int line;
   int column;
   /** @brief Where the value is. */
   int value_line;
   int value_column;
-  /** @brief The `@if` this one is nested in, or NULL. */
+  /** @brief The next term of the chain -- of this `@if`, or of the group this one is nested in -- or
+   * NULL. */
   struct AstCondition *parent;
   /** @brief The whole chain as text, outermost first, joined by " && ": what a field's description
    * shows. Filled by composition. */
@@ -411,16 +444,16 @@ const AstEnum *ast_find_enum(const AstFile *file, const char *name);
  * this is a binary search. */
 const char *ast_enum_name_of(const AstEnum *enumeration, uint64_t value);
 
-/** @brief Whether two conditions say the same thing: the same field, operator and value. Two `@if`s
- * written apart but alike are present together, so the checks compare conditions this way rather than
- * by which group they were written in. */
+/** @brief Whether two terms say the same thing, as written: the same fields, operators, masks and
+ * values, combined the same way (#126). Two `@if`s written apart but alike are present together, so the
+ * checks compare conditions this way rather than by which group they were written in. */
 bool ast_condition_same(const AstCondition *a, const AstCondition *b);
 
-/** @brief Whether every condition in `inner`'s chain is also in `outer`'s: a field under `outer` is
- * only ever present when one under `inner` is. NULL is the empty chain. */
+/** @brief Whether every term in `inner`'s chain is also in `outer`'s: a field under `outer` is only
+ * ever present when one under `inner` is. NULL is the empty chain. */
 bool ast_conditions_cover(const AstCondition *outer, const AstCondition *inner);
 
-/** @brief Whether two chains hold exactly the same conditions, in any order. */
+/** @brief Whether two chains hold exactly the same terms, in any order. */
 bool ast_conditions_equal(const AstCondition *a, const AstCondition *b);
 
 /** @brief The name called `name` in `enumeration`, or NULL. */

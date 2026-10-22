@@ -373,6 +373,77 @@ static void check_presence(
   }
 }
 
+/* Every comparison in one term of a condition (#12, #126): checks 7 and 16 on what it reads, check 42
+ * on whether that is there under `held`, and check 8 on the numbers it compares with -- which includes
+ * an equality the mask decides on its own: `valof(f) & 0x4 == 0x8` asks for a bit the mask clears. */
+static void check_comparisons(
+  Checker *checker,
+  const PacketLayout *layout,
+  const AstPacket *packet,
+  size_t field_index,
+  const AstCondition *condition,
+  const AstCondition *held
+) {
+  if (condition->kind != CONDITION_COMPARE) {
+    check_comparisons(checker, layout, packet, field_index, condition->lhs, held);
+    check_comparisons(checker, layout, packet, field_index, condition->rhs, held);
+    return;
+  }
+  if (condition->field == NULL) {
+    return;
+  }
+  long compared = check_compared(checker, layout, packet, field_index, condition->field);
+  if (compared < 0) {
+    return;
+  }
+  check_presence(checker, packet, field_index, condition->field, held, "the condition");
+  const FieldLayout *read = &layout->fields[compared];
+  if (!read->is_scalar || read->width_bits >= 64) {
+    return;
+  }
+  if (condition->has_mask && condition->mask >> read->width_bits != 0) {
+    fail(
+      checker,
+      condition->mask_line,
+      condition->mask_column,
+      8,
+      "'%s.%s' is %llu bits, so masking it with %#llx asks for bits it does not have",
+      packet->name,
+      packet->fields[compared].name,
+      (unsigned long long)read->width_bits,
+      (unsigned long long)condition->mask
+    );
+  } else if (condition->value_name == NULL && condition->value >> read->width_bits != 0) {
+    fail(
+      checker,
+      condition->value_line,
+      condition->value_column,
+      8,
+      "'%s.%s' is %llu bits, so it can never be %#llx; the condition compares it with a value it cannot "
+      "hold",
+      packet->name,
+      packet->fields[compared].name,
+      (unsigned long long)read->width_bits,
+      (unsigned long long)condition->value
+    );
+  } else if (condition->has_mask && condition->value_name == NULL && (condition->value & ~condition->mask) != 0
+             && (condition->op == COMPARE_EQ || condition->op == COMPARE_NE)) {
+    fail(
+      checker,
+      condition->value_line,
+      condition->value_column,
+      8,
+      "'valof(%s) & %#llx' can never be %#llx, since the mask clears %#llx: the condition is %s whatever "
+      "the field holds",
+      packet->fields[compared].name,
+      (unsigned long long)condition->mask,
+      (unsigned long long)condition->value,
+      (unsigned long long)(condition->value & ~condition->mask),
+      condition->op == COMPARE_EQ ? "never true" : "always true"
+    );
+  }
+}
+
 /* Check 7: a valof() may only name a field declared earlier in the same packet. Reading a field
  * means knowing where it starts, which means every field before it is already resolved. */
 static void check_references(
@@ -542,33 +613,14 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     check_presence(checker, packet, i, field->width, field->condition, "its width");
     check_presence(checker, packet, i, field->reserve, field->condition, "its width");
 
-    /* A condition (#12): what it compares, whether the value fits that field (check 8), and whether
-     * the field is there to compare whenever the condition is asked -- under its enclosing ones. */
+    /* A condition (#12): what each comparison in it reads, whether the value fits that field (check 8),
+     * and whether the field is there to read whenever the condition is asked -- under the terms before
+     * it and the groups around it. */
     for (const AstCondition *condition = field->condition; condition != NULL; condition = condition->parent) {
-      if (condition->field == NULL || condition_checked_before(packet, i, condition)) {
+      if (condition_checked_before(packet, i, condition)) {
         continue;
       }
-      long compared = check_compared(checker, layout, packet, i, condition->field);
-      if (compared < 0) {
-        continue;
-      }
-      check_presence(checker, packet, i, condition->field, condition->parent, "the condition");
-      const FieldLayout *read = &layout->fields[compared];
-      if (condition->value_name == NULL && read->is_scalar && read->width_bits < 64
-          && condition->value >> read->width_bits != 0) {
-        fail(
-          checker,
-          condition->value_line,
-          condition->value_column,
-          8,
-          "'%s.%s' is %llu bits, so it can never be %#llx; the condition compares it with a value it cannot "
-          "hold",
-          packet->name,
-          packet->fields[compared].name,
-          (unsigned long long)read->width_bits,
-          (unsigned long long)condition->value
-        );
-      }
+      check_comparisons(checker, layout, packet, i, condition, condition->parent);
     }
 
     bool variable = expr_uses_valof(field->width);
@@ -887,8 +939,7 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
       bool known = true;
       for (size_t j = i; j < packet->field_count; ++j) {
         const AstCondition *other = packet->fields[j].condition;
-        if (other != NULL && !seen[j]
-            && (other == part || (ast_condition_same(other, part) && ast_conditions_equal(part, other)))) {
+        if (other != NULL && !seen[j] && (other == part || ast_conditions_equal(part, other))) {
           seen[j] = true;
           known = known && residues[j] != 0xFF;
           sum += residues[j];

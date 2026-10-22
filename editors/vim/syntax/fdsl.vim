@@ -58,7 +58,8 @@ syntax match fdslNamespace "\%(\<as\s\+\)\@<=\a\w*"
 syntax match fdslNumber "\<0[xX]\x\+\>"
 syntax match fdslNumber "\<0[bB][01]\+\>"
 syntax match fdslNumber "\<\d\+\%(\.\d*\)\?\%([eE][-+]\?\d\+\)\?\>"
-syntax match fdslOperator "[-+*/=]\|[!=]="
+" The two-character ones first: alternatives are tried in order, not for the longest.
+syntax match fdslOperator "[!=<>]=\|&&\|||\|[-+*/=<>&]"
 syntax region fdslString start=+"+ end=+"+ oneline
 syntax match fdslComment "#.*$" contains=@Spell
 

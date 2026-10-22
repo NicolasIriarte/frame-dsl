@@ -296,19 +296,19 @@ bool framedsl_find(const FramedslDefinition *definition, const char *dotted, Fra
 static bool field_absent(const FramedslFrame *frame, FramedslFieldId id) {
   const FieldInstruction *instruction = &frame->definition->program->packets[id.packet].fields[id.field];
   const size_t base = frame->packet_base[id.packet];
-  for (uint32_t i = 0; i < instruction->condition_count; ++i) {
-    const ConditionInstruction *condition = &instruction->conditions[i];
+  /* field_present()'s walk, reading each value where it is rather than from a gathered array. */
+  uint32_t at = instruction->condition_entry;
+  while (at < instruction->condition_count) {
+    const ConditionInstruction *condition = &instruction->conditions[at];
     const FieldInstruction *compared = &frame->definition->program->packets[id.packet].fields[condition->field];
     uint64_t value = compared->fixed;
     /* A fixed field is its fixed value, whatever its slot holds: what encode writes and decode reads. */
     if (!compared->has_fixed) {
       memcpy(&value, frame->arena + frame->slots[base + condition->field].offset, sizeof(value));
     }
-    if ((value == condition->value) != condition->equal) {
-      return true;
-    }
+    at = condition_test(condition, value) ? condition->if_true : condition->if_false;
   }
-  return false;
+  return at == CONDITION_FALSE;
 }
 
 FramedslStatus framedsl_present(const FramedslFrame *frame, FramedslFieldId id, bool *present) {

@@ -64,14 +64,24 @@ typedef struct {
   uint32_t stack_depth;
 } WidthProgram;
 
+/** @brief Where a condition's walk ends: past every instruction, decided (#126). */
+#define CONDITION_TRUE UINT32_MAX
+#define CONDITION_FALSE (UINT32_MAX - 1)
+
 /**
- * @brief One condition a field's presence depends on (#12): the value in slot `field` is, or is not,
- * `value`. A field carries all of its chain, and is present when every one holds.
+ * @brief One comparison a field's presence depends on (#12, #126): the value in slot `field`, ANDed with
+ * `mask`, compared with `value`. A field's comparisons are a little graph rather than a list: each says
+ * where to go next when it holds and when it does not -- another comparison of the same field's, or
+ * CONDITION_TRUE or CONDITION_FALSE -- which is `&&` and `||` short-circuited, with no stack to keep.
  */
 typedef struct {
   uint32_t field;
-  bool equal;
+  CompareOp op;
+  /** @brief All ones when the condition writes no mask. */
+  uint64_t mask;
   uint64_t value;
+  uint32_t if_true;
+  uint32_t if_false;
 } ConditionInstruction;
 
 /**
@@ -210,12 +220,13 @@ typedef struct {
   uint64_t element_capacity;
 
   /**
-   * @brief What the field's presence depends on (#12): every condition must hold, over values already
-   * read -- a condition only names an earlier field. Zero conditions is the common case, and costs the
-   * walk one comparison.
+   * @brief What the field's presence depends on (#12): its whole condition, every term of every `@if`
+   * around it, walked from `condition_entry` over values already read -- a condition only names an
+   * earlier field. Zero comparisons is the common case, and costs the walk one comparison.
    */
   const ConditionInstruction *conditions;
   uint32_t condition_count;
+  uint32_t condition_entry;
 
   /** @brief For a field of the packet's known prefix (#106): where it starts, and how it moves. */
   uint64_t offset_bits;
@@ -277,16 +288,35 @@ void program_free(Program *program);
  */
 bool width_program_eval(const WidthProgram *program, const uint64_t *slots, uint64_t *out);
 
+/** @brief Whether one comparison holds for `value`, the field it reads. */
+static inline bool condition_test(const ConditionInstruction *condition, uint64_t value) {
+  value &= condition->mask;
+  switch (condition->op) {
+  case COMPARE_EQ:
+    return value == condition->value;
+  case COMPARE_NE:
+    return value != condition->value;
+  case COMPARE_LT:
+    return value < condition->value;
+  case COMPARE_LE:
+    return value <= condition->value;
+  case COMPARE_GT:
+    return value > condition->value;
+  case COMPARE_GE:
+    return value >= condition->value;
+  }
+  return false;
+}
+
 /**
- * @brief Whether a field is present (#12): all its conditions hold over `slots`, indexed as OP_SLOT
- * indexes them. A field with no conditions always is.
+ * @brief Whether a field is present (#12): its condition holds over `slots`, indexed as OP_SLOT indexes
+ * them. A field with no conditions always is.
  */
 static inline bool field_present(const FieldInstruction *instruction, const uint64_t *slots) {
-  for (uint32_t i = 0; i < instruction->condition_count; ++i) {
-    const ConditionInstruction *condition = &instruction->conditions[i];
-    if ((slots[condition->field] == condition->value) != condition->equal) {
-      return false;
-    }
+  uint32_t at = instruction->condition_entry;
+  while (at < instruction->condition_count) {
+    const ConditionInstruction *condition = &instruction->conditions[at];
+    at = condition_test(condition, slots[condition->field]) ? condition->if_true : condition->if_false;
   }
-  return true;
+  return at != CONDITION_FALSE;
 }

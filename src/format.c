@@ -272,8 +272,24 @@ static void to_tail(Formatter *f) {
  * after a unary minus. */
 
 static bool is_operator(TokenKind kind) {
-  return kind == TOK_PLUS || kind == TOK_MINUS || kind == TOK_STAR || kind == TOK_SLASH || kind == TOK_EQUAL_EQUAL
-         || kind == TOK_NOT_EQUAL;
+  switch (kind) {
+  case TOK_PLUS:
+  case TOK_MINUS:
+  case TOK_STAR:
+  case TOK_SLASH:
+  case TOK_EQUAL_EQUAL:
+  case TOK_NOT_EQUAL:
+  case TOK_LESS:
+  case TOK_LESS_EQUAL:
+  case TOK_GREATER:
+  case TOK_GREATER_EQUAL:
+  case TOK_AND_AND:
+  case TOK_OR_OR:
+  case TOK_AMPERSAND:
+    return true;
+  default:
+    return false;
+  }
 }
 
 /* Everything up to one of the stop kinds at parenthesis depth zero, which is left unconsumed. */
@@ -324,10 +340,10 @@ static void dotted(Formatter *f, bool space) {
 
 /* ---- Declarations ------------------------------------------------------------------------------ */
 
-/* An attribute's value: a name, `little_endian` or `vendor.volts`, or the comparison an `@if` holds
- * (#12), `valof(hdr.flag) == 1`, spaced as an expression is. */
+/* An attribute's value: a name, `little_endian` or `vendor.volts`, or the condition an `@if` holds
+ * (#12, #126), `valof(hdr.flag) == 1 || (valof(a) & 0x4 != 0)`, spaced as an expression is. */
 static void attribute_value(Formatter *f) {
-  if (peek(f)->kind == TOK_VALOF) {
+  if (peek(f)->kind == TOK_VALOF || peek(f)->kind == TOK_LPAREN) {
     expression(f, TOK_SEMICOLON, TOK_RBRACKET, true);
     return;
   }

@@ -58,6 +58,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
 | [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
+| [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
 ## Should be rejected
 
@@ -85,6 +86,9 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/if_part_not_whole_bytes.fdsl`](invalid/if_part_not_whole_bytes.fdsl) | 13 -- a conditional part that is not whole bytes |
 | [`invalid/if_number_on_enum.fdsl`](invalid/if_number_on_enum.fdsl) | 39 -- a condition on an enum field compared with a number |
 | [`invalid/if_value_too_wide.fdsl`](invalid/if_value_too_wide.fdsl) | 8 -- a condition comparing a field with a value it cannot hold |
+| [`invalid/if_mask_too_wide.fdsl`](invalid/if_mask_too_wide.fdsl) | 8 -- a mask with bits the field does not have |
+| [`invalid/if_mask_clears_value.fdsl`](invalid/if_mask_clears_value.fdsl) | 8 -- an equality the mask alone decides |
+| [`invalid/if_ordering_on_enum.fdsl`](invalid/if_ordering_on_enum.fdsl) | 43 -- an ordering on a field typed by an enum |
 | [`invalid/discriminator_after_condition.fdsl`](invalid/discriminator_after_condition.fdsl) | 11 -- the only fixed value after a conditional field |
 | [`invalid/if_in_repeated_block.fdsl`](invalid/if_in_repeated_block.fdsl) | 32 -- a conditional field inside a repeated block |
 | [`invalid/if_reads_later_field.fdsl`](invalid/if_reads_later_field.fdsl) | 7 -- a condition naming a later field |

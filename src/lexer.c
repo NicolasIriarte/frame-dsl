@@ -325,6 +325,32 @@ Token lexer_next(Lexer *lexer) {
       return make(TOK_NOT_EQUAL, line, column);
     }
     break;
+  case '<':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_LESS_EQUAL, line, column);
+    }
+    return make(TOK_LESS, line, column);
+  case '>':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_GREATER_EQUAL, line, column);
+    }
+    return make(TOK_GREATER, line, column);
+  case '&':
+    if (peek(lexer, 0) == '&') {
+      advance(lexer);
+      return make(TOK_AND_AND, line, column);
+    }
+    return make(TOK_AMPERSAND, line, column);
+  case '|':
+    if (peek(lexer, 0) == '|') {
+      advance(lexer);
+      return make(TOK_OR_OR, line, column);
+    }
+    /* There is no bitwise OR: a condition masks with '&', and combines with '||'. */
+    diag_add(lexer->diags, line, column, 0, "unexpected character '|'; conditions are combined with '||'");
+    return make(TOK_INVALID, line, column);
   case '+':
     return make(TOK_PLUS, line, column);
   case '-':
@@ -413,6 +439,20 @@ const char *token_kind_name(TokenKind kind) {
     return "'=='";
   case TOK_NOT_EQUAL:
     return "'!='";
+  case TOK_LESS:
+    return "'<'";
+  case TOK_LESS_EQUAL:
+    return "'<='";
+  case TOK_GREATER:
+    return "'>'";
+  case TOK_GREATER_EQUAL:
+    return "'>='";
+  case TOK_AND_AND:
+    return "'&&'";
+  case TOK_OR_OR:
+    return "'||'";
+  case TOK_AMPERSAND:
+    return "'&'";
   case TOK_PLUS:
     return "'+'";
   case TOK_MINUS:
