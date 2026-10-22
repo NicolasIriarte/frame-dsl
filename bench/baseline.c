@@ -373,6 +373,17 @@ static void compare_fields(Subject *s, const char *packet) {
     if (field.has_fixed) {
       continue;
     }
+    /* A conditional field (#12) is compared for presence first; one neither frame carries has no value. */
+    if (field.condition != NULL) {
+      bool sent, received;
+      if (framedsl_present(s->tx, id, &sent) != FRAMEDSL_OK || framedsl_present(s->rx, id, &received) != FRAMEDSL_OK
+          || sent != received) {
+        die("%s.%s is present in one frame and not the other:\n%s", packet, field.name, s->source);
+      }
+      if (!sent) {
+        continue;
+      }
+    }
     if (field.is_scalar) {
       uint64_t sent, received;
       if (framedsl_get_u64(s->tx, id, &sent) != FRAMEDSL_OK || framedsl_get_u64(s->rx, id, &received) != FRAMEDSL_OK
@@ -790,6 +801,355 @@ static void sweep_shape(Sweep *sweep, bool quick) {
   }
 }
 
+/* ---- Combinations (#130) ---------------------------------------------------------------------------------
+ *
+ * The dimensions above vary one thing each, and no real definition is one of their points: a real packet
+ * mixes widths, alignments, orders, calibrations, repetitions and conditional parts, and a link carries
+ * a family of packets that share a header. `mix` is a handful of definitions written the way real ones
+ * are; `grid` crosses a field's shape with the bit offset the fields start at and how many there are.
+ * A change that speeds up one shape at another's expense shows up as such. */
+
+/* Every field of `packet` a caller would set, set to something distinct: scalars to a value that fits
+ * (below the top of the range, for the calibrations' sake), fixed-width bit strings to a pattern, and
+ * the members of the first `elements` elements of each repetition. A variable-width bit string, and a
+ * field the layout depends on -- a length, a count, a flag a condition reads -- are the caller's to set
+ * after this, to what the point needs. */
+static void fill(Subject *s, const char *packet, uint64_t elements) {
+  size_t index;
+  if (!framedsl_find_packet(s->definition, packet, &index)) {
+    die("no packet %s", packet);
+  }
+  for (size_t f = 0; f < framedsl_field_count(s->definition, index); ++f) {
+    FramedslField field;
+    framedsl_field(s->definition, index, f, &field);
+    if (field.has_fixed) {
+      continue;
+    }
+    char dotted[128];
+    snprintf(dotted, sizeof(dotted), "%s.%s", packet, field.name);
+    if (field.is_scalar) {
+      uint64_t mask = field.width_bits >= 64 ? UINT64_MAX : (UINT64_C(1) << field.width_bits) - 1;
+      set(s, dotted, (UINT64_C(0x9E3779B97F4A7C15) * (f + 1)) & (mask >> 1));
+    } else if (field.element_bits == 0) {
+      if (!field.variable) {
+        set_pattern(s, dotted, (size_t)(field.width_bits / 8));
+      }
+    } else {
+      for (size_t m = 0; m < field.member_count; ++m) {
+        FramedslField member;
+        framedsl_member(s->definition, index, f, m, &member);
+        if (member.has_fixed || !member.is_scalar) {
+          continue;
+        }
+        char name[192];
+        snprintf(name, sizeof(name), "%s.%s", dotted, member.name);
+        FramedslFieldId any = find(s, name);
+        uint64_t mask = member.width_bits >= 64 ? UINT64_MAX : (UINT64_C(1) << member.width_bits) - 1;
+        for (uint64_t e = 0; e < elements; ++e) {
+          FramedslFieldId element;
+          framedsl_element(s->definition, any, e, &element);
+          if (framedsl_set_u64(s->tx, element, (e * 40503u + m * 7 + 1) & mask) != FRAMEDSL_OK) {
+            die("could not set %s[%" PRIu64 "]", name, e);
+          }
+        }
+      }
+    }
+  }
+}
+
+/* A family of packets sharing a header, `length` bytes each. The first and the last declared are filled,
+ * checked and timed: encode finds a packet by name and decode tells it from the others, so where a
+ * packet sits in its family is part of what it costs. */
+static void mix_family(Sweep *sweep, Subject *s, const char *variant, size_t length) {
+  const size_t count = framedsl_packet_count(s->definition);
+  s->first = framedsl_packet_name(s->definition, 0);
+  s->last = framedsl_packet_name(s->definition, count - 1);
+  fill(s, s->first, 0);
+  fill(s, s->last, 0);
+  s->wire_first = check(s, s->first, length);
+  s->length_first = length;
+  s->wire_last = check(s, s->last, length);
+  s->length_last = length;
+
+  char name[32];
+  snprintf(name, sizeof(name), "%s_first", variant);
+  add_point(sweep, s, "mix", name, length, "encode", encode_first);
+  add_point(sweep, s, "mix", name, length, "decode", decode_first);
+  snprintf(name, sizeof(name), "%s_last", variant);
+  add_point(sweep, s, "mix", name, length, "encode", encode_last);
+  add_point(sweep, s, "mix", name, length, "decode", decode_last);
+}
+
+/* A CCSDS space packet family: the primary header's sub-byte fields, three of them across a byte
+ * boundary, and 32 application ids. Each packet's data field is laid out a little differently, as one
+ * instrument's would be from the next, and is 23 bytes in all of them. */
+static void mix_ccsds(Sweep *sweep) {
+  Text text = { 0 };
+  append(&text, "%s", HEADER);
+  for (unsigned p = 0; p < 32; ++p) {
+    unsigned k = p % 3;
+    append(
+      &text,
+      "pkt TM_APID_%u {\n"
+      "  version: 3 = 0; type: 1 = 0; sec_hdr: 1; apid: 11 = %u;\n"
+      "  seq_flags: 2; seq_count: 14; data_length: 16;\n"
+      "  a: %u; b: 16; c: 32; samples: %u;\n"
+      "};\n",
+      p,
+      0x100 + p,
+      8 + 8 * k,
+      128 - 8 * k
+    );
+  }
+  mix_family(sweep, load(sweep, &text), "ccsds_family", 6 + 23);
+}
+
+/* Telecommands told apart by a subtype that is not the first field: every one has the same type byte,
+ * so the fixed value that identifies a packet sits three bytes in. 16 of them, with argument layouts
+ * that differ but all take four bytes. */
+static void mix_telecommands(Sweep *sweep) {
+  static const char *const arguments[] = {
+    "a: 32;",
+    "a: 8; b: 8; c: 16;",
+    "a: 4; b: 12; c: 16;",
+    "[ @byte_order: little_endian; ] a: 32;",
+  };
+  Text text = { 0 };
+  append(&text, "%s", HEADER);
+  for (unsigned p = 0; p < 16; ++p) {
+    append(&text, "pkt TC_%u { type: 8 = 0x1C; seq: 16; subtype: 8 = %u; %s };\n", p, 0x40 + p, arguments[p % 4]);
+  }
+  mix_family(sweep, load(sweep, &text), "telecommands", 8);
+}
+
+/* One packet: filled, with the layout fields then set as `layout` says, checked to be `length` bytes,
+ * and its encode and decode timed. */
+static Subject *mix_single(Sweep *sweep, Text *text, const char *variant, size_t length, void (*layout)(Subject *)) {
+  Subject *s = load(sweep, text);
+  fill(s, s->first, 32);
+  if (layout != NULL) {
+    layout(s);
+  }
+  check_first(s, length);
+  op_codec(sweep, s, "mix", variant, length);
+  return s;
+}
+
+/* Housekeeping: an enum, sub-byte flags, little-endian calibrated temperatures, 12-bit calibrated
+ * voltages that cross byte boundaries, a little-endian uptime and a 64-bit time. 29 bytes. */
+static void mix_housekeeping(Sweep *sweep) {
+  Text text = { 0 };
+  append(&text, "%s", HEADER);
+  append(&text, "cal temp(raw) = raw * 0.01 - 40;\ncal volts(raw) = raw * 3.3 / 4095;\n\n");
+  append(&text, "enum Mode: 3 { SAFE; NOMINAL; SCIENCE; };\n\n");
+  append(&text, "pkt TM_HK {\n  id: 8 = 0x5A;\n  mode: Mode;\n  flags: 5;\n");
+  for (unsigned t = 0; t < 4; ++t) {
+    append(&text, "  [ @byte_order: little_endian; @cal: temp; ] t%u: 16;\n", t);
+  }
+  for (unsigned v = 0; v < 4; ++v) {
+    append(&text, "  [ @cal: volts; ] v%u: 12;\n", v);
+  }
+  append(&text, "  [ @byte_order: little_endian; ] uptime: 32;\n  time: 64;\n  status: 8;\n};\n");
+  Subject *s = mix_single(sweep, &text, "housekeeping", 29, NULL);
+  use_scalar(s, "TM_HK.v2", 12);
+  use_cal(s, "TM_HK.t1", "temp", 16);
+  s->scalar_mask >>= 1;
+  add_point(sweep, s, "mix", "housekeeping", 29, "get_u64", get_u64);
+  add_point(sweep, s, "mix", "housekeeping", 29, "get_eng", get_eng);
+  add_point(sweep, s, "mix", "housekeeping", 29, "set_eng", set_eng);
+}
+
+/* lsb_first readings off a byte boundary, followed by a 64-byte bit string three bits into a byte. */
+static void mix_unaligned_lsb_first(Sweep *sweep) {
+  Text text = { 0 };
+  append(&text, "%spkt P {\n  id: 8 = 0x5A;\n  seq: 3;\n", HEADER);
+  for (unsigned f = 0; f < 4; ++f) {
+    append(&text, "  [ @bit_order: lsb_first; ] r%u: 16;\n", f);
+  }
+  append(&text, "  data: %u;\n  tail: 5;\n};\n", 64 * 8);
+  Subject *s = mix_single(sweep, &text, "unaligned_lsb_first", 74, NULL);
+  use_scalar(s, "P.r2", 16);
+  add_point(sweep, s, "mix", "unaligned_lsb_first", 74, "get_u64", get_u64);
+}
+
+static void counted_32(Subject *s) {
+  set(s, "P.count", 32);
+}
+
+/* A counted repetition of 32 six-byte elements whose members are of every kind: a fixed sub-byte marker,
+ * a little-endian reading, an lsb_first status, a 12-bit value across a byte boundary. 198 bytes. */
+static void mix_repetition(Sweep *sweep) {
+  Text text = { 0 };
+  append(
+    &text,
+    "%sblock E {\n"
+    "  marker: 4 = 0xA;\n  channel: 4;\n"
+    "  [ @byte_order: little_endian; ] reading: 16;\n"
+    "  [ @bit_order: lsb_first; ] status: 8;\n"
+    "  value: 12;\n  spare: 4;\n"
+    "};\n\n"
+    "pkt P { id: 8 = 0x5A; seq: 16; count: 8; samples[192]: E[valof(count)]; crc: 16; };\n",
+    HEADER
+  );
+  Subject *s = mix_single(sweep, &text, "repetition", 198, counted_32);
+  use_member(s, "P.samples.reading", 32);
+  op_elements(sweep, s, "mix", "repetition", 198);
+}
+
+static const char *const CONDITIONAL =
+  "enum Kind: 4 { IDLE; HK; EVENT; };\n\n"
+  "block Time { seconds: 32; subsecs: 16; };\n"
+  "block R { channel: 8; value: 16; };\n\n"
+  "pkt P {\n"
+  "  id: 8 = 0x5A;\n"
+  "  sec_hdr: 1; has_crc: 1; spare: 2; kind: Kind;\n"
+  "  [ @if: valof(sec_hdr) == 1; ] time: Time;\n"
+  "  [ @if: valof(kind) != IDLE; ] block {\n"
+  "    count: 8;\n"
+  "    readings[24]: R[valof(count)];\n"
+  "    [ @if: valof(kind) == EVENT; ] code: 16;\n"
+  "  };\n"
+  "  [ @if: valof(has_crc) == 1; ] crc: 16;\n"
+  "};\n";
+
+static void conditional_all(Subject *s) {
+  set(s, "P.sec_hdr", 1);
+  set(s, "P.has_crc", 1);
+  set(s, "P.kind", 2);
+  set(s, "P.count", 8);
+}
+
+static void conditional_none(Subject *s) {
+  set(s, "P.sec_hdr", 0);
+  set(s, "P.has_crc", 0);
+  set(s, "P.kind", 0);
+}
+
+/* Optional parts: a secondary header, a counted block present unless the kind is IDLE with a code inside
+ * it only for an EVENT, and a CRC. Every part present (37 bytes), and none (2). */
+static void mix_conditional(Sweep *sweep, bool quick) {
+  Text text = { 0 };
+  append(&text, "%s%s", HEADER, CONDITIONAL);
+  mix_single(sweep, &text, "conditional_all", 37, conditional_all);
+  if (!quick) {
+    append(&text, "%s%s", HEADER, CONDITIONAL);
+    mix_single(sweep, &text, "conditional_none", 2, conditional_none);
+  }
+}
+
+static void payload_200(Subject *s) {
+  set(s, "P.len", 200);
+  set_pattern(s, "P.data", 200);
+}
+
+/* A valof() payload of 200 bytes that starts five bits into a byte. 203 bytes. */
+static void mix_valof_unaligned(Sweep *sweep) {
+  Text text = { 0 };
+  append(&text, "%spkt P { id: 8 = 0x5A; len: 11; flags: 2; data[256]: valof(len) * 8; tail: 3; };\n", HEADER);
+  mix_single(sweep, &text, "valof_unaligned", 203, payload_200);
+}
+
+/* 63 fields after the id, nine shapes over and over: whole bytes, sub-byte and across a boundary,
+ * little_endian, lsb_first and 64 bits. 148 bytes. */
+static void mix_wide(Sweep *sweep) {
+  static const char *const cycle[] = {
+    "%s8: 8;",
+    "%s16: 16;",
+    "%s3: 3;",
+    "%s13: 13;",
+    "[ @byte_order: little_endian; ] %s32: 32;",
+    "[ @bit_order: lsb_first; ] %s16l: 16;",
+    "%s5: 5;",
+    "%s11: 11;",
+    "%s64: 64;",
+  };
+  Text text = { 0 };
+  append(&text, "%spkt P {\n  id: 8 = 0x5A;\n", HEADER);
+  for (unsigned c = 0; c < 7; ++c) {
+    char prefix[8];
+    snprintf(prefix, sizeof(prefix), "c%u_", c);
+    for (size_t k = 0; k < sizeof(cycle) / sizeof(*cycle); ++k) {
+      append(&text, "  ");
+      append(&text, cycle[k], prefix);
+      append(&text, "\n");
+    }
+  }
+  append(&text, "};\n");
+  Subject *s = mix_single(sweep, &text, "wide", 148, NULL);
+  use_scalar(s, "P.c3_13", 13);
+  add_point(sweep, s, "mix", "wide", 148, "get_u64", get_u64);
+}
+
+static void sweep_mix(Sweep *sweep, bool quick) {
+  mix_ccsds(sweep);
+  mix_repetition(sweep);
+  mix_conditional(sweep, quick);
+  if (quick) {
+    return;
+  }
+  mix_telecommands(sweep);
+  mix_housekeeping(sweep);
+  mix_unaligned_lsb_first(sweep);
+  mix_valof_unaligned(sweep);
+  mix_wide(sweep);
+}
+
+/* A field's shape, crossed with the bit offset the fields start at and how many there are. Off a byte
+ * boundary a little_endian field is refused (check 10), so that shape is only at offset 0. */
+static void sweep_grid(Sweep *sweep, bool quick) {
+  static const struct {
+    const char *name;
+    unsigned bits;
+    const char *attributes;
+  } shapes[] = {
+    { "u16",               16, ""                                 },
+    { "u12",               12, ""                                 },
+    { "u16_lsb_first",     16, "[ @bit_order: lsb_first; ] "      },
+    { "u32_little_endian", 32, "[ @byte_order: little_endian; ] " },
+    { "u16_cal",           16, "[ @cal: linear; ] "               },
+  };
+  static const unsigned offsets[] = { 0, 3 };
+  static const unsigned full[] = { 8, 64 };
+  static const unsigned fast[] = { 64 };
+  const unsigned *counts = quick ? fast : full;
+  size_t n = quick ? sizeof(fast) / sizeof(*fast) : sizeof(full) / sizeof(*full);
+
+  for (size_t k = 0; k < sizeof(shapes) / sizeof(*shapes); ++k) {
+    if (quick && k != 0 && k != 2) {
+      continue;
+    }
+    for (size_t o = 0; o < sizeof(offsets) / sizeof(*offsets); ++o) {
+      unsigned offset = offsets[o];
+      if (offset != 0 && strstr(shapes[k].attributes, "little_endian") != NULL) {
+        continue;
+      }
+      for (size_t c = 0; c < n; ++c) {
+        unsigned count = counts[c];
+        unsigned bits = 8 + offset + count * shapes[k].bits;
+        unsigned pad = (8 - bits % 8) % 8;
+        Text text = { 0 };
+        append(&text, "%scal linear(raw) = raw * 0.5 + 10;\n\npkt P {\n  id: 8 = 0x5A;\n", HEADER);
+        if (offset != 0) {
+          append(&text, "  pre: %u;\n", offset);
+        }
+        for (unsigned f = 0; f < count; ++f) {
+          append(&text, "  %sf%u: %u;\n", shapes[k].attributes, f, shapes[k].bits);
+        }
+        if (pad != 0) {
+          append(&text, "  pad: %u;\n", pad);
+        }
+        append(&text, "};\n");
+        Subject *s = load(sweep, &text);
+        fill(s, s->first, 0);
+        check_first(s, (bits + pad) / 8);
+        char variant[32];
+        snprintf(variant, sizeof(variant), "%s_at%u", shapes[k].name, offset);
+        op_codec(sweep, s, "grid", variant, count);
+      }
+    }
+  }
+}
+
 /* ---- Timing ---------------------------------------------------------------------------------------------- */
 
 /* Runs `iterations` of a point, and returns the seconds it took. */
@@ -925,7 +1285,7 @@ static void usage(FILE *out) {
     "  --cpu N         the CPU to pin to (default: the last one this process may use)\n"
     "  --commit NAME   what to record as the commit (make passes `git describe --always --dirty`)\n"
     "  --only DIM      sweep one dimension: size, fields, elements, element_bytes, element_shape,\n"
-    "                  packets or shape\n"
+    "                  packets, shape, mix or grid\n"
     "  --dump DIM      print the generated definitions of one dimension, and time nothing\n",
     out
   );
@@ -957,6 +1317,8 @@ static void generate(Sweep *sweep, const Options *options) {
     { "elements", sweep_repetition },
     { "packets",  sweep_packets    },
     { "shape",    sweep_shape      },
+    { "mix",      sweep_mix        },
+    { "grid",     sweep_grid       },
   };
   const char *selected = options->dump != NULL ? options->dump : options->only;
   bool matched = selected == NULL;

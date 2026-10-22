@@ -128,8 +128,16 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
   if (program != NULL) {
     cals = cal_compile(ast, &result->diags);
   }
+  PacketIndex *index = NULL;
+  if (cals != NULL) {
+    index = packet_index_build(ast, layout);
+    if (index == NULL) {
+      diag_add(&result->diags, 1, 1, 0, "out of memory");
+    }
+  }
 
-  if (layout == NULL || program == NULL || cals == NULL) {
+  if (layout == NULL || program == NULL || cals == NULL || index == NULL) {
+    packet_index_free(index);
     cal_table_free(cals);
     program_free(program);
     layout_free(layout);
@@ -140,6 +148,7 @@ static FramedslResult *load(const char *source, const char *name, const char *ba
     result->definition.layout = layout;
     result->definition.program = program;
     result->definition.cals = cals;
+    result->definition.index = index;
     result->definition.tag = definition_next_tag();
     result->have_definition = true;
     result->status = FRAMEDSL_OK;
@@ -265,6 +274,7 @@ void framedsl_result_free(FramedslResult *result) {
     return;
   }
   if (result->have_definition) {
+    packet_index_free(result->definition.index);
     program_free(result->definition.program);
     cal_table_free(result->definition.cals);
     layout_free(result->definition.layout);
@@ -328,15 +338,8 @@ bool framedsl_find_packet(const FramedslDefinition *definition, const char *name
   if (definition == NULL || name == NULL) {
     return false;
   }
-  for (size_t i = 0; i < definition->ast->packet_count; ++i) {
-    if (strcmp(definition->ast->packets[i].name, name) == 0) {
-      if (index != NULL) {
-        *index = i;
-      }
-      return true;
-    }
-  }
-  return false;
+  /* A hash of the names, built at load (#107): what an encode by name costs, whichever packet. */
+  return packet_index_find(definition->index, definition->ast, name, index);
 }
 
 size_t framedsl_field_count(const FramedslDefinition *definition, size_t packet) {

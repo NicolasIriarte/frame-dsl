@@ -14,6 +14,7 @@
 #include "bytecode.h"
 #include "calibration.h"
 #include "check.h"
+#include "dispatch.h"
 
 struct FramedslDefinition {
   AstFile *ast;
@@ -22,6 +23,8 @@ struct FramedslDefinition {
   Program *program;
   /** @brief Every `cal` in the file, compiled. Empty rather than NULL when there are none. */
   CalTable *cals;
+  /** @brief Finds a packet by name, or the packets a frame could be, without trying each (#107). */
+  PacketIndex *index;
 
   /**
    * @brief Stamped into every FramedslFieldId this definition hands out, and checked by every

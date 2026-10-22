@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bits.h"
 #include "definition.h"
 #include "frame.h"
 #include "framedsl.h"
@@ -328,12 +329,10 @@ FramedslStatus framedsl_present(const FramedslFrame *frame, FramedslFieldId id, 
  * there, in its own bit and byte order -- so there is no second copy of anything to keep in step, and
  * encode and decode move the whole run as the bit string it is. */
 
-/* The most elements a repetition has room for: what it reserves, in whole elements. */
+/* The most elements a repetition has room for: what it reserves, in whole elements. Worked out when
+ * the program is compiled (#101), since it is the definition's and not the frame's. */
 static uint64_t element_capacity(const FramedslDefinition *definition, size_t packet, size_t field) {
-  const FieldLayout *layout = &definition->layout->packets[packet].fields[field];
-  const ElementProgram *element = definition->program->packets[packet].fields[field].element;
-  uint64_t bits = layout->variable ? layout->max_bits : layout->width_bits;
-  return element == NULL || element->bits == 0 ? 0 : bits / element->bits;
+  return definition->program->packets[packet].fields[field].element_capacity;
 }
 
 /* "samples[3].value" or "samples.value" against repetition `field`: the member id, or false. */
@@ -456,21 +455,31 @@ FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, si
 /* A member of one element, where it sits in its repetition's slot. */
 typedef struct {
   Slot *slot;
+  /** @brief The repetition's. */
+  const FieldInstruction *instruction;
   const MemberInstruction *member;
   uint64_t offset;
 } MemberView;
 
-static bool member_view(const FramedslFrame *frame, FramedslFieldId id, MemberView *view) {
-  Slot *slot = frame_slot(frame, id);
-  if (slot == NULL || id.member == 0 || id.element == FRAMEDSL_NO_ELEMENT) {
+static inline bool member_view(const FramedslFrame *frame, FramedslFieldId id, MemberView *view) {
+  /* frame_slot()'s checks, made against the program, whose field instruction is what the rest needs:
+   * one walk from the definition down rather than one per question (#101). A packet's program has as
+   * many fields as its layout. */
+  if (frame == NULL || id.owner != frame->tag || id.packet >= frame->packet_count || id.member == 0
+      || id.element == FRAMEDSL_NO_ELEMENT) {
     return false;
   }
-  const ElementProgram *element = frame->definition->program->packets[id.packet].fields[id.field].element;
-  if (element == NULL || id.member > element->member_count
-      || id.element >= element_capacity(frame->definition, id.packet, id.field)) {
+  const PacketProgram *packet = &frame->definition->program->packets[id.packet];
+  if (id.field >= packet->field_count) {
     return false;
   }
-  view->slot = slot;
+  const FieldInstruction *instruction = &packet->fields[id.field];
+  const ElementProgram *element = instruction->element;
+  if (element == NULL || id.member > element->member_count || id.element >= instruction->element_capacity) {
+    return false;
+  }
+  view->slot = &frame->slots[frame->packet_base[id.packet] + id.field];
+  view->instruction = instruction;
   view->member = &element->members[id.member - 1];
   view->offset = (uint64_t)id.element * element->bits + view->member->offset_bits;
   return true;
@@ -484,47 +493,11 @@ static uint8_t *member_bytes(const FramedslFrame *frame, const MemberView *view)
   return frame->arena + view->slot->offset + view->offset / 8;
 }
 
-static uint64_t swap_bytes(uint64_t value, uint64_t width) {
-  uint64_t swapped = 0;
-  for (uint64_t byte = 0; byte < width / 8; ++byte) {
-    swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
-  }
-  return swapped;
-}
-
-/* A member's value out of the wire bytes, in the order encode.c lays a field down and decode.c reads it
- * back. A bit at a time: an element is a handful of bits, and this is an accessor, not the walk. */
-static uint64_t member_get(const uint8_t *bytes, uint64_t offset, const MemberInstruction *member) {
-  uint64_t value = 0;
-  for (uint64_t j = 0; j < member->width_bits; ++j) {
-    uint64_t i = offset + j;
-    uint64_t bit = (uint64_t)(bytes[i / 8] >> (7 - (i % 8))) & 1;
-    if (member->bit_order == BIT_ORDER_MSB_FIRST) {
-      value = (value << 1) | bit;
-    } else {
-      value |= bit << j;
-    }
-  }
-  if (member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0) {
-    value = swap_bytes(value, member->width_bits);
-  }
-  return value;
-}
-
-void frame_member_put(uint8_t *bytes, uint64_t offset, const MemberInstruction *member, uint64_t value) {
-  if (member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0) {
-    value = swap_bytes(value, member->width_bits);
-  }
-  for (uint64_t j = 0; j < member->width_bits; ++j) {
-    uint64_t i = offset + j;
-    uint64_t bit =
-      member->bit_order == BIT_ORDER_MSB_FIRST ? (value >> (member->width_bits - 1 - j)) & 1 : (value >> j) & 1;
-    uint8_t mask = (uint8_t)(1u << (7 - (i % 8)));
-    bytes[i / 8] = bit != 0 ? (uint8_t)(bytes[i / 8] | mask) : (uint8_t)(bytes[i / 8] & ~mask);
-  }
-}
-
-static FramedslStatus member_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64_t value) {
+__attribute__((noinline)) static FramedslStatus member_set_u64(
+  FramedslFrame *frame,
+  FramedslFieldId id,
+  uint64_t value
+) {
   MemberView view;
   if (!member_view(frame, id, &view) || !view.member->is_scalar) {
     return FRAMEDSL_ERROR_FIELD;
@@ -532,16 +505,21 @@ static FramedslStatus member_set_u64(FramedslFrame *frame, FramedslFieldId id, u
   if (view.member->width_bits < 64 && value >= ((uint64_t)1 << view.member->width_bits)) {
     return FRAMEDSL_ERROR_RANGE;
   }
-  frame_member_put(frame->arena + view.slot->offset, view.offset, view.member, value);
+  member_put(frame->arena + view.slot->offset, view.offset, view.member, value);
   return FRAMEDSL_OK;
 }
 
-static FramedslStatus member_get_u64(const FramedslFrame *frame, FramedslFieldId id, uint64_t *out) {
+/* Out of line, so that inlining the member path does not cost an ordinary field's get its lean entry. */
+__attribute__((noinline)) static FramedslStatus member_get_u64(
+  const FramedslFrame *frame,
+  FramedslFieldId id,
+  uint64_t *out
+) {
   MemberView view;
   if (!member_view(frame, id, &view) || !view.member->is_scalar || out == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
-  if (field_absent(frame, id)) {
+  if (view.instruction->condition_count != 0 && field_absent(frame, id)) {
     return FRAMEDSL_ERROR_ABSENT;
   }
   *out = member_get(frame->arena + view.slot->offset, view.offset, view.member);

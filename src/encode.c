@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include "bits.h"
 #include "bytecode.h"
 #include "definition.h"
 #include "frame.h"
@@ -19,15 +20,6 @@
  * transmitted in. The checker's mask and value use the same numbering, so a packet's discriminator is
  * literally the bytes a frame of it must have. */
 
-static void write_bit(uint8_t *out, uint64_t index, bool set) {
-  uint8_t mask = (uint8_t)(1u << (7 - (index % 8)));
-  if (set) {
-    out[index / 8] |= mask;
-  } else {
-    out[index / 8] = (uint8_t)(out[index / 8] & ~mask);
-  }
-}
-
 /* Lays `width` bits of `value` into the stream at `offset`.
  *
  * `msb_first` puts the value's most significant bit at the earliest stream bit the field occupies;
@@ -45,35 +37,18 @@ static void write_scalar(
    * sitting on byte boundaries. Check 10 rejects anyone writing it where that is untrue; inherited,
    * it simply does not apply here. */
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
-    uint64_t swapped = 0;
-    for (uint64_t byte = 0; byte < width / 8; ++byte) {
-      swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
-    }
-    value = swapped;
+    value = bits_swap(value, width);
   }
 
-  /* msb_first is the value's bits in stream order, so it goes out in runs: as many as are left in the
-   * current byte, at most eight at a time, whatever the alignment. The output was zeroed before the
-   * walk and no two fields overlap, so a run is OR'd in rather than written bit by bit. */
-  if (bit_order == BIT_ORDER_MSB_FIRST) {
-    uint64_t position = offset;
-    uint64_t remaining = width;
-    while (remaining > 0) {
-      uint64_t used = position % 8;
-      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-      uint64_t bits = (value >> (remaining - run)) & ((1u << run) - 1);
-      out[position / 8] |= (uint8_t)(bits << (8 - used - run));
-      position += run;
-      remaining -= run;
-    }
-    return;
+  /* lsb_first puts the value's bits in the opposite order to the stream's, so it is the value reversed
+   * laid down msb_first (#108): the same runs, at any offset. */
+  if (bit_order == BIT_ORDER_LSB_FIRST && width > 0) {
+    value = bits_reverse(value, width);
   }
 
-  /* lsb_first puts the value's bits in the opposite order to the stream's, so it stays a bit at a
-   * time. It is the rare case, and reversing a value to reuse the loop above would cost as much. */
-  for (uint64_t j = 0; j < width; ++j) {
-    write_bit(out, offset + j, ((value >> j) & 1) != 0);
-  }
+  /* msb_first is the value's bits in stream order, so it goes out in runs of up to eight. The output
+   * was zeroed before the walk and no two fields overlap, so a run is OR'd in. */
+  bits_or(out, offset, width, value);
 }
 
 /* A bit string goes out as the bytes it was given, each most significant bit first, starting wherever
@@ -92,10 +67,63 @@ static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, siz
   }
 
   /* Off one, each byte straddles two: its high bits finish the current output byte and its low bits
-   * start the next. The output was zeroed before the walk, so both halves are OR'd in. */
-  for (size_t i = 0; i < length; ++i) {
+   * start the next. The output was zeroed before the walk, so both halves are OR'd in.
+   *
+   * Eight bytes at a time first (#105): eight source bytes as one big-endian word, shifted right by the
+   * offset, are the same bits landing in eight output bytes, all but the last `shift` of them, which
+   * start the ninth. Those are carried into the next word in a register rather than OR'd into memory,
+   * so each step is one store that nothing reads back -- a byte stored and then loaded as part of a
+   * word stalls the load. The first output byte starts with the bits of the field before this one.
+   * Two words a step while there are two, as read_bytes() in decode.c does. */
+  size_t i = 0;
+  if (length >= 8) {
+    const unsigned back = 8 - shift;
+    uint64_t carry = at[0];
+    for (; i + 16 <= length; i += 16) {
+      uint64_t first = bits_load_be64(bytes + i);
+      uint64_t second = bits_load_be64(bytes + i + 8);
+      bits_store_be64(at + i, carry << 56 | first >> shift);
+      bits_store_be64(at + i + 8, (uint64_t)(uint8_t)(first << back) << 56 | second >> shift);
+      carry = (uint8_t)(second << back);
+    }
+    for (; i + 8 <= length; i += 8) {
+      uint64_t word = bits_load_be64(bytes + i);
+      bits_store_be64(at + i, carry << 56 | word >> shift);
+      carry = (uint8_t)(word << back);
+    }
+    at[i] |= (uint8_t)carry;
+  }
+  for (; i < length; ++i) {
     at[i] |= (uint8_t)(bytes[i] >> shift);
     at[i + 1] |= (uint8_t)(bytes[i] << (8 - shift));
+  }
+}
+
+/* A repetition's fixed values, into every element of the `width` bits at `offset` (#101). On a byte
+ * boundary, which is the common case, an element's fixed bits are a few bytes masked in; off one, each
+ * fixed member is written in turn. */
+static void stamp_fixed(uint8_t *out, uint64_t offset, uint64_t width, const ElementProgram *element) {
+  if (element->bits == 0 || element->fixed_members == 0) {
+    return;
+  }
+  if (offset % 8 == 0 && element->fixed_at != NULL) {
+    const size_t step = (size_t)(element->bits / 8);
+    uint8_t *at = out + offset / 8;
+    for (uint64_t start = 0; start < width; start += element->bits, at += step) {
+      for (size_t i = 0; i < element->fixed_count; ++i) {
+        uint8_t *byte = &at[element->fixed_at[i]];
+        *byte = (uint8_t)((*byte & ~element->fixed_mask[i]) | element->fixed_value[i]);
+      }
+    }
+    return;
+  }
+  for (uint64_t start = 0; start < width; start += element->bits) {
+    for (size_t m = 0; m < element->member_count; ++m) {
+      const MemberInstruction *member = &element->members[m];
+      if (member->has_fixed) {
+        member_put(out, offset + start + member->offset_bits, member, member->fixed);
+      }
+    }
   }
 }
 
@@ -149,6 +177,39 @@ static bool resolve_width(
   return true;
 }
 
+/* The known prefix (#106): every field at its place, straight from the arena -- or, for a fixed one,
+ * from the definition -- with no width to work out and no condition to ask. */
+static void encode_prefix(FramedslFrame *frame, const PacketProgram *program, size_t base) {
+  for (size_t f = 0; f < program->prefix_count; ++f) {
+    const FieldInstruction *instruction = &program->fields[f];
+    const uint8_t *from = frame->arena + frame->slots[base + f].offset;
+    uint64_t value = instruction->fixed;
+    if (instruction->is_scalar && !instruction->has_fixed) {
+      memcpy(&value, from, sizeof(value));
+    }
+    uint8_t *at = frame->output + instruction->offset_bits / 8;
+    const unsigned bytes = (unsigned)(instruction->width_bits / 8);
+    if (instruction->copy == COPY_BYTES) {
+      bits_store_be(at, bytes, value);
+    } else if (instruction->copy == COPY_GENERAL) {
+      write_scalar(
+        frame->output,
+        instruction->offset_bits,
+        instruction->width_bits,
+        value,
+        instruction->bit_order,
+        instruction->byte_order
+      );
+    } else if (instruction->copy == COPY_BYTES_SWAPPED) {
+      bits_store_be(at, bytes, bits_swap(value, instruction->width_bits));
+    } else if (instruction->copy == COPY_STRING) {
+      write_bytes(frame->output, instruction->offset_bits, from, bytes);
+    } else {
+      bits_store_reversed(at, bytes, instruction->copy_swap ? bits_swap(value, instruction->width_bits) : value);
+    }
+  }
+}
+
 const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t *length, FramedslStatus *status) {
   FramedslStatus ignored = FRAMEDSL_OK;
   if (status == NULL) {
@@ -171,18 +232,28 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
   const size_t base = frame->packet_base[index];
 
   /* Cleared rather than written over, so a field narrower than the one a previous encode put there
-   * cannot leave a bit of it behind. */
-  memset(frame->output, 0, frame->output_size);
+   * cannot leave a bit of it behind -- as much as this packet can take, not the longest packet's. */
+  memset(frame->output, 0, program->max_bytes);
 
   uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET];
   if (program->field_count > FRAMEDSL_MAX_FIELDS_PER_PACKET) {
     *status = FRAMEDSL_ERROR_RANGE;
     return NULL;
   }
-  gather_slots(frame, index, program->field_count, slots);
+  /* The values a valof() width or a condition reads, gathered only where one does (#106) -- and before
+   * the prefix, not after: gathered after it, a short conditional packet encoded a third slower, for
+   * no more work. */
+  if (program->reads_values) {
+    gather_slots(frame, index, program->field_count, slots);
+  }
+  encode_prefix(frame, program, base);
+  if (program->prefix_count == program->field_count) {
+    *length = (size_t)(program->prefix_bits / 8);
+    return frame->output;
+  }
 
-  uint64_t offset = 0;
-  for (size_t f = 0; f < program->field_count; ++f) {
+  uint64_t offset = program->prefix_bits;
+  for (size_t f = program->prefix_count; f < program->field_count; ++f) {
     const FieldInstruction *instruction = &program->fields[f];
     const Slot *slot = &frame->slots[base + f];
 
@@ -202,22 +273,16 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
        * identify itself, whatever they put in the slot. */
       write_scalar(frame->output, offset, width, instruction->fixed, instruction->bit_order, instruction->byte_order);
     } else if (instruction->is_scalar) {
-      write_scalar(frame->output, offset, width, slots[f], instruction->bit_order, instruction->byte_order);
+      uint64_t value;
+      memcpy(&value, frame->arena + slot->offset, sizeof(value));
+      write_scalar(frame->output, offset, width, value, instruction->bit_order, instruction->byte_order);
     } else if (instruction->element != NULL) {
       /* A repetition (#55): as many elements as the count says, straight from the slot. Unlike a bit
        * string handed over whole, its elements are set one member at a time, so there is no length to
        * disagree with -- an element nobody set is zeros, as any field nobody set is. Each element's
        * fixed values come from the definition, as a fixed field's do, whatever the slot holds. */
       write_bytes(frame->output, offset, frame->arena + slot->offset, (size_t)(width / 8));
-      const ElementProgram *element = instruction->element;
-      for (uint64_t start = 0; start < width; start += element->bits) {
-        for (size_t m = 0; m < element->member_count; ++m) {
-          const MemberInstruction *member = &element->members[m];
-          if (member->has_fixed) {
-            frame_member_put(frame->output, offset + start + member->offset_bits, member, member->fixed);
-          }
-        }
-      }
+      stamp_fixed(frame->output, offset, width, instruction->element);
     } else {
       /* A variable field's width comes from the expression, and the bytes come from the arena. Those
        * two can disagree -- a caller who sets `len` to 12 and then twenty bytes of `data` has

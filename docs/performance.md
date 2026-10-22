@@ -19,7 +19,10 @@ There are two tools, for two questions:
 ## The baseline
 
 `bench/baseline.c` generates definitions that vary one thing at a time, with everything else held at a
-small default, and times the public API on each:
+small default, and times the public API on each. The last two dimensions are the exception: no real
+definition looks like one point of the others, so `mix` combines features the way real definitions do,
+and `grid` crosses a field's shape with its alignment and count -- a change that speeds one shape up at
+another's expense shows up there.
 
 | Dimension | What varies | Operations |
 | --- | --- | --- |
@@ -30,6 +33,8 @@ small default, and times the public API on each:
 | `element_shape` | 32 counted 3-byte elements: plain, with a fixed value, `little_endian`, `lsb_first`, sub-byte | the same |
 | `packets` | 1 to 512 packets in the definition; the first and the last declared | encode, decode |
 | `shape` | eight fields of one shape: 3 to 64 bits, sub-byte, `lsb_first`, `little_endian`, calibrated (linear and bytecode) | encode, decode, `set_u64`, `get_u64`, `set_eng`, `get_eng` |
+| `mix` (#130) | definitions written the way real ones are, each combining features: a CCSDS family of 32 apids and a telecommand family of 16 told apart three bytes in (first and last of each); housekeeping with an enum, `little_endian` calibrated and 12-bit calibrated fields; `lsb_first` fields and a bit string off a byte boundary; a counted repetition of mixed members; optional parts all present and all absent; a `valof()` payload off a byte boundary; 63 fields of nine shapes | encode, decode, and `get_u64`, `get_eng`, `set_eng`, `element_get`, `elements_all` where the definition has them |
+| `grid` (#130) | eight or 64 fields of one shape (`u16`, `u12`, `lsb_first` `u16`, `little_endian` `u32`, calibrated `u16`), starting on a byte boundary (`_at0`) or three bits past one (`_at3`); `little_endian` only at 0, since check 10 refuses it off a boundary | encode, decode |
 
 `element_get` is `framedsl_element()` and `framedsl_get_u64()` on one element; `elements_all` is
 `framedsl_count()` and that loop over every element. `build/baseline --dump <dimension>` prints the
@@ -104,6 +109,144 @@ runtime at `4d627c6`), same i5-9400T as below, gcc 13.3 at `-O2`, `powersave` go
 | encode, 32 elements plain vs with a fixed 8-bit member | 186 vs 919 | stamping fixed values is ~23 ns an element |
 | `element_get` | 60 | whatever the element's size or shape |
 | `elements_all`, 1024 elements | 59875 | ~58 ns an element, 500x the decode |
+
+### Before the performance round, 2026-10-21
+
+[`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv): `944c7b9`,
+whose runtime is `main`'s at v0.1.0, the first run with `mix` and `grid` (#130). Same i5-9400T, but
+Linux 7.0 and gcc 15.2 where the first baseline had 6.8 and 13.3, and the runtime has gained conditional
+fields (#12) since: every accessor now asks whether its field is present. 191 of the 418 points the two
+files share are slower than in the first baseline and 6 faster -- every `get_u64` by 32%, 7.6 to 10.1
+ns -- and nothing tells those three changes apart. So this file, not the first, is what the performance round
+(#105, #108, #101, #106, #107, #109) is measured against.
+
+What the combinations cost, medians in ns:
+
+| Point | encode | decode | What it says |
+| --- | --- | --- | --- |
+| `ccsds_family`, 29 B, first / last of 32 apids | 126 / 255 | 148 / 217 | the last apid pays ~4 ns per packet ahead of it, both ways |
+| `telecommands`, 8 B, first / last of 16, told apart 3 bytes in | 60 / 126 | 92 / 140 | the same, on a family whose first byte is shared |
+| `housekeeping`, 29 B, enum, `little_endian`, calibrated, 12-bit | 194 | 215 | 18 fields at ~11 ns each |
+| `unaligned_lsb_first`, 74 B | 271 | 237 | four `lsb_first` fields and a 64-byte unaligned bit string |
+| `repetition`, 198 B, 32 mixed elements | 634 | 111 | `element_get` 74 ns, `elements_all` 2275 ns |
+| `conditional_all` / `conditional_none`, 37 / 2 B | 179 / 81 | 173 / 123 | |
+| `valof_unaligned`, 203 B | 338 | 371 | a 200-byte payload 5 bits into a byte |
+| `wide`, 148 B, 63 fields of nine shapes | 1010 | 910 | ~15 ns a field |
+
+### Bit strings off a byte boundary a word at a time (#105), 2026-10-21
+
+[`performance/2026-10-21-57c60cb-105.csv`](performance/2026-10-21-57c60cb-105.csv). Off a byte
+boundary, a bit string now moves eight bytes a step, two steps a loop, instead of one byte: the source
+as a big-endian word shifted by the offset. Encode carries the bits spilling into the next byte in a
+register rather than OR'ing them into memory -- a first version did that, and every step's one-byte
+store was read back by the next step's eight-byte load, which cannot be forwarded and stalled encode at
+half the speed of decode. Against the file before the round: 0 points slower, 47 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `size/fixed_unaligned/4096` encode | 6026 | 1031 | 5.8x (6.0x on the first baseline's 6154) |
+| `size/fixed_unaligned/4096` decode | 5181 | 854 | 6.1x (5.3x on the first baseline's 4559) |
+| `size/fixed_unaligned/256` encode / decode | 382 / 400 | 113 / 133 | |
+| `mix/valof_unaligned/203` encode / decode | 338 / 371 | 122 / 151 | |
+| `mix/unaligned_lsb_first/74` encode / decode | 271 / 237 | 202 / 168 | the bit string's share; the `lsb_first` fields are #108 |
+
+An unaligned 4 KiB bit string still costs about 6x the aligned one (161 / 151 ns here), which is a
+`memcpy`; the shift is a handful of instructions a word, two of them variable shifts.
+
+### `lsb_first` scalars by reversal (#108), 2026-10-21
+
+[`performance/2026-10-21-1fbee8d-108.csv`](performance/2026-10-21-1fbee8d-108.csv). An `lsb_first`
+value is its bit-reversal laid down `msb_first`, so it is reversed -- three swaps of ever smaller pieces
+and a byte swap, about ten instructions -- and goes out in the same runs of up to eight bits, at any
+offset. Decode reads the runs and reverses the result.
+
+| Point | Before | After | vs `msb_first` |
+| --- | --- | --- | --- |
+| `shape/u16_lsb_first` encode / decode | 319 / 230 | 136 / 152 | 1.21x / 1.13x (`u16`: 112 / 134) |
+| `shape/u12_lsb_first` encode / decode | 256 / 188 | 136 / 153 | |
+| `grid/u16_lsb_first_at0/64` encode / decode | 2346 / 1392 | 925 / 853 | |
+| `mix/unaligned_lsb_first/74` encode / decode | 202 / 168 | 126 / 150 | (after #105) |
+
+Against the file before the round, 51 points are faster and 2 slower: `size/fixed/384` and `/512`
+encode, by 7%, a `memcpy` this change does not touch. Against #105's run, `fields/u16` decode moved by
+2-8% (32 fields the most), which a second, separate run of both binaries reproduced. Neither is in code
+the change made slower; both look like the layout sensitivity #109 is about, and #106 rewrites that
+path anyway.
+
+### Repetition elements (#101), 2026-10-22
+
+[`performance/2026-10-22-4b1b66a-101.csv`](performance/2026-10-22-4b1b66a-101.csv). A member is read and
+written through the routines ordinary fields use, now in `src/bits.h`, instead of a bit at a time; those
+gather a field's bytes into one word and shift once, and read a byte-aligned 8-, 16-, 32- or 64-bit
+field straight off its bytes. An element's fixed values are worked out at load as a few masked bytes,
+stamped into every element of a repetition on a byte boundary. The capacity is computed once, and a
+member id is checked in one walk. Against the file before the round: 0 points slower, 358 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `element_shape/bench_sample/32` encode | 565 | 116 | 4.9x |
+| `mix/repetition/198` encode | 634 | 131 | 4.8x |
+| `elements/counted/1024` encode | 15900 | 1914 | 8.3x |
+| `element_bytes/u8_members/32` encode | 1066 | 71 | 15x: no fixed values, nothing to stamp |
+| `element_get` (any shape) | 73.5 | 21.3 | 3.5x |
+| `elements_all`, 1024 elements | 71183 | 18424 | 3.9x |
+| `get_u64`, an ordinary field | 10.1 | 8.5 | the member path is out of line, so this one's entry is lean |
+
+#101 asked for an element read within 2x of an ordinary `get_u64`. It is 2.5x the ordinary read as it is
+now, and 2.1x the one before this change. What is left is the walk itself: `framedsl_element()` and
+the read each go from the definition to the packet, the field, the element and the member, a chain of
+dependent loads; an ordinary read does it once.
+
+### The per-field cost (#106), 2026-10-22
+
+[`performance/2026-10-22-8cda2dc-106.csv`](performance/2026-10-22-8cda2dc-106.csv). Profiled first, and
+written up on #106: gprof, since `perf` is not allowed on this machine. Per field, decode asked whether
+the field was present, worked out its width and checked it against the buffer; encode first copied every
+value into an array only `valof()` widths and conditions read; and decode put the whole packet aside
+before starting, in case it failed part-way. Each packet's **known prefix** -- the leading fields at a
+constant offset, of a constant width, without a condition, which is every field of most packets -- is now
+worked out at load, with each field's offset and how it moves. Decode checks the frame's length against
+the prefix once and reads it with no per-field checks, and a packet that is all prefix is not put aside:
+past that one check it cannot fail. Encode writes the prefix straight from the arena, and clears only what
+its packet can take. Against the file before the round: 0 points slower, 469 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `fields/u16/255` encode / decode | 2848 / 2721 | 1205 / 1040 | 2.4x / 2.6x (2.2x / 2.4x on the first baseline's 2656 / 2473) |
+| `fields/u16/1` encode / decode | 37 / 67 | 27 / 19 | the fixed cost of a frame |
+| `size/fixed/16` encode / decode | 45 / 73 | 32 / 24 | |
+| `mix/housekeeping/29` encode / decode | 194 / 215 | 96 / 90 | |
+| `mix/wide/148` encode / decode | 1010 / 910 | 412 / 423 | |
+
+One measurement worth keeping: a first version gathered the values after the prefix rather than before,
+for the same work, and a short conditional packet's encode (`mix/conditional_none`) came out 31% slower
+than before the round; gathering first puts it back where it was, 81 to 79 ns. Against #101's run, `elements/const/32` encode
+went from 91 to 110 ns, still a fifth of where it started.
+
+### Finding the packet (#107), 2026-10-22
+
+[`performance/2026-10-22-c7af840-107.csv`](performance/2026-10-22-c7af840-107.csv). A definition carries
+an index built at load (`src/dispatch.c`). Names are hashed, so an encode costs the same whichever packet
+it names. For decode, the bits every identifiable packet fixes, over the bytes all their discriminators
+cover, are a key -- usually an id, a type or an apid -- and packets are grouped by their value under it:
+a frame's key names the few packets to match in full. Definitions of up to four packets, and packets that
+share no fixed bit, still try each in turn, which for them is as quick. Against the file before the
+round: 0 points slower, 477 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `packets/last/512` encode | 2281 | 58 | 1.6x the first packet's 35 (target: within 2x) |
+| `packets/last/512` decode | 1121 | 33 | the same as the first packet's 33 |
+| `mix/ccsds_family_last/29` decode | 217 | 90 | |
+| `mix/telecommands_last/8` decode, told apart three bytes in | 140 | 33 | |
+
+The index has a cost of its own, about 8 ns a decode, which a family's *first* packet now pays where
+trying in turn found it at once: `packets/first/*` decode went from 24 to 33 ns against #106's run. Two
+lookups inlined into the encoder and the decoder made every frame of a one-packet definition 3-4 ns
+slower, for code those never run; the keyed search is out of line, and their decode is back to #106's.
+Against #106's run some one-packet decodes still moved, either way -- `shape/u64_little_endian` 18%
+slower, `shape/u8` 15% faster -- in code this change did not touch, which a second, separate run of both
+binaries reproduced. That is #109's question.
 
 ## `make bench`: first numbers, 2026-09-21
 

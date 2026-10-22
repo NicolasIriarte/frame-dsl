@@ -398,6 +398,145 @@ static int us20_tc12_the_tool_decodes_elements(const TestArguments *args) {
            : __LINE__;
 }
 
+/* A reference for tc13, a bit at a time: stream bit i is bit 7 - (i % 8) of byte i / 8. `lsb_first`
+ * puts the value's bit j at the field's bit j; `swap` reverses its bytes first, as little_endian does. */
+static void reference_put(uint8_t *out, uint64_t offset, uint64_t width, uint64_t value, bool lsb_first, bool swap) {
+  if (swap) {
+    uint64_t swapped = 0;
+    for (uint64_t byte = 0; byte < width / 8; ++byte) {
+      swapped = swapped << 8 | ((value >> (byte * 8)) & 0xFF);
+    }
+    value = swapped;
+  }
+  for (uint64_t j = 0; j < width; ++j) {
+    uint64_t bit = lsb_first ? (value >> j) & 1 : (value >> (width - 1 - j)) & 1;
+    if (bit != 0) {
+      out[(offset + j) / 8] |= (uint8_t)(1u << (7 - (offset + j) % 8));
+    }
+  }
+}
+
+/* tc13's frame, its elements `lead` bits after a 16-bit header. */
+static int every_shape_of_member(unsigned lead) {
+  static const struct {
+    const char *name;
+    uint64_t offset;
+    uint64_t width;
+    bool lsb_first;
+    bool swap;
+    bool fixed;
+    uint64_t value;
+  } members[] = {
+    { "a", 0,  8,  false, false, false, 0    },
+    { "w", 8,  16, false, true,  false, 0    },
+    { "m", 24, 3,  false, false, true,  5    },
+    { "l", 27, 7,  true,  false, false, 0    },
+    { "x", 34, 13, false, false, false, 0    },
+    { "s", 47, 9,  true,  false, false, 0    },
+    { "f", 56, 8,  false, false, true,  0xA5 },
+  };
+  Fixture fixture = { 0 };
+  Fixture receiver = { 0 };
+  char source[512];
+  snprintf(
+    source,
+    sizeof(source),
+    "block E {\n"
+    "  a: 8;\n"
+    "  [ @byte_order: little_endian; ] w: 16;\n"
+    "  m: 3 = 5;\n"
+    "  [ @bit_order: lsb_first; ] l: 7;\n"
+    "  x: 13;\n"
+    "  [ @bit_order: lsb_first; ] s: 9;\n"
+    "  f: 8 = 0xA5;\n"
+    "};\n"
+    "pkt P { id: 8 = 0x5A; count: 8; pre: %u; items[64]: E[valof(count)]; post: %u; };\n",
+    lead,
+    lead
+  );
+  if (!fixture_open(&fixture, source) || !fixture_open(&receiver, source)) {
+    fixture_close(&fixture);
+    fixture_close(&receiver);
+    return __LINE__;
+  }
+  int failure = 0;
+  const uint64_t count = 6;
+  uint8_t want[80] = { 0 };
+  reference_put(want, 0, 8, 0x5A, false, false);
+  reference_put(want, 8, 8, count, false, false);
+  reference_put(want, 16, lead, 0x9, false, false);
+  if (!set(&fixture, "P.count", count) || !set(&fixture, "P.pre", 0x9) || !set(&fixture, "P.post", 0x6)) {
+    failure = __LINE__;
+  }
+  uint64_t state = 0x9E3779B97F4A7C15u;
+  uint64_t values[6][7];
+  for (uint64_t e = 0; e < count && failure == 0; ++e) {
+    uint8_t element[8] = { 0 };
+    for (size_t m = 0; m < sizeof(members) / sizeof(*members); ++m) {
+      state ^= state << 13;
+      state ^= state >> 7;
+      state ^= state << 17;
+      uint64_t value = members[m].fixed ? members[m].value : state & ((UINT64_C(1) << members[m].width) - 1);
+      values[e][m] = value;
+      reference_put(element, members[m].offset, members[m].width, value, members[m].lsb_first, members[m].swap);
+      if (!members[m].fixed) {
+        char name[32];
+        FramedslFieldId any;
+        FramedslFieldId id;
+        snprintf(name, sizeof(name), "P.items.%s", members[m].name);
+        if (!framedsl_find(fixture.definition, name, &any)
+            || framedsl_element(fixture.definition, any, (size_t)e, &id) != FRAMEDSL_OK
+            || framedsl_set_u64(fixture.frame, id, value) != FRAMEDSL_OK) {
+          failure = __LINE__;
+        }
+      }
+    }
+    reference_put(
+      want,
+      16 + lead + e * 64,
+      64,
+      (uint64_t)element[0] << 56 | (uint64_t)element[1] << 48 | (uint64_t)element[2] << 40 | (uint64_t)element[3] << 32
+        | (uint64_t)element[4] << 24 | (uint64_t)element[5] << 16 | (uint64_t)element[6] << 8 | element[7],
+      false,
+      false
+    );
+  }
+  reference_put(want, 16 + lead + count * 64, lead, 0x6, false, false);
+  const size_t length = (size_t)(16 + 2 * lead + count * 64) / 8;
+  if (failure == 0 && !encodes_to(&fixture, "P", want, length)) {
+    failure = __LINE__;
+  }
+
+  /* Decoded into another frame, every member reads back -- fixed ones as their fixed values. */
+  if (failure == 0 && framedsl_decode(receiver.frame, want, length, NULL, NULL) == NULL) {
+    failure = __LINE__;
+  }
+  for (uint64_t e = 0; e < count && failure == 0; ++e) {
+    for (size_t m = 0; m < sizeof(members) / sizeof(*members) && failure == 0; ++m) {
+      char name[32];
+      uint64_t got = 0;
+      snprintf(name, sizeof(name), "P.items[%llu].%s", (unsigned long long)e, members[m].name);
+      if (!get(&receiver, name, &got) || got != values[e][m]) {
+        failure = __LINE__;
+      }
+    }
+  }
+  fixture_close(&fixture);
+  fixture_close(&receiver);
+  return failure;
+}
+
+/* Every shape of member in one element, reached through the accessors and stamped by encode (#101):
+ * whole bytes on a boundary, little-endian, fixed values sub-byte and whole, lsb_first across a byte,
+ * and a 13-bit field off a boundary. The elements sit on a byte boundary in the frame, where encode
+ * stamps fixed values as masked bytes, and four bits off one, where it writes them member by member.
+ * Each element's bytes, and so the frame, against a reference laid down a bit at a time. */
+static int us20_tc13_every_shape_of_member_matches_a_reference(const TestArguments *args) {
+  (void)args;
+  int failure = every_shape_of_member(8);
+  return failure != 0 ? failure : every_shape_of_member(4);
+}
+
 void register_user_story20(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us20_tc01_a_constant_count_encodes_and_decodes, "a constant count encodes and decodes", false);
@@ -432,4 +571,9 @@ void register_user_story20(void) {
     us20_tc11_the_whole_repetition_reads_as_bytes, "the whole repetition reads as the bytes that arrived", false
   );
   ADD_TEST_CASE(us20_tc12_the_tool_decodes_elements, "-d prints each element by name", false);
+  ADD_TEST_CASE(
+    us20_tc13_every_shape_of_member_matches_a_reference,
+    "every shape of member matches a bit-at-a-time reference",
+    false
+  );
 }

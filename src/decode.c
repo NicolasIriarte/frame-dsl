@@ -1,5 +1,6 @@
 #include <string.h>
 
+#include "bits.h"
 #include "bytecode.h"
 #include "definition.h"
 #include "frame.h"
@@ -12,10 +13,6 @@
  * pass already projected each packet's fixed fields onto the stream bits they pin, as a mask and a
  * value in exactly this numbering, so matching is an AND and a compare per byte. */
 
-static bool read_bit(const uint8_t *buffer, uint64_t index) {
-  return ((buffer[index / 8] >> (7 - (index % 8))) & 1) != 0;
-}
-
 /* Reads `width` bits at `offset` back into the value they came from, undoing what encode.c laid
  * down. `lsb_first` is not `msb_first` reversed: each puts a different bit of the value at the
  * earliest stream position, so each has to be undone on its own terms. */
@@ -26,35 +23,15 @@ static uint64_t read_scalar(
   BitOrder bit_order,
   ByteOrder byte_order
 ) {
-  uint64_t value = 0;
-
-  if (bit_order == BIT_ORDER_MSB_FIRST) {
-    /* The stream holds the value's bits in order, so they come in runs: what is left of the current
-     * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. */
-    uint64_t position = offset;
-    uint64_t remaining = width;
-    while (remaining > 0) {
-      uint64_t used = position % 8;
-      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-      uint64_t bits = ((uint64_t)buffer[position / 8] >> (8 - used - run)) & ((1u << run) - 1);
-      value = (value << run) | bits;
-      position += run;
-      remaining -= run;
-    }
-  } else {
-    for (uint64_t j = 0; j < width; ++j) {
-      if (read_bit(buffer, offset + j)) {
-        value |= (uint64_t)1 << j;
-      }
-    }
+  /* The stream holds the value's bits in order, so they come in runs: what is left of the current
+   * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. lsb_first is the same
+   * runs, reversed afterwards (#108). */
+  uint64_t value = bits_get(buffer, offset, width);
+  if (bit_order == BIT_ORDER_LSB_FIRST && width > 0) {
+    value = bits_reverse(value, width);
   }
-
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
-    uint64_t swapped = 0;
-    for (uint64_t byte = 0; byte < width / 8; ++byte) {
-      swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
-    }
-    value = swapped;
+    value = bits_swap(value, width);
   }
   return value;
 }
@@ -72,7 +49,22 @@ static void read_bytes(const uint8_t *buffer, uint64_t offset, uint8_t *out, siz
     return;
   }
 
-  for (size_t i = 0; i < length; ++i) {
+  /* Eight bytes at a time first (#105), the mirror of write_bytes(): eight buffer bytes as a big-endian
+   * word, shifted left by the offset, with the top of the ninth shifted in below. The field reaches
+   * buffer byte `length`, so the ninth byte of every step is inside it. Two words a step while there
+   * are two, which halves the loop's own cost: each word is only a handful of instructions. */
+  size_t i = 0;
+  const unsigned back = 8 - shift;
+  for (; i + 16 <= length; i += 16) {
+    uint64_t first = bits_load_be64(at + i) << shift | (uint64_t)(at[i + 8] >> back);
+    uint64_t second = bits_load_be64(at + i + 8) << shift | (uint64_t)(at[i + 16] >> back);
+    bits_store_be64(out + i, first);
+    bits_store_be64(out + i + 8, second);
+  }
+  for (; i + 8 <= length; i += 8) {
+    bits_store_be64(out + i, bits_load_be64(at + i) << shift | (uint64_t)(at[i + 8] >> back));
+  }
+  for (; i < length; ++i) {
     out[i] = (uint8_t)((at[i] << shift) | (at[i + 1] >> (8 - shift)));
   }
 }
@@ -99,6 +91,26 @@ static bool matches(const PacketLayout *packet, const uint8_t *buffer, size_t le
   return true;
 }
 
+/* The packet a frame is, through the index (#107): only the packets whose shared fixed bits agree with
+ * the frame's are matched in full -- usually one. Out of line, because inlined into framedsl_decode() it
+ * made every decode of a definition without a key 2-4 ns slower, for code those never run. */
+__attribute__((noinline)) static bool find_keyed(
+  const FramedslDefinition *definition,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *index
+) {
+  size_t count = 0;
+  const uint32_t *candidates = packet_index_candidates(definition->index, buffer, length, &count);
+  for (size_t c = 0; c < count; ++c) {
+    if (matches(&definition->layout->packets[candidates[c]], buffer, length)) {
+      *index = candidates[c];
+      return true;
+    }
+  }
+  return false;
+}
+
 const char *framedsl_decode(
   FramedslFrame *frame,
   const uint8_t *buffer,
@@ -121,15 +133,20 @@ const char *framedsl_decode(
   const Layout *layout = definition->layout;
 
   /* Check 12 guarantees at most one packet can match, so the first hit is the answer and there is
-   * nothing to disambiguate. */
+   * nothing to disambiguate. A definition of a few packets, or of packets sharing no fixed bit, tries
+   * each in turn; any other goes through the index (#107). */
   size_t index = 0;
   bool found = false;
-  for (size_t p = 0; p < layout->packet_count; ++p) {
-    if (matches(&layout->packets[p], buffer, length)) {
-      index = p;
-      found = true;
-      break;
+  if (!definition->index->keyed) {
+    for (size_t p = 0; p < layout->packet_count; ++p) {
+      if (matches(&layout->packets[p], buffer, length)) {
+        index = p;
+        found = true;
+        break;
+      }
     }
+  } else {
+    found = find_keyed(definition, buffer, length, &index);
   }
 
   if (!found) {
@@ -148,19 +165,67 @@ const char *framedsl_decode(
     return NULL;
   }
 
+  /* The known prefix (#106) fits the frame or it does not, and that is one comparison: past it, each
+   * of its fields is read at its place with nothing more to check. */
+  const bool prefix_fits = program->prefix_bits <= (uint64_t)length * 8;
+  const bool all_prefix = program->prefix_count == program->field_count;
+
   /* The walk writes each field into its slot as it goes, so a walk that gives up part-way would
    * otherwise leave this packet holding half of one frame and half of another. Put it aside first
    * and put it back on every way out below: a failed decode changes nothing, which is what lets a
    * read be a plain read. Only this packet can be disturbed -- matches() above reads the buffer
-   * without writing, and check 12 means no second packet is ever tried. */
-  frame_snapshot_packet(frame, index);
+   * without writing, and check 12 means no second packet is ever tried. A packet that is all known
+   * prefix, in a frame long enough for it, cannot give up part-way, and has nothing to put aside. */
+  if (!(all_prefix && prefix_fits)) {
+    frame_snapshot_packet(frame, index);
+  }
 
-  /* Filled in as the walk goes, because a valof() width reads a field this walk has already decoded
-   * -- which check 7 guarantees is one it has passed. */
-  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET] = { 0 };
+  /* Filled in as the walk goes, because a valof() width or a condition reads a field this walk has
+   * already decoded -- which check 7 guarantees is one it has passed, and check 16 a scalar, whose
+   * entry is always written before it can be read. */
+  uint64_t slots[FRAMEDSL_MAX_FIELDS_PER_PACKET];
 
+  size_t first = 0;
   uint64_t offset = 0;
-  for (size_t f = 0; f < program->field_count; ++f) {
+  if (prefix_fits) {
+    for (size_t f = 0; f < program->prefix_count; ++f) {
+      const FieldInstruction *instruction = &program->fields[f];
+      Slot *slot = &frame->slots[base + f];
+      const uint8_t *at = buffer + instruction->offset_bits / 8;
+      uint64_t value;
+      const unsigned bytes = (unsigned)(instruction->width_bits / 8);
+      if (instruction->copy == COPY_BYTES) {
+        value = bits_load_be(at, bytes);
+      } else if (instruction->copy == COPY_GENERAL) {
+        value = read_scalar(
+          buffer, instruction->offset_bits, instruction->width_bits, instruction->bit_order, instruction->byte_order
+        );
+      } else if (instruction->copy == COPY_BYTES_SWAPPED) {
+        value = bits_swap(bits_load_be(at, bytes), instruction->width_bits);
+      } else if (instruction->copy == COPY_STRING) {
+        read_bytes(buffer, instruction->offset_bits, frame->arena + slot->offset, bytes);
+        slots[f] = 0;
+        continue;
+      } else {
+        value = bits_load_reversed(at, bytes);
+        if (instruction->copy_swap) {
+          value = bits_swap(value, instruction->width_bits);
+        }
+      }
+      slots[f] = value;
+      memcpy(frame->arena + slot->offset, &value, sizeof(value));
+    }
+    first = program->prefix_count;
+    offset = program->prefix_bits;
+  }
+  if (all_prefix && prefix_fits) {
+    if (consumed != NULL) {
+      *consumed = (size_t)(offset / 8);
+    }
+    return framedsl_packet_name(definition, index);
+  }
+
+  for (size_t f = first; f < program->field_count; ++f) {
     const FieldInstruction *instruction = &program->fields[f];
     Slot *slot = &frame->slots[base + f];
 
@@ -206,6 +271,7 @@ const char *framedsl_decode(
       memcpy(frame->arena + slot->offset, &value, sizeof(value));
     } else {
       size_t bytes = (size_t)(width / 8);
+      slots[f] = 0;
       read_bytes(buffer, offset, frame->arena + slot->offset, bytes);
       /* Whatever an earlier frame left past this one's length is cleared, so a shorter payload never
        * shows the tail of a longer one. */
