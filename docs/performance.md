@@ -19,7 +19,10 @@ There are two tools, for two questions:
 ## The baseline
 
 `bench/baseline.c` generates definitions that vary one thing at a time, with everything else held at a
-small default, and times the public API on each:
+small default, and times the public API on each. The last two dimensions are the exception: no real
+definition looks like one point of the others, so `mix` combines features the way real definitions do,
+and `grid` crosses a field's shape with its alignment and count -- a change that speeds one shape up at
+another's expense shows up there.
 
 | Dimension | What varies | Operations |
 | --- | --- | --- |
@@ -30,6 +33,8 @@ small default, and times the public API on each:
 | `element_shape` | 32 counted 3-byte elements: plain, with a fixed value, `little_endian`, `lsb_first`, sub-byte | the same |
 | `packets` | 1 to 512 packets in the definition; the first and the last declared | encode, decode |
 | `shape` | eight fields of one shape: 3 to 64 bits, sub-byte, `lsb_first`, `little_endian`, calibrated (linear and bytecode) | encode, decode, `set_u64`, `get_u64`, `set_eng`, `get_eng` |
+| `mix` (#130) | definitions written the way real ones are, each combining features: a CCSDS family of 32 apids and a telecommand family of 16 told apart three bytes in (first and last of each); housekeeping with an enum, `little_endian` calibrated and 12-bit calibrated fields; `lsb_first` fields and a bit string off a byte boundary; a counted repetition of mixed members; optional parts all present and all absent; a `valof()` payload off a byte boundary; 63 fields of nine shapes | encode, decode, and `get_u64`, `get_eng`, `set_eng`, `element_get`, `elements_all` where the definition has them |
+| `grid` (#130) | eight or 64 fields of one shape (`u16`, `u12`, `lsb_first` `u16`, `little_endian` `u32`, calibrated `u16`), starting on a byte boundary (`_at0`) or three bits past one (`_at3`); `little_endian` only at 0, since check 10 refuses it off a boundary | encode, decode |
 
 `element_get` is `framedsl_element()` and `framedsl_get_u64()` on one element; `elements_all` is
 `framedsl_count()` and that loop over every element. `build/baseline --dump <dimension>` prints the
@@ -104,6 +109,29 @@ runtime at `4d627c6`), same i5-9400T as below, gcc 13.3 at `-O2`, `powersave` go
 | encode, 32 elements plain vs with a fixed 8-bit member | 186 vs 919 | stamping fixed values is ~23 ns an element |
 | `element_get` | 60 | whatever the element's size or shape |
 | `elements_all`, 1024 elements | 59875 | ~58 ns an element, 500x the decode |
+
+### Before the performance round, 2026-10-21
+
+[`performance/2026-10-21-944c7b9-before.csv`](performance/2026-10-21-944c7b9-before.csv): `944c7b9`,
+whose runtime is `main`'s at v0.1.0, the first run with `mix` and `grid` (#130). Same i5-9400T, but
+Linux 7.0 and gcc 15.2 where the first baseline had 6.8 and 13.3, and the runtime has gained conditional
+fields (#12) since: every accessor now asks whether its field is present. 191 of the 418 points the two
+files share are slower than in the first baseline and 6 faster -- every `get_u64` by 32%, 7.6 to 10.1
+ns -- and nothing tells those three changes apart. So this file, not the first, is what the performance round
+(#105, #108, #101, #106, #107, #109) is measured against.
+
+What the combinations cost, medians in ns:
+
+| Point | encode | decode | What it says |
+| --- | --- | --- | --- |
+| `ccsds_family`, 29 B, first / last of 32 apids | 126 / 255 | 148 / 217 | the last apid pays ~4 ns per packet ahead of it, both ways |
+| `telecommands`, 8 B, first / last of 16, told apart 3 bytes in | 60 / 126 | 92 / 140 | the same, on a family whose first byte is shared |
+| `housekeeping`, 29 B, enum, `little_endian`, calibrated, 12-bit | 194 | 215 | 18 fields at ~11 ns each |
+| `unaligned_lsb_first`, 74 B | 271 | 237 | four `lsb_first` fields and a 64-byte unaligned bit string |
+| `repetition`, 198 B, 32 mixed elements | 634 | 111 | `element_get` 74 ns, `elements_all` 2275 ns |
+| `conditional_all` / `conditional_none`, 37 / 2 B | 179 / 81 | 173 / 123 | |
+| `valof_unaligned`, 203 B | 338 | 371 | a 200-byte payload 5 bits into a byte |
+| `wide`, 148 B, 63 fields of nine shapes | 1010 | 910 | ~15 ns a field |
 
 ## `make bench`: first numbers, 2026-09-21
 
