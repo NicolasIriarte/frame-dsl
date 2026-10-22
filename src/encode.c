@@ -37,11 +37,7 @@ static void write_scalar(
    * sitting on byte boundaries. Check 10 rejects anyone writing it where that is untrue; inherited,
    * it simply does not apply here. */
   if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
-    uint64_t swapped = 0;
-    for (uint64_t byte = 0; byte < width / 8; ++byte) {
-      swapped = (swapped << 8) | ((value >> (byte * 8)) & 0xFF);
-    }
-    value = swapped;
+    value = bits_swap(value, width);
   }
 
   /* lsb_first puts the value's bits in the opposite order to the stream's, so it is the value reversed
@@ -50,19 +46,9 @@ static void write_scalar(
     value = bits_reverse(value, width);
   }
 
-  /* msb_first is the value's bits in stream order, so it goes out in runs: as many as are left in the
-   * current byte, at most eight at a time, whatever the alignment. The output was zeroed before the
-   * walk and no two fields overlap, so a run is OR'd in rather than written bit by bit. */
-  uint64_t position = offset;
-  uint64_t remaining = width;
-  while (remaining > 0) {
-    uint64_t used = position % 8;
-    uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-    uint64_t bits = (value >> (remaining - run)) & ((1u << run) - 1);
-    out[position / 8] |= (uint8_t)(bits << (8 - used - run));
-    position += run;
-    remaining -= run;
-  }
+  /* msb_first is the value's bits in stream order, so it goes out in runs of up to eight. The output
+   * was zeroed before the walk and no two fields overlap, so a run is OR'd in. */
+  bits_or(out, offset, width, value);
 }
 
 /* A bit string goes out as the bytes it was given, each most significant bit first, starting wherever
@@ -110,6 +96,34 @@ static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, siz
   for (; i < length; ++i) {
     at[i] |= (uint8_t)(bytes[i] >> shift);
     at[i + 1] |= (uint8_t)(bytes[i] << (8 - shift));
+  }
+}
+
+/* A repetition's fixed values, into every element of the `width` bits at `offset` (#101). On a byte
+ * boundary, which is the common case, an element's fixed bits are a few bytes masked in; off one, each
+ * fixed member is written in turn. */
+static void stamp_fixed(uint8_t *out, uint64_t offset, uint64_t width, const ElementProgram *element) {
+  if (element->bits == 0 || element->fixed_members == 0) {
+    return;
+  }
+  if (offset % 8 == 0 && element->fixed_at != NULL) {
+    const size_t step = (size_t)(element->bits / 8);
+    uint8_t *at = out + offset / 8;
+    for (uint64_t start = 0; start < width; start += element->bits, at += step) {
+      for (size_t i = 0; i < element->fixed_count; ++i) {
+        uint8_t *byte = &at[element->fixed_at[i]];
+        *byte = (uint8_t)((*byte & ~element->fixed_mask[i]) | element->fixed_value[i]);
+      }
+    }
+    return;
+  }
+  for (uint64_t start = 0; start < width; start += element->bits) {
+    for (size_t m = 0; m < element->member_count; ++m) {
+      const MemberInstruction *member = &element->members[m];
+      if (member->has_fixed) {
+        member_put(out, offset + start + member->offset_bits, member, member->fixed);
+      }
+    }
   }
 }
 
@@ -223,15 +237,7 @@ const uint8_t *framedsl_encode(FramedslFrame *frame, const char *packet, size_t 
        * disagree with -- an element nobody set is zeros, as any field nobody set is. Each element's
        * fixed values come from the definition, as a fixed field's do, whatever the slot holds. */
       write_bytes(frame->output, offset, frame->arena + slot->offset, (size_t)(width / 8));
-      const ElementProgram *element = instruction->element;
-      for (uint64_t start = 0; start < width; start += element->bits) {
-        for (size_t m = 0; m < element->member_count; ++m) {
-          const MemberInstruction *member = &element->members[m];
-          if (member->has_fixed) {
-            frame_member_put(frame->output, offset + start + member->offset_bits, member, member->fixed);
-          }
-        }
-      }
+      stamp_fixed(frame->output, offset, width, instruction->element);
     } else {
       /* A variable field's width comes from the expression, and the bytes come from the arena. Those
        * two can disagree -- a caller who sets `len` to 12 and then twenty bytes of `data` has
