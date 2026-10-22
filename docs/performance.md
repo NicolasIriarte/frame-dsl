@@ -223,6 +223,31 @@ for the same work, and a short conditional packet's encode (`mix/conditional_non
 than before the round; gathering first puts it back where it was, 81 to 79 ns. Against #101's run, `elements/const/32` encode
 went from 91 to 110 ns, still a fifth of where it started.
 
+### Finding the packet (#107), 2026-10-22
+
+[`performance/2026-10-22-c7af840-107.csv`](performance/2026-10-22-c7af840-107.csv). A definition carries
+an index built at load (`src/dispatch.c`). Names are hashed, so an encode costs the same whichever packet
+it names. For decode, the bits every identifiable packet fixes, over the bytes all their discriminators
+cover, are a key -- usually an id, a type or an apid -- and packets are grouped by their value under it:
+a frame's key names the few packets to match in full. Definitions of up to four packets, and packets that
+share no fixed bit, still try each in turn, which for them is as quick. Against the file before the
+round: 0 points slower, 477 faster.
+
+| Point | Before | After | |
+| --- | --- | --- | --- |
+| `packets/last/512` encode | 2281 | 58 | 1.6x the first packet's 35 (target: within 2x) |
+| `packets/last/512` decode | 1121 | 33 | the same as the first packet's 33 |
+| `mix/ccsds_family_last/29` decode | 217 | 90 | |
+| `mix/telecommands_last/8` decode, told apart three bytes in | 140 | 33 | |
+
+The index has a cost of its own, about 8 ns a decode, which a family's *first* packet now pays where
+trying in turn found it at once: `packets/first/*` decode went from 24 to 33 ns against #106's run. Two
+lookups inlined into the encoder and the decoder made every frame of a one-packet definition 3-4 ns
+slower, for code those never run; the keyed search is out of line, and their decode is back to #106's.
+Against #106's run some one-packet decodes still moved, either way -- `shape/u64_little_endian` 18%
+slower, `shape/u8` 15% faster -- in code this change did not touch, which a second, separate run of both
+binaries reproduced. That is #109's question.
+
 ## `make bench`: first numbers, 2026-09-21
 
 `make bench BENCH_SECONDS=1` runs each measurement for longer.
