@@ -20,15 +20,6 @@
  * transmitted in. The checker's mask and value use the same numbering, so a packet's discriminator is
  * literally the bytes a frame of it must have. */
 
-static void write_bit(uint8_t *out, uint64_t index, bool set) {
-  uint8_t mask = (uint8_t)(1u << (7 - (index % 8)));
-  if (set) {
-    out[index / 8] |= mask;
-  } else {
-    out[index / 8] = (uint8_t)(out[index / 8] & ~mask);
-  }
-}
-
 /* Lays `width` bits of `value` into the stream at `offset`.
  *
  * `msb_first` puts the value's most significant bit at the earliest stream bit the field occupies;
@@ -53,27 +44,24 @@ static void write_scalar(
     value = swapped;
   }
 
+  /* lsb_first puts the value's bits in the opposite order to the stream's, so it is the value reversed
+   * laid down msb_first (#108): the same runs, at any offset. */
+  if (bit_order == BIT_ORDER_LSB_FIRST && width > 0) {
+    value = bits_reverse(value, width);
+  }
+
   /* msb_first is the value's bits in stream order, so it goes out in runs: as many as are left in the
    * current byte, at most eight at a time, whatever the alignment. The output was zeroed before the
    * walk and no two fields overlap, so a run is OR'd in rather than written bit by bit. */
-  if (bit_order == BIT_ORDER_MSB_FIRST) {
-    uint64_t position = offset;
-    uint64_t remaining = width;
-    while (remaining > 0) {
-      uint64_t used = position % 8;
-      uint64_t run = 8 - used < remaining ? 8 - used : remaining;
-      uint64_t bits = (value >> (remaining - run)) & ((1u << run) - 1);
-      out[position / 8] |= (uint8_t)(bits << (8 - used - run));
-      position += run;
-      remaining -= run;
-    }
-    return;
-  }
-
-  /* lsb_first puts the value's bits in the opposite order to the stream's, so it stays a bit at a
-   * time. It is the rare case, and reversing a value to reuse the loop above would cost as much. */
-  for (uint64_t j = 0; j < width; ++j) {
-    write_bit(out, offset + j, ((value >> j) & 1) != 0);
+  uint64_t position = offset;
+  uint64_t remaining = width;
+  while (remaining > 0) {
+    uint64_t used = position % 8;
+    uint64_t run = 8 - used < remaining ? 8 - used : remaining;
+    uint64_t bits = (value >> (remaining - run)) & ((1u << run) - 1);
+    out[position / 8] |= (uint8_t)(bits << (8 - used - run));
+    position += run;
+    remaining -= run;
   }
 }
 
