@@ -69,6 +69,12 @@ static const char *const DEFINITIONS[] = {
   "    [ @if: valof(flags) & 0x2 != 0 || valof(version) > 10; ] code: 8; };\n"
   "  [ @if: (valof(flags) & 0x8 == 0x8 || valof(version) == 0) && valof(kind) != IDLE; ] crc: 16;\n"
   "  tail: 8; };\n",
+
+  /* Fixed values past the known prefix (#141): they identify nothing, so a frame may differ from them,
+   * and what it answers has to follow what arrived. */
+  "block S { v: 8; };\n"
+  "pkt FP { id: 8 = 0x71; size: 8; pad[4]: valof(size) * 8; flag: 8 = 1;\n"
+  "  [ @if: valof(flag) == 1; ] extra: 8; count: 8 = 2; list[8]: S[valof(count)]; end: 8 = 0x7F; };\n",
 };
 
 #define DEFINITION_COUNT (sizeof(DEFINITIONS) / sizeof(*DEFINITIONS))
@@ -94,13 +100,18 @@ static void load_once(void) {
 }
 
 /* Reads every field of the decoded packet, the way a caller would, then copies the values into a
- * second frame and encodes that. The result must be the bytes the decode consumed. */
+ * second frame and encodes that. The result must be the bytes the decode consumed, unless a fixed field
+ * differs from the definition, which encode does not reproduce. Either way the fields the frame says it
+ * holds must add up to those bytes. */
 static void check_round_trip(size_t d, const char *name, const uint8_t *bytes, size_t consumed) {
   const FramedslDefinition *definition = framedsl_definition(results[d]);
   size_t packet = 0;
   if (!framedsl_find_packet(definition, name, &packet)) {
     abort();
   }
+
+  uint64_t carried = 0;
+  bool as_defined = true;
 
   /* The length fields go in before the payloads they size, since setting a payload does not care, but
    * the order the fields are declared in already guarantees that. */
@@ -132,6 +143,8 @@ static void check_round_trip(size_t d, const char *name, const uint8_t *bytes, s
       if (framedsl_get_u64(frames[d], id, &value) != FRAMEDSL_OK) {
         abort();
       }
+      carried += field.width_bits;
+      as_defined = as_defined && (!field.has_fixed || value == field.fixed);
       double eng;
       if (field.cal != NULL) {
         (void)framedsl_get_eng(frames[d], id, &eng); /* may legitimately be RANGE; must not crash */
@@ -156,7 +169,20 @@ static void check_round_trip(size_t d, const char *name, const uint8_t *bytes, s
       if (data == NULL || framedsl_set_bytes(checks[d], id, data, length) != FRAMEDSL_OK) {
         abort();
       }
+      carried += field.variable ? (uint64_t)length * 8 : field.width_bits;
+      size_t count = 0;
+      if (field.element_bits != 0
+          && (framedsl_count(frames[d], id, &count) != FRAMEDSL_OK
+              || (uint64_t)count * field.element_bits != (field.variable ? (uint64_t)length * 8 : field.width_bits))) {
+        abort();
+      }
     }
+  }
+  if (carried != (uint64_t)consumed * 8) {
+    abort();
+  }
+  if (!as_defined) {
+    return;
   }
 
   size_t length = 0;

@@ -738,9 +738,12 @@ disagree with what encode will do, because it is what encode does. Reading an ab
 A decode clears what it did not carry, so meeting the condition later never shows an earlier frame's
 value. The arena keeps a slot for every field, present or not, so nothing allocates.
 
-A fixed field is its fixed value to a condition, a width and a count alike, at both ends. Encode used to
-read a fixed field's *slot* to size a field after it, which only agreed with the decoder when the caller
-had happened to write the same value there.
+Encode reads a fixed field as its fixed value, to a condition, a width and a count alike: it is what
+encode writes. Encode used to read the field's *slot* to size a field after it, which only agreed with
+the decoder when the caller had happened to write the same value there. The accessors read the slot
+(#141), which is the same answer on a frame being built, since a program cannot write one and it starts
+with its fixed value (#140), and what arrived on a decoded one -- the only answer that agrees with what
+the decode did when a fixed field past the known prefix differs from the definition.
 
 **Constant offsets end at the first conditional field.** A decoder identifies a packet before walking it,
 from bits at known places, and nothing at or after a field that may be absent is at a known place. Rather

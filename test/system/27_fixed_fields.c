@@ -1,6 +1,9 @@
 /* Story 27: a fixed field cannot be written (#140). The encoder writes the definition's value whatever
  * a program does, so a write it accepted would be reported as done and never reach the wire: a test
- * could pass without injecting the fault it set up. */
+ * could pass without injecting the fault it set up.
+ *
+ * What a frame answers about one follows from what it holds (#141): the fixed value on a frame being
+ * built, and what arrived on a decoded one. */
 #include <string.h>
 
 #include "framedsl.h"
@@ -34,6 +37,24 @@ static const char DEFINITION[] =
   "  size: 8;\n"
   "  data[4]: valof(size) * 8;\n"
   "  end:  8 = 0x7F;\n"
+  "};\n"
+  "block S { v: 8; };\n"
+  "pkt R {\n"
+  "  id:   8 = 0x30;\n"
+  "  size: 8;\n"
+  "  pad[4]: valof(size) * 8;\n"
+  "  flag: 8 = 1;\n"
+  "  [ @if: valof(flag) == 1; ]\n"
+  "  extra: 8;\n"
+  "  count: 8 = 2;\n"
+  "  list[8]: S[valof(count)];\n"
+  "};\n"
+  "pkt T {\n"
+  "  id:   8 = 0x40;\n"
+  "  on:   8;\n"
+  "  [ @if: valof(on) == 1; ]\n"
+  "  mark: 8 = 0x55;\n"
+  "  tail: 8;\n"
   "};\n";
 
 typedef struct {
@@ -196,6 +217,111 @@ static int us27_tc04_a_decoded_fixed_field_reads_what_arrived(const TestArgument
   return failure;
 }
 
+static bool present(const Fixture *fixture, const char *dotted) {
+  bool answer = false;
+  return framedsl_present(fixture->frame, id_of(fixture, dotted), &answer) == FRAMEDSL_OK && answer;
+}
+
+static size_t count_of(const Fixture *fixture, const char *dotted) {
+  size_t count = 0;
+  return framedsl_count(fixture->frame, id_of(fixture, dotted), &count) == FRAMEDSL_OK ? count : SIZE_MAX;
+}
+
+/* flag is 0 where the definition says 1, and count is 1 where it says 2: both past the known prefix, so
+ * neither identifies the packet, and the decode goes by what arrived. Every answer has to agree with it. */
+static int us27_tc05_a_decoded_frame_answers_from_what_arrived(const TestArguments *args) {
+  (void)args;
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    fixture_close(&fixture);
+    FORCE_FAILURE();
+  }
+  int failure = 0;
+  const uint8_t differs[] = { 0x30, 0x00, 0x00, 0x01, 0xBB };
+  const uint8_t agrees[] = { 0x30, 0x00, 0x01, 0xAA, 0x02, 0xBB, 0xCC };
+  size_t consumed = 0;
+  uint64_t value = 0;
+
+  EXPECT(framedsl_decode(fixture.frame, differs, sizeof(differs), &consumed, NULL) != NULL && consumed == 5);
+  EXPECT(get(&fixture, "R.flag") == 0 && get(&fixture, "R.count") == 1);
+  EXPECT(!present(&fixture, "R.extra"));
+  EXPECT(framedsl_get_u64(fixture.frame, id_of(&fixture, "R.extra"), &value) == FRAMEDSL_ERROR_ABSENT);
+  EXPECT(count_of(&fixture, "R.list") == 1 && get(&fixture, "R.list[0].v") == 0xBB);
+
+  EXPECT(framedsl_decode(fixture.frame, agrees, sizeof(agrees), &consumed, NULL) != NULL && consumed == 7);
+  EXPECT(present(&fixture, "R.extra") && get(&fixture, "R.extra") == 0xAA);
+  EXPECT(count_of(&fixture, "R.list") == 2 && get(&fixture, "R.list[1].v") == 0xCC);
+
+  fixture_close(&fixture);
+  return failure;
+}
+
+/* Being built, a frame answers from the definition's value, which is what encode will write. */
+static int us27_tc06_a_frame_being_built_answers_from_the_definition(const TestArguments *args) {
+  (void)args;
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    fixture_close(&fixture);
+    FORCE_FAILURE();
+  }
+  int failure = 0;
+  const uint8_t expected[] = { 0x30, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00 };
+  size_t length = 0;
+
+  EXPECT(present(&fixture, "R.extra") && count_of(&fixture, "R.list") == 2);
+  const uint8_t *bytes = framedsl_encode(fixture.frame, "R", &length, NULL);
+  EXPECT(bytes != NULL && length == sizeof(expected) && memcmp(bytes, expected, length) == 0);
+
+  framedsl_frame_reset(fixture.frame);
+  EXPECT(present(&fixture, "R.extra") && count_of(&fixture, "R.list") == 2);
+
+  fixture_close(&fixture);
+  return failure;
+}
+
+/* A decode that did not carry a conditional fixed field leaves it as a frame starts, not at zero. */
+static int us27_tc07_a_fixed_field_a_decode_skipped_reads_its_value(const TestArguments *args) {
+  (void)args;
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    fixture_close(&fixture);
+    FORCE_FAILURE();
+  }
+  int failure = 0;
+  const uint8_t without[] = { 0x40, 0x00, 0xBB };
+
+  EXPECT(framedsl_decode(fixture.frame, without, sizeof(without), NULL, NULL) != NULL);
+  EXPECT(!present(&fixture, "T.mark"));
+  EXPECT(framedsl_set_u64(fixture.frame, id_of(&fixture, "T.on"), 1) == FRAMEDSL_OK);
+  EXPECT(present(&fixture, "T.mark") && get(&fixture, "T.mark") == 0x55);
+
+  fixture_close(&fixture);
+  return failure;
+}
+
+/* The encoder still writes the definition's value, so what goes back out can differ from what came in,
+ * and the frame's answers describe what it holds. */
+static int us27_tc08_encoding_a_decoded_frame_writes_the_definition(const TestArguments *args) {
+  (void)args;
+  Fixture fixture;
+  if (!fixture_open(&fixture)) {
+    fixture_close(&fixture);
+    FORCE_FAILURE();
+  }
+  int failure = 0;
+  const uint8_t differs[] = { 0x30, 0x00, 0x00, 0x01, 0xBB };
+  const uint8_t expected[] = { 0x30, 0x00, 0x01, 0x00, 0x02, 0xBB, 0x00 };
+  size_t length = 0;
+
+  EXPECT(framedsl_decode(fixture.frame, differs, sizeof(differs), NULL, NULL) != NULL);
+  const uint8_t *bytes = framedsl_encode(fixture.frame, "R", &length, NULL);
+  EXPECT(bytes != NULL && length == sizeof(expected) && memcmp(bytes, expected, length) == 0);
+  EXPECT(!present(&fixture, "R.extra") && get(&fixture, "R.flag") == 0);
+
+  fixture_close(&fixture);
+  return failure;
+}
+
 void register_user_story27(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us27_tc01_every_setter_refuses_a_fixed_field, "every setter refuses a fixed field", false);
@@ -206,4 +332,16 @@ void register_user_story27(void) {
     false
   );
   ADD_TEST_CASE(us27_tc04_a_decoded_fixed_field_reads_what_arrived, "a decoded fixed field reads what arrived", false);
+  ADD_TEST_CASE(
+    us27_tc05_a_decoded_frame_answers_from_what_arrived, "a decoded frame answers from what arrived", false
+  );
+  ADD_TEST_CASE(
+    us27_tc06_a_frame_being_built_answers_from_the_definition, "a frame being built answers from the definition", false
+  );
+  ADD_TEST_CASE(
+    us27_tc07_a_fixed_field_a_decode_skipped_reads_its_value, "a fixed field a decode skipped reads its value", false
+  );
+  ADD_TEST_CASE(
+    us27_tc08_encoding_a_decoded_frame_writes_the_definition, "encoding a decoded frame writes the definition", false
+  );
 }

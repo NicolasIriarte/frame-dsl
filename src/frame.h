@@ -91,6 +91,18 @@ struct FramedslFrame {
 Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id);
 
 /**
+ * @brief Writes a field's fixed value into its slot, a repetition's fixed members included.
+ *
+ * How a frame starts, and what a decode leaves in a field it did not carry, so that a fixed field the
+ * frame holds no wire value for reads its fixed value (#140, #141). A field with none is left alone.
+ *
+ * @param frame The frame to write into.
+ * @param packet Index of the packet.
+ * @param field Index of the field in that packet.
+ */
+void frame_seed_field(FramedslFrame *frame, size_t packet, size_t field);
+
+/**
  * @brief Puts one packet's slots aside, so that a decode over them can be undone.
  *
  * Called by the decoder before the walk's first write. Neither this nor frame_restore_packet()

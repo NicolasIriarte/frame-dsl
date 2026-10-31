@@ -42,18 +42,20 @@ static size_t slot_bytes(const FieldLayout *field) {
  * fixed field holds its fixed value (#140), a repetition's fixed members included. A frame being built
  * then never reads back a value no frame of it could carry, and a decode replaces these with what
  * arrived. */
+void frame_seed_field(FramedslFrame *frame, size_t packet, size_t field) {
+  const FieldInstruction *instruction = &frame->definition->program->packets[packet].fields[field];
+  uint8_t *at = frame->arena + frame->slots[frame->packet_base[packet] + field].offset;
+  if (instruction->has_fixed) {
+    memcpy(at, &instruction->fixed, sizeof(instruction->fixed));
+  } else if (instruction->element != NULL) {
+    stamp_fixed(at, 0, instruction->element_capacity * instruction->element->bits, instruction->element);
+  }
+}
+
 static void frame_seed(FramedslFrame *frame) {
   for (size_t p = 0; p < frame->packet_count; ++p) {
-    const PacketProgram *packet = &frame->definition->program->packets[p];
-    const size_t base = frame->packet_base[p];
-    for (size_t f = 0; f < packet->field_count; ++f) {
-      const FieldInstruction *instruction = &packet->fields[f];
-      uint8_t *at = frame->arena + frame->slots[base + f].offset;
-      if (instruction->has_fixed) {
-        memcpy(at, &instruction->fixed, sizeof(instruction->fixed));
-      } else if (instruction->element != NULL) {
-        stamp_fixed(at, 0, instruction->element_capacity * instruction->element->bits, instruction->element);
-      }
+    for (size_t f = 0; f < frame->definition->program->packets[p].field_count; ++f) {
+      frame_seed_field(frame, p, f);
     }
   }
 }
@@ -323,12 +325,10 @@ static bool field_absent(const FramedslFrame *frame, FramedslFieldId id) {
   uint32_t at = instruction->condition_entry;
   while (at < instruction->condition_count) {
     const ConditionInstruction *condition = &instruction->conditions[at];
-    const FieldInstruction *compared = &frame->definition->program->packets[id.packet].fields[condition->field];
-    uint64_t value = compared->fixed;
-    /* A fixed field is its fixed value, whatever its slot holds: what encode writes and decode reads. */
-    if (!compared->has_fixed) {
-      memcpy(&value, frame->arena + frame->slots[base + condition->field].offset, sizeof(value));
-    }
+    /* What the frame holds: a fixed field's fixed value until a decode replaces it with what arrived
+     * (#141), so this answers for a frame being built and a decoded one alike. */
+    uint64_t value;
+    memcpy(&value, frame->arena + frame->slots[base + condition->field].offset, sizeof(value));
     at = condition_test(condition, value) ? condition->if_true : condition->if_false;
   }
   return at == CONDITION_FALSE;
@@ -462,8 +462,8 @@ FramedslStatus framedsl_count(const FramedslFrame *frame, FramedslFieldId id, si
     const size_t base = frame->packet_base[id.packet];
     for (size_t f = 0; f < packet->field_count; ++f) {
       const Slot *slot = &frame->slots[base + f];
-      values[f] = packet->fields[f].has_fixed ? packet->fields[f].fixed : 0;
-      if (slot->is_scalar && !packet->fields[f].has_fixed) {
+      values[f] = 0;
+      if (slot->is_scalar) {
         memcpy(&values[f], frame->arena + slot->offset, sizeof(uint64_t));
       }
     }

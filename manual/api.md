@@ -716,9 +716,13 @@ be set in any order, the field before the flag that turns it on as well as after
 and a variable one empty, so setting the flag afterwards reads a field nobody has written -- zero --
 rather than the one an earlier frame carried.
 
-A condition comparing a field with a fixed value compares the value the field always has, at both ends:
-what the encoder writes and the decoder reads, whatever the caller left in its slot. The same holds for
-a width or a count read from a fixed field.
+A condition, a width or a count reading a fixed field reads what the frame holds: its fixed value on a
+frame being built, and what arrived on a decoded one. Past the fields that identify a packet those can
+differ, and the frame answers from what arrived: a decoded frame's `framedsl_present()` and
+`framedsl_count()` agree with the bytes the decode consumed.
+
+The encoder always writes the definition's value, so a decoded frame encoded again may differ from what
+arrived, and `framedsl_present()` then describes what the frame holds rather than what would go out.
 
 ## A whole program
 

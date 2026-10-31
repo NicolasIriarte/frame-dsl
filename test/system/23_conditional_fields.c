@@ -596,9 +596,9 @@ static int us23_tc09_presence_follows_the_frames_values(const TestArguments *arg
   return failure;
 }
 
-/* A condition, or a width, reading a fixed field reads its fixed value at both ends: what encode writes
- * and decode reads, whatever the caller left in its slot. A shared header whose optional part depends on
- * the packet's type, fixed by an override, is the case. */
+/* A condition, or a width, reading a fixed field reads its fixed value on a frame being built. A shared
+ * header whose optional part depends on the packet's type, fixed by an override, is the case. A decoded
+ * frame's fixed fields read what arrived: see story 27. */
 static int us23_tc10_a_fixed_field_is_compared_as_its_fixed_value(const TestArguments *args) {
   (void)args;
   Fixture fixture;

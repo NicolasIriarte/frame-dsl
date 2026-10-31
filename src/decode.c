@@ -229,11 +229,13 @@ const char *framedsl_decode(
     const FieldInstruction *instruction = &program->fields[f];
     Slot *slot = &frame->slots[base + f];
 
-    /* A field this frame does not carry (#12) takes no bits, and its slot is cleared: a previous frame's
-     * value must not come back when a caller later makes the condition hold. */
+    /* A field this frame does not carry (#12) takes no bits, and its slot goes back to how a frame
+     * starts: a previous frame's value must not come back when a caller later makes the condition hold,
+     * and a fixed field reads its fixed value then (#141). */
     if (instruction->condition_count != 0 && !field_present(instruction, slots)) {
       slots[f] = 0;
       memset(frame->arena + slot->offset, 0, slot->capacity);
+      frame_seed_field(frame, index, f);
       if (slot->variable) {
         slot->length = 0;
       }
