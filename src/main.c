@@ -10,13 +10,18 @@
  * The one exception is `--lsp`, which hands over to the language server (src/lsp.c) and nothing else.
  * That server does reach inside -- semantic highlighting is the lexer's answer, and publishing the
  * lexer would be making an interface for one caller in this repository. */
+/* isatty() is POSIX, not C11. */
+#define _XOPEN_SOURCE 700
+
 #include <errno.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "framedsl.h"
-#include "logger.h"
 #include "lsp.h"
 
 /* The largest capture this tool will take, in bytes. A frame is a few dozen bytes and a hex string
@@ -24,55 +29,59 @@
  * is a fixed size rather than something sized from the input. */
 #define MAX_CAPTURE 65536
 
-static void report(const FramedslResult *result) {
-  for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
-    const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
-    /* A problem inside an imported file is reported at its own position, in its own file. */
-    const char *name = diag->file != NULL ? diag->file : framedsl_source_name(result);
+#define COLOUR_RED "\x1b[31m"
+#define COLOUR_YELLOW "\x1b[33m"
+#define COLOUR_RESET "\x1b[0m"
 
-    /* The check number is printed because it is what makes a rejection checkable: "rejected" is a
-     * weaker claim than "rejected for the reason the file says it should be". */
-    char check[32] = "";
-    if (diag->check > 0) {
-      snprintf(check, sizeof(check), " [check %d]", diag->check);
-    }
-
-    if (diag->severity == FRAMEDSL_SEVERITY_WARNING) {
-      if (diag->line > 0) {
-        log_warn("%s:%d:%d:%s %s", name, diag->line, diag->column, check, diag->message);
-      } else {
-        log_warn("%s:%s %s", name, check, diag->message);
-      }
-    } else if (diag->line > 0) {
-      log_fail("%s:%d:%d:%s %s", name, diag->line, diag->column, check, diag->message);
-    } else {
-      log_fail("%s:%s %s", name, check, diag->message);
-    }
-  }
+/* Only a person reads a terminal. An empty NO_COLOR says nothing, as https://no-color.org has it. */
+static bool stderr_takes_colour(void) {
+  const char *no_colour = getenv("NO_COLOR");
+  return isatty(STDERR_FILENO) && (no_colour == NULL || no_colour[0] == '\0');
 }
 
-/* --check's output: one diagnostic per line in the shape gcc prints, and nothing else -- no colour,
- * no logger prefix, no summary. Every editor already knows how to read this shape (flymake, Vim's
- * errorformat, ALE, a VS Code problem matcher), which is the whole reason to print it. */
-static void report_plain(const FramedslResult *result) {
+/* A problem with what was asked, as opposed to with a definition: on stderr, where no result ever goes,
+ * under the tool's name, as any command-line tool says it. The name is red on a terminal, so a problem
+ * stands out from the results around it. Results are flushed first, so that the two arrive in the order
+ * they happened wherever they are sent. */
+__attribute__((format(printf, 1, 2))) static void fail(const char *format, ...) {
+  fflush(stdout);
+  fputs(stderr_takes_colour() ? COLOUR_RED "frame-dsl:" COLOUR_RESET " " : "frame-dsl: ", stderr);
+  va_list arguments;
+  va_start(arguments, format);
+  vfprintf(stderr, format, arguments);
+  va_end(arguments);
+  fputc('\n', stderr);
+}
+
+/* One diagnostic per line in the shape gcc prints, and nothing else -- no prefix, no summary. Every
+ * editor already knows how to read this shape (flymake, Vim's errorformat, ALE, a VS Code problem
+ * matcher), which is the whole reason to print it. It is --check's result, so it goes to stdout there,
+ * plain, and in every other mode it is a problem, so it goes to stderr, where the severity is coloured
+ * on a terminal. */
+static void report(FILE *out, const FramedslResult *result) {
+  bool colour = out == stderr && stderr_takes_colour();
+
   for (size_t i = 0; i < framedsl_diagnostic_count(result); ++i) {
     const FramedslDiagnostic *diag = framedsl_diagnostic(result, i);
     const char *name = diag->file != NULL ? diag->file : framedsl_source_name(result);
-    const char *severity = diag->severity == FRAMEDSL_SEVERITY_WARNING ? "warning" : "error";
+    bool warning = diag->severity == FRAMEDSL_SEVERITY_WARNING;
+    const char *severity = warning ? "warning" : "error";
+    const char *on = !colour ? "" : (warning ? COLOUR_YELLOW : COLOUR_RED);
+    const char *off = colour ? COLOUR_RESET : "";
 
     if (diag->line > 0) {
-      printf("%s:%d:%d: %s: %s", name, diag->line, diag->column, severity, diag->message);
+      fprintf(out, "%s:%d:%d: %s%s:%s %s", name, diag->line, diag->column, on, severity, off, diag->message);
     } else {
-      printf("%s: %s: %s", name, severity, diag->message);
+      fprintf(out, "%s: %s%s:%s %s", name, on, severity, off, diag->message);
     }
     if (diag->check > 0) {
-      printf(" [check %d]", diag->check);
+      fprintf(out, " [check %d]", diag->check);
     }
-    putchar('\n');
+    fputc('\n', out);
     /* The fix, where there is one, as a note of its own: the same `file:line:col:` shape, but no
      * editor's pattern for this output takes a note for a problem. */
     if (diag->fix_title != NULL) {
-      printf("%s:%d:%d: note: %s\n", name, diag->fix_line, diag->fix_column, diag->fix_title);
+      fprintf(out, "%s:%d:%d: note: %s\n", name, diag->fix_line, diag->fix_column, diag->fix_title);
     }
   }
 }
@@ -237,7 +246,7 @@ static int check_files(const char **paths, size_t count, const char *stdin_name,
       printf("%s: error: out of memory\n", paths[i]);
       return 2;
     }
-    report_plain(result);
+    report(stdout, result);
 
     int this_one = 0;
     switch (framedsl_status(result)) {
@@ -278,8 +287,8 @@ static void describe(const FramedslDefinition *definition) {
   for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
     size_t fields = framedsl_field_count(definition, p);
 
-    log_info(
-      "pkt %s: %zu field%s, %llu bits reserved",
+    printf(
+      "pkt %s: %zu field%s, %llu bits reserved\n",
       framedsl_packet_name(definition, p),
       fields,
       fields == 1 ? "" : "s",
@@ -305,8 +314,8 @@ static void describe(const FramedslDefinition *definition) {
       if (field.element_bits > 0) {
         /* A repetition (#55): its elements' fields, each at its place inside an element. */
         if (field.variable) {
-          log_info(
-            "    %-14s %s, repeated, up to %llu elements of %llu bits%s",
+          printf(
+            "    %-14s %s, repeated, up to %llu elements of %llu bits%s\n",
             field.name,
             offset,
             (unsigned long long)(field.max_bits / field.element_bits),
@@ -314,8 +323,8 @@ static void describe(const FramedslDefinition *definition) {
             when
           );
         } else {
-          log_info(
-            "    %-14s %s, repeated, %llu elements of %llu bits%s",
+          printf(
+            "    %-14s %s, repeated, %llu elements of %llu bits%s\n",
             field.name,
             offset,
             (unsigned long long)(field.width_bits / field.element_bits),
@@ -326,8 +335,8 @@ static void describe(const FramedslDefinition *definition) {
         for (size_t m = 0; m < field.member_count; ++m) {
           FramedslField member;
           if (framedsl_member(definition, p, f, m, &member)) {
-            log_info(
-              "      .%-12s at +%llu, %llu bits",
+            printf(
+              "      .%-12s at +%llu, %llu bits\n",
               member.name,
               (unsigned long long)member.offset_bits,
               (unsigned long long)member.width_bits
@@ -336,16 +345,16 @@ static void describe(const FramedslDefinition *definition) {
         }
       } else if (field.variable) {
         /* Reported in the unit it was written in, so the line can be compared with the file. */
-        log_info(
-          "    %-14s %s, variable, reserves %llu bytes%s",
+        printf(
+          "    %-14s %s, variable, reserves %llu bytes%s\n",
           field.name,
           offset,
           (unsigned long long)(field.max_bits / 8),
           when
         );
       } else if (field.has_fixed) {
-        log_info(
-          "    %-14s %s, %llu bits = %#llx%s%s%s%s",
+        printf(
+          "    %-14s %s, %llu bits = %#llx%s%s%s%s\n",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
@@ -356,8 +365,8 @@ static void describe(const FramedslDefinition *definition) {
           when
         );
       } else {
-        log_info(
-          "    %-14s %s, %llu bits%s%s%s%s%s",
+        printf(
+          "    %-14s %s, %llu bits%s%s%s%s%s\n",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
@@ -429,7 +438,7 @@ static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *l
       /* A separator in the middle of a byte means somebody wrote a byte with one digit -- `0 1 00`
        * rather than `01 00`. Padding it to `01` would be a guess, and the guess changes the frame. */
       if (high >= 0) {
-        log_fail("hex: byte %zu has only one digit (at offset %zu)", count, (size_t)(at - text));
+        fail("hex: byte %zu has only one digit (at offset %zu)", count, (size_t)(at - text));
         return false;
       }
       continue;
@@ -443,7 +452,7 @@ static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *l
 
     int digit = hex_value(*at);
     if (digit < 0) {
-      log_fail("hex: '%c' is not a hex digit (at offset %zu)", *at, (size_t)(at - text));
+      fail("hex: '%c' is not a hex digit (at offset %zu)", *at, (size_t)(at - text));
       return false;
     }
 
@@ -452,7 +461,7 @@ static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *l
       continue;
     }
     if (count >= capacity) {
-      log_fail("hex: more than %d bytes", MAX_CAPTURE);
+      fail("hex: more than %d bytes", MAX_CAPTURE);
       return false;
     }
     out[count++] = (uint8_t)((high << 4) | digit);
@@ -460,11 +469,11 @@ static bool parse_hex(const char *text, uint8_t *out, size_t capacity, size_t *l
   }
 
   if (high >= 0) {
-    log_fail("hex: an odd number of digits; the last byte is incomplete");
+    fail("hex: an odd number of digits; the last byte is incomplete");
     return false;
   }
   if (count == 0 && !allow_empty) {
-    log_fail("hex: no bytes to decode");
+    fail("hex: no bytes to decode");
     return false;
   }
 
@@ -627,7 +636,7 @@ static const char *decode_problem(FramedslStatus status) {
 static int decode_capture(const FramedslDefinition *definition, const uint8_t *bytes, size_t length) {
   FramedslFrame *frame = framedsl_frame_new(definition);
   if (frame == NULL) {
-    log_fail("out of memory");
+    fail("out of memory");
     return 2;
   }
 
@@ -643,7 +652,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
     if (name == NULL) {
       /* The offset is in the message because a capture holding several frames fails somewhere, and
        * "somewhere" is the first thing anybody wants to know. */
-      log_fail("at byte %zu: %s", offset, decode_problem(why));
+      fail("at byte %zu: %s", offset, decode_problem(why));
       status = 1;
       break;
     }
@@ -654,7 +663,7 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   }
 
   if (status == 0) {
-    log_base("%zu frame%s, %zu byte%s", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
+    printf("%zu frame%s, %zu byte%s\n", count, count == 1 ? "" : "s", length, length == 1 ? "" : "s");
   }
 
   framedsl_frame_free(frame);
@@ -667,7 +676,7 @@ static int emit_c(const FramedslDefinition *definition) {
   char *header = malloc(length + 1);
   if (length == 0 || header == NULL) {
     free(header);
-    log_fail("the calibrations and enums could not be written as C");
+    fail("the calibrations and enums could not be written as C");
     return 2;
   }
   framedsl_emit_c(definition, NULL, header, length + 1);
@@ -733,7 +742,7 @@ static const Option *find_option(const char *argument) {
   return NULL;
 }
 
-/* Plain text on stdout, not the logger: this is the answer to a question, not a problem, and it has
+/* Plain text on stdout: this is the answer to a question, not a problem, and it has
  * to read the same piped into a pager, a file or a completion script. */
 static void help(void) {
   fputs(
@@ -793,7 +802,7 @@ static void help(void) {
 
 /* A mistake on the command line gets one line saying what it was, and a pointer to the rest --
  * not the whole help text, which buries the one line that matters. Plain and on stderr, the way
- * every other command-line tool says it, rather than through the logger, which writes to stdout. */
+ * every other command-line tool says it. */
 static int usage_error(const char *program, const char *reason) {
   fprintf(stderr, "%s: %s\n", program, reason);
   fprintf(stderr, "try '%s --help'\n", program);
@@ -831,7 +840,7 @@ int main(int argc, char **argv) {
   const char **paths = calloc((size_t)argc, sizeof(*paths));
   size_t path_count = 0;
   if (paths == NULL) {
-    log_fail("out of memory");
+    fail("out of memory");
     return 2;
   }
 
@@ -966,7 +975,7 @@ int main(int argc, char **argv) {
   FramedslResult *result = load_path(path, stdin_name);
   free(paths);
   if (result == NULL) {
-    log_fail("out of memory");
+    fail("out of memory");
     return 2;
   }
 
@@ -977,7 +986,7 @@ int main(int argc, char **argv) {
 
     /* Not ahead of --emit-c, whose standard output is C and must stay nothing but C. */
     if (!emit) {
-      report(result);
+      report(stderr, result);
     }
 
     if (emit) {
@@ -1000,8 +1009,8 @@ int main(int argc, char **argv) {
     }
 
     describe(definition);
-    log_info(
-      "%s: ok, %zu packet%s",
+    printf(
+      "%s: ok, %zu packet%s\n",
       framedsl_source_name(result),
       framedsl_packet_count(definition),
       framedsl_packet_count(definition) == 1 ? "" : "s"
@@ -1010,7 +1019,7 @@ int main(int argc, char **argv) {
     break;
   }
   case FRAMEDSL_ERROR_INVALID:
-    report(result);
+    report(stderr, result);
     status = 1;
     break;
   /* A missing file is not a malformed file, and a script should not have to grep the message to
@@ -1018,7 +1027,7 @@ int main(int argc, char **argv) {
   case FRAMEDSL_ERROR_IO:
   case FRAMEDSL_ERROR_MEMORY:
   default:
-    report(result);
+    report(stderr, result);
     status = 2;
     break;
   }

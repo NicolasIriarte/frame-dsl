@@ -187,6 +187,9 @@ See [Calibrations](manual/language.md#calibrations) for how a curve is written. 
 [enum](manual/language.md#enumerations) shows its name the same way -- `level 3 (0x3) = HIGH
 [TxLevel]` -- and one the enum does not list as `<unlisted>`, rather than failing the frame.
 
+Results go to stdout and problems to stderr, so either can be piped: a failed decode says `frame-dsl: at
+byte 3: ...` there. On a terminal that name is red, as is `error:` in a problem with a definition, and
+`warning:` is yellow. Results are never coloured, and nothing is in a pipe or with `NO_COLOR` set.
 Exit status is `0` for success, `1` when the definition or the bytes are wrong, and `2` when the
 invocation is.
 

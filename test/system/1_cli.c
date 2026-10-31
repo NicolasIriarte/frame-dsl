@@ -195,7 +195,7 @@ static int us1_tc04_reports_every_error_in_one_run(const TestArguments *args) {
   }
 
   size_t reported = 0;
-  for (const char *at = run.output; (at = strstr(at, "[FAIL]")) != NULL; at += 6) {
+  for (const char *at = run.output; (at = strstr(at, ": error: ")) != NULL; at += 9) {
     reported += 1;
   }
   if (reported < 3) {

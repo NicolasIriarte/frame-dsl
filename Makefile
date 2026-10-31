@@ -175,7 +175,7 @@ CLANG_FORMAT_MIN := 21
 # make's expansion, the recipe's shell, an environment variable, and the word-splitting that turns
 # the lot back into arguments. Nesting single quotes inside single quotes loses them silently, and
 # the symptom is a macro expanding to a bare identifier rather than to a string.
-SRC_FLAGS := $(CFLAGS) -I$(LOGGER) -Iinclude -Isrc
+SRC_FLAGS := $(CFLAGS) -Iinclude -Isrc
 UNIT_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/unit -Iinclude -Isrc \
 	-DSOURCE_DIR=\"src\" -DEDITORS_DIR=\"editors\"
 SYSTEM_FLAGS := $(CFLAGS) -I$(LOGGER) -I$(TESTING) -I$(BUILD)/inc/system -Iinclude \
