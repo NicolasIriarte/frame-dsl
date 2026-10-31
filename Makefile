@@ -131,7 +131,7 @@ AR ?= ar
 PIC_OBJ := $(LIB_SRC:src/%.c=$(BUILD)/pic/%.o)
 DEPFILES += $(PIC_OBJ:.o=.d)
 SO_MAJOR := 0
-SO_VERSION := $(SO_MAJOR).1.0
+SO_VERSION := $(SO_MAJOR).2.0
 LIB_SONAME := libframedsl.so.$(SO_MAJOR)
 LIB_SHARED := $(BUILD)/libframedsl.so.$(SO_VERSION)
 LIB_SHARED_LINKS := $(BUILD)/$(LIB_SONAME) $(BUILD)/libframedsl.so

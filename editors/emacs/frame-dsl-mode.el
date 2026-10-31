@@ -1,6 +1,6 @@
 ;;; frame-dsl-mode.el --- Major mode for Frame-DSL definition files  -*- lexical-binding: t; -*-
 
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: languages
 

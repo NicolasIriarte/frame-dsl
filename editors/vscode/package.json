@@ -2,7 +2,7 @@
   "name": "frame-dsl",
   "displayName": "Frame-DSL",
   "description": "Highlighting, comments and indentation for .fdsl files, plus diagnostics, formatting and semantic highlighting from frame-dsl --lsp.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "frame-dsl",
   "private": true,
   "engines": {
