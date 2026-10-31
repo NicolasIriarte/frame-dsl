@@ -166,10 +166,10 @@ static int us10_tc04_dotted_names_encode_and_the_tool_shows_them(const TestArgum
     failure = __LINE__;
   }
 
-  /* An override is a fixed value: whatever the slot holds, the definition's value is what goes out. */
+  /* An override is a fixed value: it cannot be set (#140), and the definition's value is what goes out. */
   if (
     failure == 0
-    && (!set(definition, frame, "TM_ACK.hdr.id", 5) || (bytes = framedsl_encode(frame, "TM_ACK", &length, NULL)) == NULL || bytes[0] == 5)) {
+    && (set(definition, frame, "TM_ACK.hdr.id", 5) || (bytes = framedsl_encode(frame, "TM_ACK", &length, NULL)) == NULL || bytes[0] == 5)) {
     failure = __LINE__;
   }
   framedsl_frame_free(frame);

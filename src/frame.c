@@ -38,6 +38,26 @@ static size_t slot_bytes(const FieldLayout *field) {
   return (size_t)((bits + 7) / 8);
 }
 
+/* What a frame holds before anything is written to it: zeros, which the arena already is, except that a
+ * fixed field holds its fixed value (#140), a repetition's fixed members included. A frame being built
+ * then never reads back a value no frame of it could carry, and a decode replaces these with what
+ * arrived. */
+static void frame_seed(FramedslFrame *frame) {
+  for (size_t p = 0; p < frame->packet_count; ++p) {
+    const PacketProgram *packet = &frame->definition->program->packets[p];
+    const size_t base = frame->packet_base[p];
+    for (size_t f = 0; f < packet->field_count; ++f) {
+      const FieldInstruction *instruction = &packet->fields[f];
+      uint8_t *at = frame->arena + frame->slots[base + f].offset;
+      if (instruction->has_fixed) {
+        memcpy(at, &instruction->fixed, sizeof(instruction->fixed));
+      } else if (instruction->element != NULL) {
+        stamp_fixed(at, 0, instruction->element_capacity * instruction->element->bits, instruction->element);
+      }
+    }
+  }
+}
+
 FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
   if (definition == NULL) {
     return NULL;
@@ -131,6 +151,7 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
         .width_bits = field->variable ? 0 : field->width_bits,
         .is_scalar = field->is_scalar,
         .variable = field->variable,
+        .is_fixed = definition->program->packets[p].fields[f].has_fixed,
       };
 
       offset += frame->slots[slot].capacity;
@@ -138,6 +159,7 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
     }
   }
 
+  frame_seed(frame);
   return frame;
 }
 
@@ -154,6 +176,7 @@ void framedsl_frame_reset(FramedslFrame *frame) {
   for (size_t i = 0; i < frame->slot_count; ++i) {
     frame->slots[i].length = frame->slots[i].variable ? 0 : frame->slots[i].capacity;
   }
+  frame_seed(frame);
 }
 
 /* How many slots a packet has, from the base table rather than from the layout: the last packet runs
@@ -502,6 +525,9 @@ __attribute__((noinline)) static FramedslStatus member_set_u64(
   if (!member_view(frame, id, &view) || !view.member->is_scalar) {
     return FRAMEDSL_ERROR_FIELD;
   }
+  if (view.member->has_fixed) {
+    return FRAMEDSL_ERROR_FIXED;
+  }
   if (view.member->width_bits < 64 && value >= ((uint64_t)1 << view.member->width_bits)) {
     return FRAMEDSL_ERROR_RANGE;
   }
@@ -536,6 +562,11 @@ FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64
   Slot *slot = frame_slot(frame, id);
   if (slot == NULL || !slot->is_scalar) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  /* The encoder writes the definition's value whatever a slot holds, so accepting this would report a
+   * write that never reaches the wire. */
+  if (slot->is_fixed) {
+    return FRAMEDSL_ERROR_FIXED;
   }
 
   /* Checked before anything is written, so a rejected value leaves the slot holding what it held. */
@@ -577,6 +608,17 @@ static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId 
     cal = member_view(frame, id, &view) ? view.member->cal : -1;
   }
   return cal < 0 ? NULL : &frame->definition->cals->cals[cal];
+}
+
+/* Whether the field or member `id` has a fixed value. Only asked once the id has been found to address
+ * one, and before any question about the value, so that a setter's answer is the same whatever it was
+ * given (#140). A member with no element chosen is not one, and set_u64() refuses it. */
+static bool field_fixed(const FramedslFrame *frame, FramedslFieldId id) {
+  if (id.member == 0) {
+    return frame_slot(frame, id)->is_fixed;
+  }
+  MemberView view;
+  return member_view(frame, id, &view) && view.member->has_fixed;
 }
 
 FramedslStatus framedsl_get_eng(const FramedslFrame *frame, FramedslFieldId id, double *out) {
@@ -622,7 +664,13 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
     return FRAMEDSL_ERROR_FIELD;
   }
   const CalCompiled *cal = field_cal(frame, id);
-  if (cal == NULL || !cal->invertible) {
+  if (cal == NULL) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_fixed(frame, id)) {
+    return FRAMEDSL_ERROR_FIXED;
+  }
+  if (!cal->invertible) {
     return FRAMEDSL_ERROR_FIELD;
   }
 
@@ -825,6 +873,9 @@ FramedslStatus framedsl_set_name(FramedslFrame *frame, FramedslFieldId id, const
   const AstEnum *enumeration = field_enum(frame, id);
   if (enumeration == NULL) {
     return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_fixed(frame, id)) {
+    return FRAMEDSL_ERROR_FIXED;
   }
   const AstEnumItem *item = ast_enum_item(enumeration, name);
   if (item == NULL) {

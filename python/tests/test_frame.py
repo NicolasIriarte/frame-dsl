@@ -312,6 +312,28 @@ class Conditions(unittest.TestCase):
         with self.assertRaises(framedsl.AbsentError):
             self.frame.names["TM_OPTIONAL.code"]
 
+    def test_a_fixed_field_cannot_be_set(self):
+        definition = framedsl.loads(
+            "enum Mode: 8 { OFF; ON; };\n"
+            "cal twice(raw) = raw * 2;\n"
+            "block Item { mark: 4 = 0xA; value: 4; };\n"
+            "pkt P { id: 8 = 0x10; [ @cal: twice; ] scale: 8 = 4; mode: Mode = ON; items: Item[2]; };\n"
+        )
+        frame = definition.frame()
+        self.assertEqual(frame["P.id"], 0x10)
+        self.assertEqual(frame["P.items[1].mark"], 0xA)
+        for value in (0x10, 0x55):
+            with self.assertRaises(framedsl.FixedError):
+                frame["P.id"] = value
+        with self.assertRaises(framedsl.FixedError):
+            frame["P.items[1].mark"] = 3
+        with self.assertRaises(framedsl.FixedError):
+            frame.eng["P.scale"] = 20.0
+        with self.assertRaises(framedsl.FixedError):
+            frame.names["P.mode"] = "OFF"
+        self.assertIsInstance(framedsl.FixedError("x"), framedsl.Error)
+        self.assertEqual(frame.encode("P"), bytes([0x10, 0x04, 0x01, 0xA0, 0xA0]))
+
     def test_an_absent_field_can_be_set_and_is_left_out(self):
         self.frame["TM_OPTIONAL.hdr.has_crc"] = 1
         self.frame["TM_OPTIONAL.crc"] = 0x1234

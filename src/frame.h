@@ -33,6 +33,8 @@ typedef struct {
   uint64_t width_bits;
   bool is_scalar;
   bool variable;
+  /** @brief The definition fixes this field's value, so no setter may write it (#140). */
+  bool is_fixed;
 } Slot;
 
 struct FramedslFrame {

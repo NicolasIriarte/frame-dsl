@@ -18,12 +18,12 @@ import framedsl
 CORPUS = os.path.join(os.path.dirname(__file__), "..", "..", "test", "corpus")
 
 
-def scalar(dotted, value, reads_back=None):
-    return (dotted, value, value if reads_back is None else reads_back)
+def scalar(dotted, value):
+    return (dotted, value)
 
 
 def raw(dotted, data):
-    return (dotted, data, data)
+    return (dotted, data)
 
 
 ROWS = [
@@ -61,10 +61,10 @@ ROWS = [
         bytes([0xBB, 0x11, 0x22, 0x33, 0x44, 0x44, 0x33, 0x22, 0x11, 0xBB]),
     ),
     (
-        "a discriminator the caller wrote over",
+        "a discriminator nobody sets",
         "fixed_over.fdsl",
         "FIXED_OVER",
-        [scalar("FIXED_OVER.hdr", 0x55, reads_back=0xAA), scalar("FIXED_OVER.body", 0x01)],
+        [scalar("FIXED_OVER.body", 0x01)],
         bytes([0xAA, 0x01]),
     ),
     (
@@ -140,15 +140,15 @@ class Corpus(unittest.TestCase):
                 definition = framedsl.load(os.path.join(CORPUS, file))
 
                 sender = definition.frame()
-                for dotted, value, _ in fields:
+                for dotted, value in fields:
                     sender[dotted] = value
                 wire = sender.encode(packet)
                 self.assertEqual(wire.hex(" "), expected.hex(" "))
 
                 receiver = definition.frame()
                 self.assertEqual(receiver.decode_prefix(wire), (packet, len(expected)))
-                for dotted, _, reads_back in fields:
-                    self.assertEqual(receiver[dotted], reads_back, dotted)
+                for dotted, value in fields:
+                    self.assertEqual(receiver[dotted], value, dotted)
 
     def test_every_file_is_named(self):
         named = {file for _, file, _, _, _ in ROWS}

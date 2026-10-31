@@ -99,34 +99,6 @@ static void write_bytes(uint8_t *out, uint64_t offset, const uint8_t *bytes, siz
   }
 }
 
-/* A repetition's fixed values, into every element of the `width` bits at `offset` (#101). On a byte
- * boundary, which is the common case, an element's fixed bits are a few bytes masked in; off one, each
- * fixed member is written in turn. */
-static void stamp_fixed(uint8_t *out, uint64_t offset, uint64_t width, const ElementProgram *element) {
-  if (element->bits == 0 || element->fixed_members == 0) {
-    return;
-  }
-  if (offset % 8 == 0 && element->fixed_at != NULL) {
-    const size_t step = (size_t)(element->bits / 8);
-    uint8_t *at = out + offset / 8;
-    for (uint64_t start = 0; start < width; start += element->bits, at += step) {
-      for (size_t i = 0; i < element->fixed_count; ++i) {
-        uint8_t *byte = &at[element->fixed_at[i]];
-        *byte = (uint8_t)((*byte & ~element->fixed_mask[i]) | element->fixed_value[i]);
-      }
-    }
-    return;
-  }
-  for (uint64_t start = 0; start < width; start += element->bits) {
-    for (size_t m = 0; m < element->member_count; ++m) {
-      const MemberInstruction *member = &element->members[m];
-      if (member->has_fixed) {
-        member_put(out, offset + start + member->offset_bits, member, member->fixed);
-      }
-    }
-  }
-}
-
 /* Reads the packet's scalars into the flat array a width program indexes.
  *
  * Every slot, not just the ones referenced: the program indexes by field number, and working out

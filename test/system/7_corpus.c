@@ -44,11 +44,6 @@ typedef struct {
   uint64_t value;
   const uint8_t *bytes;
   size_t length;
-
-  /* What it must read back as after the round trip. Almost always the same thing -- a fixed-value
-   * field is the exception, since the encoder takes it from the definition and a caller's write to
-   * it never reaches the wire. */
-  uint64_t reads_back;
 } Field;
 
 typedef struct {
@@ -65,11 +60,10 @@ typedef struct {
 } Row;
 
 /* A scalar, set and read back as the same value. */
-#define SCALAR(dotted, value) { (dotted), false, (value), NULL, 0, (value) }
+#define SCALAR(dotted, value) { (dotted), false, (value), NULL, 0 }
 /* A scalar set to one thing and read back as another: a discriminator the caller wrote over. */
-#define SCALAR_READS(dotted, set, back) { (dotted), false, (set), NULL, 0, (back) }
-/* A bit string. `reads_back` is unused; the bytes are compared directly. */
-#define BYTES(dotted, array) { (dotted), true, 0, (array), sizeof(array), 0 }
+/* A bit string. Its bytes are compared directly. */
+#define BYTES(dotted, array) { (dotted), true, 0, (array), sizeof(array) }
 
 static const uint8_t nine_bytes[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 static const uint8_t nine_nibbles[9] = { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11 };
@@ -100,8 +94,7 @@ static const Field byte_order[] = {
 };
 
 static const Field fixed_over[] = {
-  /* Written over with 0x55, and it must come back as the 0xAA the definition pins. */
-  SCALAR_READS("FIXED_OVER.hdr", 0x55, 0xAA),
+  /* hdr is not here: it cannot be set (#140), and goes out as the 0xAA the definition pins. */
   SCALAR("FIXED_OVER.body", 0x01),
 };
 
@@ -168,7 +161,7 @@ static const Row ROWS[] = {
   ROW("sub-byte fields packing and straddling", "sub_byte.fdsl", "SUB_BYTE", sub_byte, bytes_sub_byte),
   ROW("lsb_first beside msb_first", "bit_order.fdsl", "BIT_ORDER", bit_order, bytes_bit_order),
   ROW("little_endian swapping only its own field", "byte_order.fdsl", "BYTE_ORDER", byte_order, bytes_byte_order),
-  ROW("a discriminator the caller wrote over", "fixed_over.fdsl", "FIXED_OVER", fixed_over, bytes_fixed_over),
+  ROW("a discriminator nobody sets", "fixed_over.fdsl", "FIXED_OVER", fixed_over, bytes_fixed_over),
   ROW("a bit string wider than a scalar", "bit_string.fdsl", "BIT_STRING", bit_string, bytes_bit_string),
   ROW(
     "a bit string off a byte boundary",
@@ -340,14 +333,14 @@ static int run_row(const Row *row, size_t index) {
     if (framedsl_get_u64(receiver, id, &value) != FRAMEDSL_OK) {
       complain(row, index, "%s could not be read back", field->dotted);
       failure = __LINE__;
-    } else if (value != field->reads_back) {
+    } else if (value != field->value) {
       complain(
         row,
         index,
         "%s came back %llu, expected %llu",
         field->dotted,
         (unsigned long long)value,
-        (unsigned long long)field->reads_back
+        (unsigned long long)field->value
       );
       failure = __LINE__;
     }

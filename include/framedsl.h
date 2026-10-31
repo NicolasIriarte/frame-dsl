@@ -92,6 +92,13 @@ typedef enum {
    * sent. framedsl_present() asks without reading.
    */
   FRAMEDSL_ERROR_ABSENT,
+  /** @brief The field has a fixed value, so it cannot be set (#140).
+   *
+   * The encoder writes the definition's value whatever a program does, so a write is refused rather
+   * than reported as done. Every write is, the value the field already has included: a loop copying
+   * fields checks FramedslField.has_fixed.
+   */
+  FRAMEDSL_ERROR_FIXED,
 } FramedslStatus;
 
 typedef enum {
@@ -434,7 +441,8 @@ bool framedsl_member(
  * back. Everything it will ever need is allocated when it is created, so no call below allocates.
  *
  * The arena starts zeroed and stays whatever it was last set to. There is no notion of a field being
- * unset: a field nobody has touched reads as zero and will encode as zero.
+ * unset: a field nobody has touched reads as zero and will encode as zero. A fixed field reads its
+ * fixed value.
  *
  * A decoded frame is the exception, and it is not the same statement. See "What a frame holds"
  * below: values a caller writes are theirs to leave at zero, but a field that did not arrive did not
@@ -448,7 +456,8 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition);
 void framedsl_frame_free(FramedslFrame *frame);
 
 /**
- * @brief Back to the state framedsl_frame_new() returned: every slot zero, every length zero.
+ * @brief Back to the state framedsl_frame_new() returned: every slot zero but for fixed values, every
+ * length zero.
  *
  * Housekeeping rather than a rule -- nothing requires it, and a frame is usable for as long as you
  * keep it. It is here for the case where "start again, forget what this link has said so far" is
@@ -559,7 +568,8 @@ bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size
  * @brief Set a scalar field: any field of FRAMEDSL_SCALAR_MAX_BITS or fewer.
  *
  * The value is checked against the field's declared width, so a 4-bit field set to 20 is
- * FRAMEDSL_ERROR_RANGE and the slot keeps what it had.
+ * FRAMEDSL_ERROR_RANGE and the slot keeps what it had. A field with a fixed value is
+ * FRAMEDSL_ERROR_FIXED, whatever the value.
  *
  * There is one setter rather than four: a narrower one would add no safety the width check does not
  * already give, and the compiler widens the argument at the call site for free.

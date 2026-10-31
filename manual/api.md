@@ -86,11 +86,12 @@ bool framedsl_ok(const FramedslResult *result);
 | `FRAMEDSL_ERROR_TRUNCATED` | a packet matched and then the bytes ran out |
 | `FRAMEDSL_ERROR_UNLISTED` | a field typed by an enum holds a value its enum does not list, or was given a name it does not list |
 | `FRAMEDSL_ERROR_ABSENT` | a conditional field the frame does not hold: its `@if` does not hold over the frame's values |
+| `FRAMEDSL_ERROR_FIXED` | a field with a fixed value cannot be set |
 
 `IO` and `INVALID` are separate on purpose. A file that is not there is a different problem from a
 file that is wrong, and a caller should not have to read the message to tell them apart.
 
-The last five belong to the frame half below. They are in the same enum rather than one of their
+Everything from `FIELD` on belongs to the frame half below. They are in the same enum rather than one of their
 own, so a caller that prints a status has one function to write -- and "which call failed" never
 needs asking, because it is the one that returned something other than `FRAMEDSL_OK`.
 
@@ -198,7 +199,8 @@ nothing else: two threads encoding different frames of the same protocol do not 
 ### There is no "unset"
 
 The arena starts zeroed, and a slot keeps whatever was last written to it. A field nobody has touched
-reads back as zero and will encode as zero. `framedsl_frame_reset()` puts it all back to that state.
+reads back as zero and will encode as zero. A fixed field reads its fixed value, until a decode
+replaces that with what arrived. `framedsl_frame_reset()` puts it all back to that state.
 
 This is a deliberate choice rather than an omission. Tracking which fields a caller had set would
 mean a bit per field, a rule about what `reset` does to it, and an encode that fails on a field the
@@ -284,6 +286,7 @@ not already give, and the compiler widens the argument at the call site for noth
 
 | | |
 | --- | --- |
+| a field with a fixed value, whatever value it is given | `FRAMEDSL_ERROR_FIXED`, **and the slot keeps what it had** |
 | a value wider than the field's bits | `FRAMEDSL_ERROR_RANGE`, **and the slot keeps what it had** |
 | bytes longer than the field reserved | `FRAMEDSL_ERROR_RANGE` |
 | a fixed-width field given the wrong number of bytes | `FRAMEDSL_ERROR_RANGE` |
@@ -291,6 +294,13 @@ not already give, and the compiler widens the argument at the call site for noth
 
 A rejected `set_u64` changes nothing: the check runs before the write, so a caller that ignores the
 status is left with the previous value rather than a truncated one.
+
+**A fixed field cannot be set**, through `framedsl_set_u64()`, `framedsl_set_name()` or
+`framedsl_set_eng()`, on a field or a member of a repeated block. The encoder writes the definition's
+value whatever a program does, so a write that succeeded would be a write that never reached the wire.
+Writing the value it already has is refused too, so there is one rule: a loop copying fields checks
+`FramedslField.has_fixed`. A bad id, or the wrong accessor, is still `FRAMEDSL_ERROR_FIELD`, and that
+is asked first; `FRAMEDSL_ERROR_FIXED` comes before any question about the value.
 
 A **fixed-width** bit string takes exactly its own byte count -- a 72-bit field takes nine bytes and
 nothing else. Accepting fewer would leave the rest of the field holding whatever was there before,
@@ -379,9 +389,8 @@ the definition can produce.
 
 ### What the encoder decides for you
 
-**Fixed-value fields are written from the definition, never from the arena.** Setting `hdr` to
-something other than what the definition pins it to does not change the frame that comes out -- a
-caller cannot emit one that fails to identify itself.
+**Fixed-value fields are written from the definition, never from the arena**, and setting one is
+`FRAMEDSL_ERROR_FIXED` -- a caller cannot emit a frame that fails to identify itself.
 
 **`@bit_order` and `@byte_order` are applied as resolved**, per field. `msb_first` puts the value's
 most significant bit at the earliest bit the field occupies; `lsb_first` puts its least significant

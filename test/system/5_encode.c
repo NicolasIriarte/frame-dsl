@@ -180,8 +180,8 @@ static int us5_tc05_a_fixed_field_comes_from_the_definition(const TestArguments 
   const uint8_t expected[] = { 0xAA, 0x01 };
   int failure = 0;
 
-  /* Deliberately writing something else over the discriminator first. */
-  if (!set_scalar(&fixture, "A.hdr", 0x55) || !set_scalar(&fixture, "A.body", 1)) {
+  /* Writing something else over the discriminator is refused (#140), and it goes out regardless. */
+  if (set_scalar(&fixture, "A.hdr", 0x55) || !set_scalar(&fixture, "A.body", 1)) {
     failure = __LINE__;
   } else {
     failure = expect_bytes(&fixture, "A", expected, sizeof(expected), __LINE__);

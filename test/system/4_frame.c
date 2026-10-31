@@ -48,7 +48,8 @@ static void fixture_close(Fixture *fixture) {
 
 /* ---- Cases ----------------------------------------------------------------------------------- */
 
-/* Zeroed, and zeroed everywhere: a frame covers every field of every packet, not just the first. */
+/* Zeroed, and zeroed everywhere: a frame covers every field of every packet, not just the first. Only
+ * a fixed field reads otherwise, as its fixed value (#140). */
 static int us4_tc01_a_new_frame_reads_zero_everywhere(const TestArguments *args) {
   (void)args;
 
@@ -69,8 +70,10 @@ static int us4_tc01_a_new_frame_reads_zero_everywhere(const TestArguments *args)
       if (!described.is_scalar) {
         continue;
       }
+      /* Zero, or a fixed field's fixed value (#140). */
       uint64_t value = 1;
-      if (framedsl_get_u64(fixture.frame, id, &value) != FRAMEDSL_OK || value != 0) {
+      if (framedsl_get_u64(fixture.frame, id, &value) != FRAMEDSL_OK
+          || value != (described.has_fixed ? described.fixed : 0)) {
         failure = __LINE__;
       }
     }
@@ -113,17 +116,17 @@ static int us4_tc03_a_value_too_wide_is_refused_without_writing(const TestArgume
     FORCE_FAILURE();
   }
 
-  FramedslFieldId hdr;
+  FramedslFieldId crc;
   int failure = 0;
   uint64_t value = 0;
 
-  if (!framedsl_find(fixture.definition, "TM_A.hdr", &hdr)) {
+  if (!framedsl_find(fixture.definition, "TM_A.crc", &crc)) {
     failure = __LINE__;
-  } else if (framedsl_set_u64(fixture.frame, hdr, 0x5A) != FRAMEDSL_OK) {
+  } else if (framedsl_set_u64(fixture.frame, crc, 0x5A5A) != FRAMEDSL_OK) {
     failure = __LINE__;
-  } else if (framedsl_set_u64(fixture.frame, hdr, 0x1FF) != FRAMEDSL_ERROR_RANGE) {
-    failure = __LINE__; /* 0x1FF needs nine bits and the field is eight */
-  } else if (framedsl_get_u64(fixture.frame, hdr, &value) != FRAMEDSL_OK || value != 0x5A) {
+  } else if (framedsl_set_u64(fixture.frame, crc, 0x1FFFF) != FRAMEDSL_ERROR_RANGE) {
+    failure = __LINE__; /* 0x1FFFF needs seventeen bits and the field is sixteen */
+  } else if (framedsl_get_u64(fixture.frame, crc, &value) != FRAMEDSL_OK || value != 0x5A5A) {
     failure = __LINE__;
   }
 

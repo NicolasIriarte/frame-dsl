@@ -40,6 +40,7 @@ __all__ = [
     "TruncatedError",
     "UnlistedError",
     "AbsentError",
+    "FixedError",
 ]
 
 # ---- Exceptions -------------------------------------------------------------------------------
@@ -122,6 +123,16 @@ class AbsentError(Error, LookupError):
     status = _native.ERROR_ABSENT
 
 
+class FixedError(Error, ValueError):
+    """FRAMEDSL_ERROR_FIXED: a field with a fixed value cannot be set.
+
+    The encoder writes the definition's value whatever is asked, so the write is refused rather than
+    reported as done. Every write is, the value the field already has included.
+    """
+
+    status = _native.ERROR_FIXED
+
+
 _BY_STATUS = {
     _native.ERROR_FIELD: FieldError,
     _native.ERROR_RANGE: RangeError,
@@ -130,6 +141,7 @@ _BY_STATUS = {
     _native.ERROR_TRUNCATED: TruncatedError,
     _native.ERROR_UNLISTED: UnlistedError,
     _native.ERROR_ABSENT: AbsentError,
+    _native.ERROR_FIXED: FixedError,
 }
 
 

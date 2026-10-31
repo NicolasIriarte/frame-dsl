@@ -82,6 +82,11 @@ the arena rather than two. That is deliberate: reading one is then a load rather
 assembly of bytes, and the arena is sized once at startup against a budget nobody is paying per
 frame. Packing them would trade the hot path for memory that was never scarce.
 
+**A fixed field starts with its fixed value** (#140), written into its slot when a frame is created
+and when it is reset, a repetition's fixed members included. A program cannot write one, so the slot
+holds that value until a decode replaces it with what arrived. It costs a walk over the definition
+where a reset was already walking every slot, and nothing per frame.
+
 **There is no "unset".** The arena starts zeroed and a slot keeps whatever was last written to it, so
 a field nobody touched encodes as zero. Tracking which fields a caller had set would cost a bit per
 field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
@@ -388,7 +393,9 @@ expression is rejected can always rewrite it so the multiple of eight is visible
 4. Convert each field into host order and write it to its slot.
 
 Encoding is the same walk in reverse, with one difference: fixed-value fields are written from the
-definition, not from the arena, so a caller cannot emit a frame that fails to identify itself.
+definition, not from the arena, so a caller cannot emit a frame that fails to identify itself. Setting
+one is refused (#140) rather than accepted and dropped: a write reported as done and never sent is how a
+test passes without injecting the fault it set up.
 
 ### Lending a buffer, and taking one
 

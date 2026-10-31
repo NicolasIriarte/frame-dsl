@@ -624,8 +624,9 @@ static int us23_tc10_a_fixed_field_is_compared_as_its_fixed_value(const TestArgu
   EXPECT(set(&fixture, "F2.h.ext", 0x77) == FRAMEDSL_OK && set(&fixture, "F2.t", 0x01) == FRAMEDSL_OK);
   EXPECT(encodes(&fixture, "F2", "42 01"));
   EXPECT(set(&fixture, "F3.e", 0x09) == FRAMEDSL_OK && encodes(&fixture, "F3", "43 09"));
-  /* Writing the fixed field's slot changes nothing: it is not what goes on the wire. */
-  EXPECT(set(&fixture, "F3.k", 0) == FRAMEDSL_OK && present(&fixture, "F3.e") && encodes(&fixture, "F3", "43 09"));
+  /* The fixed field cannot be written (#140), and what depends on it stands. */
+  EXPECT(set(&fixture, "F3.k", 0) == FRAMEDSL_ERROR_FIXED && present(&fixture, "F3.e"));
+  EXPECT(encodes(&fixture, "F3", "43 09"));
 
   /* A width and a count read from a fixed field. */
   EXPECT(framedsl_set_bytes(fixture.frame, id_of(&fixture, "F4.d"), two, sizeof(two)) == FRAMEDSL_OK);
