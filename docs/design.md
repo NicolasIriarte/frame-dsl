@@ -87,22 +87,11 @@ a field nobody touched encodes as zero. Tracking which fields a caller had set w
 field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
 reasonably meant to leave at zero.
 
-**But a frame knows which packet it is holding.** That is not the same bookkeeping, and the
-difference is whose values the slots contain. A slot the *caller* has not written is theirs to leave
-at zero. A slot belonging to a packet that *did not arrive* holds a previous frame's value, or a zero
-nobody set, and handing either over as an answer is inventing one -- which is the cost of the arena
-having a slot per field of every packet rather than per field of one.
-
-So a frame is in one of three states: holding the caller's values (new, reset, or written to),
-holding one decoded packet, or holding nothing after a decode that stopped part-way. Reading a field
-is refused in the last two unless the field belongs to the packet that arrived. It is one enum and
-one comparison, not a bit per field, and it is checked at the accessor rather than costing the
-encoder anything.
-
-Writing a value returns the frame to the first state. A decoded frame somebody starts setting fields
-on is no longer a record of what came in, and the alternative -- refusing to read back a value the
-caller has just written -- is a rule that fires in the wrong direction. Encoding does not consult any
-of this: it is told which packet it wants, so it is never the mistake this catches.
+**A frame remembers the last value of each packet.** The arena has a slot per field of every packet,
+so decoding one packet cannot disturb another, and reading is not refused on the grounds of what the
+frame is holding. There is one rule for values a caller wrote and values that arrived, and no state
+to get wrong. Which packet arrived is `framedsl_decode()`'s return value, and that is where the
+question is answered, once, at the point it is asked.
 
 ## Layout, bit ordering and endianness
 
@@ -395,7 +384,7 @@ expression is rejected can always rewrite it so the multiple of eight is visible
    is evaluated against the arena slot of the field it names, which has been decoded by then
    (check 7). A conditional field whose conditions do not hold takes no bits, and its slot is cleared.
 3. If a resolved width exceeds the field's reservation, stop: it is a decode error. Nothing is allocated,
-   nothing is truncated, and the arena is left in a state the caller is told not to read.
+   nothing is truncated, and what the walk had written is put back.
 4. Convert each field into host order and write it to its slot.
 
 Encoding is the same walk in reverse, with one difference: fixed-value fields are written from the
@@ -638,10 +627,11 @@ over the wrong bytes. `RANGE` is a length field claiming more than its field res
 frame is corrupt. A single "decode failed" would leave a caller unable to tell a noisy link from a
 broken one.
 
-A decode that fails also leaves the frame holding *nothing*, so every field reads back as absent
-rather than as whatever the walk had written before it stopped. "Do not read the arena after a failed
-decode" was previously a sentence in the manual, and the caller it is addressed to -- the one who did
-not check the return value -- is precisely the caller who does not read the manual either.
+A decode that fails also changes nothing: the packet being walked is put aside first and put back if
+the walk gives up, so every field reads what it held before rather than whatever the walk had written
+before it stopped. "Do not read the arena after a failed decode" was previously a sentence in the
+manual, and the caller it is addressed to -- the one who did not check the return value -- is
+precisely the caller who does not read the manual either.
 
 A decode also reports how many bytes the frame occupied. A packet with a `valof()` field has no length
 until it has been decoded, so without that a caller reading a stream would have to re-implement the
@@ -684,8 +674,7 @@ and a 16-bit status in a little-endian payload is the same set of numbers as in 
 succeeds; `framedsl_get_name()` reports `FRAMEDSL_ERROR_UNLISTED`, and `-d` prints `<unlisted>`. A device
 sending a state the definition does not know is exactly what somebody debugging it wants to see, and
 refusing the frame would hide it. The raw accessors stay raw in both directions, so a program can still
-build the frame that tests how a device handles a bad value. #61 asks the same question of a range, and
-should answer it the same way.
+build the frame that tests how a device handles a bad value.
 
 **At run time** an enum is the parsed declaration, kept with the definition: its names in increasing
 order, looked up by binary search for a decode and by name for a set. A field instruction carries the
@@ -765,5 +754,3 @@ which group wrote them.
 
 **Not inside a repetition.** Element *i* of a repetition is *i* times one size in, which an element that
 may leave a field out does not have (check 32). A whole repetition may be conditional.
-
-## Deliberately unsettled

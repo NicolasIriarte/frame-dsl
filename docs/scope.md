@@ -19,20 +19,39 @@ The bet is that this is worth paying an interpretation cost for, and that the co
 enough not to matter -- which is why the intermediate form is a bytecode rather than a syntax tree,
 and why every field gets a fixed slot rather than an allocation.
 
+## What it is responsible for
+
+The core:
+
+1. Transform an array of bytes into fields by a given blueprint, and fields into bytes.
+2. Deny decoding only if the format or size is completely wrong: the bytes run out, a length passes
+   its reservation or goes below zero, or no packet matches.
+3. The user decides whether a value makes sense for what they are doing.
+
+The utilities:
+
+1. Offer calibration curves, so that users can easily turn bytes into something meaningful.
+2. Be simple, and complete enough to carry the complex packets real hardware and systems use.
+
 ## Where it is used
 
 Mostly on a simulated link, and that is a design input rather than a footnote. The common setting is
 that one end of the conversation does not exist yet: a device that will send CAN frames at the
 application being written, or the application that the device's own software needs something to talk
-to. A simulator has to speak the real packet layout, and it has to keep speaking it when the layout
-is revised -- which is a much easier promise to keep when both ends read one definition file than
-when each has its own struct.
+to.
+
+A protocol specification, the formal document describing a communication format, says what goes on a
+link. Each program on that link has its own `.fdsl`, written from that document, and they should
+describe the same bytes. A firmware and an emulator of the device it talks to are the usual pair. A
+misreading is then not shared, and integration shows the mismatch. Each program fills fields, and
+checks that what it reads makes sense. A test can then change what one side sends: a wrong CRC, an
+invalid read request, no replies at all, or unhealthy values in place of healthy ones.
 
 That splits the project's use into two, and a feature request is worth checking against both:
 
 - **As a library, while the communication is being written.** Fields set and read by name, packets
-  encoded and decoded, the software asserting on what came back. The receiving side is never told
-  which packet to expect -- it finds out from the bytes, because on a real link it would have to.
+  encoded and decoded, the software asserting on what came back. The receiving side finds out which
+  packet arrived from the bytes, unless the link carries that somewhere else, as a CAN ID does.
 - **As a tool, while the communication is being debugged.** A definition file and a run of raw bytes,
   with no program in between: what is this frame, and which field is wrong. This is why the CLI is
   shipped rather than kept as a test harness, and why its diagnostics distinguish "nothing matches"
@@ -51,6 +70,22 @@ not a disclaimer:
 - Being narrower than the alternatives is acceptable. Being *muddled* is not.
 
 ## In scope
+
+What it is for:
+
+- A `.fdsl` written from a protocol specification.
+- Bytes to fields and back.
+- Working out which packet arrived, or being told when the link carries that elsewhere.
+- Passing every value through unjudged.
+- Default values kept in a `.fdsl`.
+- Calibrations and enums.
+- Complex real packets.
+- Rejecting a bad definition when it loads.
+- Tools for people working with definitions.
+- Running on Linux x86-64. Other processors might be desired later, so the runtime stays free of
+  operating system calls.
+
+And what that means, piece by piece:
 
 **The language.** A human-readable syntax for declaring packets and their fields: widths in bits,
 fixed values that identify a packet, fields whose length comes from another field, and bit ordering
@@ -79,12 +114,20 @@ Stated so that "could we also..." has an answer that is not a shrug:
 - **Anything but Linux x86-64, for now.** The runtime is a shared library on one platform. Running on
   an embedded target is a plausible future, and is why the no-allocation rule exists, but nothing is
   being built or tested for it and no portability claim is made.
+- **Computing or verifying a CRC or checksum.** It is a field like any other: the program fills it in
+  and checks it, and can send a wrong one to see what the other end does.
+- **Judging values.** Limits, ranges and plausibility belong to the program. The same reading is a
+  failure to one program and exactly what another is injecting.
 - **Generating C code.** Frame-DSL interprets a definition; it does not emit structs or accessors.
   Emitting code would defeat the requirement that frames change without recompiling.
 - **Transport.** Reading, writing, framing, retrying and routing bytes are the calling program's
   business. This library turns a buffer into named fields and back.
 - **Protocol behaviour.** Sequence numbers, acknowledgements, timeouts, state machines and sessions
   are all outside the language. A packet description describes a packet's layout, not a conversation.
+- **Fault injection as a feature.** A wrong value is set like a right one. Building a malformed frame
+  is not a job for this library either: a test patches the bytes it wants wrong.
+- **Comparing definitions.** Checking two `.fdsl` files against each other, or against the protocol
+  specification, is what integration does.
 - **Schema evolution and negotiation.** There is no versioning of definitions, no compatibility
   checking between two versions of a frame, and no mechanism for two peers to agree on one.
 - **A general-purpose serialisation format.** Frame-DSL describes layouts that already exist and are
@@ -101,18 +144,3 @@ Stated so that "could we also..." has an answer that is not a shrug:
 4. Errors that can be detected when the definition loads are detected then -- ambiguous packets,
    unbounded fields, a `valof()` naming a field that does not exist. A live link is a bad place to
    discover a typo.
-
-## What "working" would mean
-
-The first end-to-end milestone, and the thing every current issue is pointed at:
-
-- A definition file describing the two example packets loads, and is rejected with a clear message
-  when it is malformed, ambiguous or unbounded.
-- A C program sets fields by name, encodes a packet, and gets back the exact bytes the frame
-  specifies -- including bit ordering and endianness.
-- That program decodes those bytes back, is told which packet it was, and reads the fields out with
-  the values it set.
-- None of the above allocates after load.
-
-Everything beyond that -- signed and floating-point fields, enums, conditionals, repetition, CRC
--- is a separate issue against a language that by then exists.

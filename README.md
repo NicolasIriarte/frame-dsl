@@ -28,11 +28,10 @@ const char *packet = framedsl_decode(frame, received, received_length, &consumed
 
 When a frame changes, the definition file changes. The program does not get rebuilt.
 
-> **Status: early, and now end to end.** A definition file loads and is checked; a program sets
-> fields by name, encodes a frame, and decodes one back without being told which packet arrived. That
-> is the first milestone in [`docs/scope.md`](docs/scope.md). Signed and floating-point fields,
-> conditionals and CRC are still absent, each with its own issue. Nothing here is stable, and nothing
-> is published.
+> **Status: early, and end to end.** A definition file loads and is checked; a program sets fields by
+> name, encodes a frame, and decodes one back without being told which packet arrived. Signed and
+> floating-point fields are still absent. What the project is for, and what it is not, is in
+> [`docs/scope.md`](docs/scope.md). The C API may still change before 1.0.
 
 ## The two ways this gets used
 
@@ -45,9 +44,9 @@ software on the other side has something real to talk to.
 **While developing, as a library.** The program under development links the runtime, loads a
 definition at startup, builds commands by setting fields by name, and decodes what comes back into
 something it can act on -- "did the device answer the sequence I sent, and is the reading over the
-limit" rather than "what is in byte 7". Both ends of a simulated link load the same definition file,
-so the simulator and the software under development cannot disagree about a layout, and changing the
-layout is editing one file rather than two programs.
+limit" rather than "what is in byte 7". Each end of a link has its own definition file, written from
+the protocol specification, so a misreading is not shared and integration shows the mismatch, and
+changing a layout is editing a file rather than a program.
 [`examples/uart_device.c`](examples/uart_device.c) is exactly that: a UART driver whose device does
 not exist, in the shape a real one has. `make example && ./build/uart_device`.
 
@@ -55,8 +54,7 @@ not exist, in the shape a real one has. `make example && ./build/uart_device`.
 why *this* frame was rejected, or what the unexpected reply actually contained, there is nothing to
 write: `build/frame-dsl` takes the definition file and the raw bytes off the link and says what they
 are. The definition you already have and a hex string pasted off a capture are the whole input -- see
-[The tool](#the-tool). It goes the other way too: name a packet and the fields to put in it, and it
-prints the bytes to send by hand.
+[The tool](#the-tool).
 
 ## What it looks like
 

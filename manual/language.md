@@ -1,8 +1,8 @@
 # The Frame-DSL language
 
-What you need to write a definition file. This describes **v1**, the language as it is being
-implemented first, plus calibrations. The formal grammar is in [`docs/grammar.ebnf`](../docs/grammar.ebnf); the
-reasoning behind the design is in [`docs/design.md`](../docs/design.md).
+What you need to write a definition file. The formal grammar is in
+[`docs/grammar.ebnf`](../docs/grammar.ebnf); the reasoning behind the design is in
+[`docs/design.md`](../docs/design.md).
 
 A definition file describes the layout of packets. It does not describe what they mean, when they
 are sent, or how they travel -- see [`docs/scope.md`](../docs/scope.md).
@@ -118,8 +118,9 @@ The rule is the width alone. Nothing else has to be declared.
 
 ## Fixed values, and how packets are told apart
 
-A field with `= <value>` always has that value: the encoder writes it whether or not you set it, and
-the decoder uses it to recognise the packet.
+A field with `= <value>` goes out with that value, and the decoder uses it to recognise the packet
+wherever it can look for it. Further on -- after a `valof()`-sized or a conditional field -- it
+identifies nothing and nothing checks it: a decoded frame's field reads what arrived.
 
 ```
 some_header: 8 = 0xAA;
@@ -904,11 +905,13 @@ all. It describes a slot in memory, which is a whole number of bytes by construc
 meaningful sub-byte size. Writing `data[128]` rather than `data[1024]` also puts it in the same unit
 as the length field it usually mirrors, which is where the arithmetic mistakes actually happen.
 
-## Not in v1
+## Not in the language yet
 
-Deferred, each tracked by its own issue: signed integers, floating-point and fixed-point fields,
-CRC polynomial and range, and repeating a field typed by an enum.
-Calibrations have no lookup tables, domain checks or built-in functions yet.
+Deferred, each tracked by its own issue: signed integers and floating-point fields, and repeating a
+scalar or a field typed by an enum directly. Calibrations have no lookup tables or built-in functions
+yet.
+
+A CRC or a checksum is an ordinary field: the program using the library computes it and checks it.
 
 `delimiter;` from the original sketch is **not** part of the language. It had no width and no defined
 meaning; it can return as a defined construct if a real frame needs one.

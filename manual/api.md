@@ -750,7 +750,7 @@ int main(void) {
     send(socket, bytes, length, 0);          /* ...or whatever carries it */
   }
 
-  /* ...and at the far end, over the same definition file. */
+  /* ...and at the far end. */
   size_t consumed;
   const char *packet = framedsl_decode(frame, received, received_length, &consumed, NULL);
   if (packet != NULL) {
