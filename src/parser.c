@@ -942,6 +942,34 @@ static bool parse_value(Parser *parser, uint64_t *value, const char **name, int 
   return *name != NULL;
 }
 
+/* A field's value, if one follows: `:=` fixes it and `?=` gives it a default (#144). A name is recorded
+ * as written, whatever it turns out to be: composition knows whether it is an enum's. */
+static bool parse_field_value(Parser *parser, AstField *field) {
+  const bool is_default = check(parser, TOK_QUESTION_EQUALS);
+  if (!is_default && !check(parser, TOK_COLON_EQUALS) && !check(parser, TOK_EQUALS)) {
+    return true;
+  }
+  advance(parser);
+  uint64_t value = 0;
+  const char *name = NULL;
+  if (is_default) {
+    if (!parse_value(parser, &value, &name, &field->default_line, &field->default_column)) {
+      return false;
+    }
+    field->has_default = name == NULL;
+    field->default_value = value;
+    field->default_name = name;
+  } else {
+    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
+      return false;
+    }
+    field->has_fixed = name == NULL;
+    field->fixed = value;
+    field->fixed_name = name;
+  }
+  return true;
+}
+
 static bool parse_override(Parser *parser, AstField *field) {
   int line = parser->current.line;
   int column = parser->current.column;
@@ -973,9 +1001,12 @@ static bool parse_override(Parser *parser, AstField *field) {
   }
   path[used] = '\0';
 
-  if (!expect(parser, TOK_EQUALS)) {
+  const bool is_default = check(parser, TOK_QUESTION_EQUALS);
+  if (!is_default && !check(parser, TOK_COLON_EQUALS) && !check(parser, TOK_EQUALS)) {
+    error_at_current(parser, "':=' or '?='");
     return false;
   }
+  advance(parser);
 
   AstOverride *override = region_alloc(parser->file->region, sizeof(AstOverride));
   if (override == NULL) {
@@ -984,6 +1015,7 @@ static bool parse_override(Parser *parser, AstField *field) {
   }
   memset(override, 0, sizeof(*override));
   override->name = region_strndup(parser->file->region, path, used);
+  override->is_default = is_default;
   override->line = line;
   override->column = column;
   if (!parse_value(parser, &override->value, &override->value_name, &override->value_line, &override->value_column)) {
@@ -1015,18 +1047,10 @@ static void parse_use_rest(Parser *parser, AstField *field) {
     }
   }
 
-  /* A value, `= HK`, is what a field typed by an enum takes. Recorded whatever the name turns out to
-   * be: composition knows whether it is an enum's or a block's, and refuses one for a block. */
-  if (match(parser, TOK_EQUALS)) {
-    uint64_t value = 0;
-    const char *name = NULL;
-    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
-      recover_to_field_end(parser);
-      return;
-    }
-    field->has_fixed = name == NULL;
-    field->fixed = value;
-    field->fixed_name = name;
+  /* A value is what a field typed by an enum takes, and composition refuses one for a block. */
+  if (!parse_field_value(parser, field)) {
+    recover_to_field_end(parser);
+    return;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -1152,16 +1176,9 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   /* A name here is refused by composition (check 39): only a field typed by an enum has names for its
    * values. Parsed rather than refused on the spot, so the message can say that instead of "expected a
    * number". */
-  if (match(parser, TOK_EQUALS)) {
-    uint64_t value = 0;
-    const char *name = NULL;
-    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
-      recover_to_field_end(parser);
-      return;
-    }
-    field->has_fixed = name == NULL;
-    field->fixed = value;
-    field->fixed_name = name;
+  if (!parse_field_value(parser, field)) {
+    recover_to_field_end(parser);
+    return;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {

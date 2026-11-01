@@ -189,6 +189,7 @@ static const ElementProgram *element_of(const Program *program, const AstPacket 
 static bool element_fixed_image(ElementProgram *element) {
   for (size_t m = 0; m < element->member_count; ++m) {
     element->fixed_members += element->members[m].has_fixed;
+    element->default_members += element->members[m].has_default;
   }
   if (element->bits % 8 != 0 || element->fixed_members == 0) {
     return true;
@@ -249,6 +250,8 @@ static bool compile_element(ElementProgram *element, const AstFile *file, const 
       .is_scalar = width <= FRAMEDSL_SCALAR_MAX_BITS && field->element == NULL,
       .has_fixed = field->has_fixed,
       .fixed = field->fixed,
+      .has_default = field->has_default,
+      .default_value = field->has_default ? field->default_value : 0,
       .cal = cal_index(file, field->cal),
       .enumeration = enum_index(file, field->enumeration),
       .bit_order = field->bit_order,
@@ -408,6 +411,8 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .is_scalar = slot->is_scalar,
         .has_fixed = field->has_fixed,
         .fixed = field->has_fixed ? field->fixed : 0,
+        .has_default = field->has_default,
+        .default_value = field->has_default ? field->default_value : 0,
         .cal = cal_index(file, field->cal),
         .enumeration = enum_index(file, field->enumeration),
         .bit_order = field->bit_order,

@@ -94,13 +94,24 @@ Slot *frame_slot(const FramedslFrame *frame, FramedslFieldId id);
  * @brief Writes a field's fixed value into its slot, a repetition's fixed members included.
  *
  * How a frame starts, and what a decode leaves in a field it did not carry, so that a fixed field the
- * frame holds no wire value for reads its fixed value (#140, #141). A field with none is left alone.
+ * frame holds no wire value for reads its fixed value (#140, #141), and one with a default reads that
+ * (#144). A field with neither is left alone.
  *
  * @param frame The frame to write into.
  * @param packet Index of the packet.
  * @param field Index of the field in that packet.
  */
 void frame_seed_field(FramedslFrame *frame, size_t packet, size_t field);
+
+/**
+ * @brief Writes a repetition's defaults into its elements from `first` on (#144).
+ *
+ * @param frame The frame to write into.
+ * @param packet Index of the packet.
+ * @param field Index of a repeated field in that packet.
+ * @param first The first element to write; the ones before it keep what they hold.
+ */
+void frame_seed_elements(FramedslFrame *frame, size_t packet, size_t field, size_t first);
 
 /**
  * @brief Puts one packet's slots aside, so that a decode over them can be undone.

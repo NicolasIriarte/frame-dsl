@@ -372,6 +372,8 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     .is_scalar = slot->is_scalar,
     .has_fixed = ast_field->has_fixed,
     .fixed = ast_field->has_fixed ? ast_field->fixed : 0,
+    .has_default = ast_field->has_default,
+    .default_value = ast_field->has_default ? ast_field->default_value : 0,
     .bit_order =
       ast_field->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST : FRAMEDSL_BIT_ORDER_MSB_FIRST,
     .byte_order = ast_field->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN
@@ -423,6 +425,8 @@ bool framedsl_member(
     .is_scalar = m->is_scalar,
     .has_fixed = m->has_fixed,
     .fixed = m->has_fixed ? m->fixed : 0,
+    .has_default = m->has_default,
+    .default_value = m->has_default ? m->default_value : 0,
     .bit_order = m->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST : FRAMEDSL_BIT_ORDER_MSB_FIRST,
     .byte_order =
       m->byte_order == BYTE_ORDER_LITTLE_ENDIAN ? FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN : FRAMEDSL_BYTE_ORDER_BIG_ENDIAN,

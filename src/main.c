@@ -352,15 +352,17 @@ static void describe(const FramedslDefinition *definition) {
           (unsigned long long)(field.max_bits / 8),
           when
         );
-      } else if (field.has_fixed) {
+      } else if (field.has_fixed || field.has_default) {
+        const uint64_t value = field.has_fixed ? field.fixed : field.default_value;
         printf(
-          "    %-14s %s, %llu bits = %#llx%s%s%s%s\n",
+          "    %-14s %s, %llu bits %s %#llx%s%s%s%s\n",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
-          (unsigned long long)field.fixed,
+          field.has_fixed ? "=" : "?=",
+          (unsigned long long)value,
           field.enumeration != NULL ? " (" : "",
-          field.enumeration != NULL ? enum_name_of(definition, field.enumeration, field.fixed) : "",
+          field.enumeration != NULL ? enum_name_of(definition, field.enumeration, value) : "",
           field.enumeration != NULL ? ")" : "",
           when
         );

@@ -298,7 +298,17 @@ Token lexer_next(Lexer *lexer) {
   case '@':
     return make(TOK_AT, line, column);
   case ':':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_COLON_EQUALS, line, column);
+    }
     return make(TOK_COLON, line, column);
+  case '?':
+    if (peek(lexer, 0) == '=') {
+      advance(lexer);
+      return make(TOK_QUESTION_EQUALS, line, column);
+    }
+    break;
   case ';':
     return make(TOK_SEMICOLON, line, column);
   case '{':
@@ -435,6 +445,10 @@ const char *token_kind_name(TokenKind kind) {
     return "')'";
   case TOK_EQUALS:
     return "'='";
+  case TOK_COLON_EQUALS:
+    return "':='";
+  case TOK_QUESTION_EQUALS:
+    return "'?='";
   case TOK_EQUAL_EQUAL:
     return "'=='";
   case TOK_NOT_EQUAL:

@@ -524,6 +524,21 @@ static void type_by_enum(
     field.fixed = value;
     field.fixed_name = NULL;
   }
+  if (use->has_default || use->default_name != NULL) {
+    uint64_t value = 0;
+    field.has_default = enum_value(
+      composer,
+      enumeration,
+      use->name,
+      use->default_name,
+      use->default_value,
+      use->default_line,
+      use->default_column,
+      &value
+    );
+    field.default_value = value;
+    field.default_name = NULL;
+  }
   append(composer, out, &field);
 }
 
@@ -570,6 +585,16 @@ static bool block_use_is_plain(Composer *composer, const AstField *use) {
       use->name
     );
     fail(composer, use->fixed_line, use->fixed_column, 0, message);
+    plain = false;
+  }
+  if (use->has_default || use->default_name != NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' uses a block, and a block has no single value to default; give its fields one in '{ ... }' instead",
+      use->name
+    );
+    fail(composer, use->default_line, use->default_column, 0, message);
     plain = false;
   }
   return plain;
@@ -632,12 +657,20 @@ static void apply_overrides(
       continue;
     }
 
-    /* A fixed value the block wrote is replaced, not contradicted: overriding it is the point. Check 8
-     * still sees whether the new value fits, and check 9 whether the field can be fixed at all. */
-    target->has_fixed = true;
-    target->fixed = value;
-    target->fixed_line = override->line;
-    target->fixed_column = override->column;
+    /* What the block wrote is replaced, not contradicted: overriding it is the point, and what the use
+     * wrote is what the field becomes (#144). Check 8 still sees whether the new value fits, and check 9
+     * whether the field can be fixed at all. */
+    target->has_fixed = !override->is_default;
+    target->has_default = override->is_default;
+    if (override->is_default) {
+      target->default_value = value;
+      target->default_line = override->line;
+      target->default_column = override->column;
+    } else {
+      target->fixed = value;
+      target->fixed_line = override->line;
+      target->fixed_column = override->column;
+    }
   }
 }
 
@@ -743,6 +776,10 @@ static void expand(
     if (field->block == NULL) {
       if (field->fixed_name != NULL) {
         refuse_name(composer, field->name, field->fixed_name, field->fixed_line, field->fixed_column);
+        continue;
+      }
+      if (field->default_name != NULL) {
+        refuse_name(composer, field->name, field->default_name, field->default_line, field->default_column);
         continue;
       }
       AstField copy = *field;
@@ -1275,7 +1312,7 @@ bool compose_file(AstFile *file, DiagList *diags) {
     bool uses_a_block = false;
     for (size_t f = 0; f < packet->field_count; ++f) {
       uses_a_block = uses_a_block || packet->fields[f].block != NULL || packet->fields[f].fixed_name != NULL
-                     || packet->fields[f].condition != NULL;
+                     || packet->fields[f].default_name != NULL || packet->fields[f].condition != NULL;
     }
     if (!uses_a_block) {
       continue;

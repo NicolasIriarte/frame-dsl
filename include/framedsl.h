@@ -191,6 +191,11 @@ typedef struct {
   bool has_fixed;
   uint64_t fixed;
 
+  /** @brief A default, `?= 1`: what the field holds until something replaces it (#144). In the bits
+   * `fixed` uses, and nothing else reads it: a program puts one field back by writing this value. */
+  bool has_default;
+  uint64_t default_value;
+
   /** @brief Resolved: what applies after file, packet and field scope are combined -- not what was
    * written.
    */

@@ -117,6 +117,8 @@ class Field(ctypes.Structure):
         ("is_scalar", ctypes.c_bool),
         ("has_fixed", ctypes.c_bool),
         ("fixed", ctypes.c_uint64),
+        ("has_default", ctypes.c_bool),
+        ("default_value", ctypes.c_uint64),
         ("bit_order", ctypes.c_int),
         ("byte_order", ctypes.c_int),
         ("cal", ctypes.c_char_p),
