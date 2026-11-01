@@ -1,0 +1,13 @@
+# REJECTED: check 1 -- a block or an enum may not be called `i` or `f` followed by digits.
+#
+# A type goes where a block's name does, so a use of this block could never reach it. A field may still be
+# called `i16`, since a name there is only a name.
+
+block i16 {
+  low:  8;
+  high: 8;
+};
+
+pkt TM_WORD {
+  id: 8 := 0x01;
+};

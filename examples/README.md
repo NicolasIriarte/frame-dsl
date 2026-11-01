@@ -58,6 +58,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
 | [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
 | [`default_values.fdsl`](default_values.fdsl) | defaults: `?=` beside `:=`, on a repetition, and replaced by a use |
+| [`signed_and_float.fdsl`](signed_and_float.fdsl) | typed fields: signed and float values, with a curve, a condition and a default |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 | [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
@@ -70,6 +71,10 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/unbounded_valof.fdsl`](invalid/unbounded_valof.fdsl) | 5 -- `valof()` width with no reservation |
 | [`invalid/forward_valof.fdsl`](invalid/forward_valof.fdsl) | 7 -- `valof()` names a later field |
 | [`invalid/value_too_wide.fdsl`](invalid/value_too_wide.fdsl) | 8 -- fixed value does not fit its width |
+| [`invalid/signed_value_out_of_range.fdsl`](invalid/signed_value_out_of_range.fdsl) | 8 -- `0xFF` on an `i8` is 255, not -1 |
+| [`invalid/block_named_like_a_type.fdsl`](invalid/block_named_like_a_type.fdsl) | 1 -- a block of a type's shape could never be used |
+| [`invalid/valof_of_a_float.fdsl`](invalid/valof_of_a_float.fdsl) | 16 -- a float has no whole value to size a field with |
+| [`invalid/type_width_out_of_range.fdsl`](invalid/type_width_out_of_range.fdsl) | 44 -- no `f16` |
 | [`invalid/default_too_wide.fdsl`](invalid/default_too_wide.fdsl) | 8 -- a default does not fit its width |
 | [`invalid/default_on_a_bit_string.fdsl`](invalid/default_on_a_bit_string.fdsl) | 8 -- a default needs a scalar |
 | [`invalid/default_does_not_identify.fdsl`](invalid/default_does_not_identify.fdsl) | 11 -- a default identifies nothing |

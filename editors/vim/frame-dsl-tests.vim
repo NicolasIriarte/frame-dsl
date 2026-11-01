@@ -105,6 +105,10 @@ function! s:TestEnumSyntax() abort
   call assert_equal('fdslOperator', s:GroupAt(5, 18), 'the := of a fixed value')
   call assert_equal('fdslFieldName', s:GroupAt(6, 3), 'a field called enum')
   bwipeout!
+  call s:Open(['pkt TM {', '  temp: i16 ?= -160;', '};'])
+  call assert_equal('fdslTypeName', s:GroupAt(2, 9), 'a type where a width goes')
+  call assert_equal('fdslOperator', s:GroupAt(2, 13), 'the ?= of a default')
+  bwipeout!
 endfunction
 
 " `@if' is an attribute name, and what follows it is a condition: `valof', the field it reads -- dotted

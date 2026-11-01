@@ -20,6 +20,8 @@
 #include "parser.h"
 
 const char *const NAV_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "if", NULL };
+/* The usual types: `i3` is as good as `i8`, and a list of 66 would bury the blocks. */
+static const char *const TYPE_VALUES[] = { "i8", "i16", "i32", "i64", "f32", "f64", NULL };
 static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first", NULL };
 static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian", NULL };
 
@@ -547,6 +549,9 @@ static void describe_layout(Buffer *buffer, const FramedslField *field) {
     field->bit_order == FRAMEDSL_BIT_ORDER_LSB_FIRST ? "lsb_first" : "msb_first",
     field->byte_order == FRAMEDSL_BYTE_ORDER_LITTLE_ENDIAN ? "little_endian" : "big_endian"
   );
+  if (field->kind != FRAMEDSL_KIND_UNSIGNED) {
+    put(buffer, "- type: %s\n", field->kind == FRAMEDSL_KIND_SIGNED ? "signed" : "float");
+  }
   if (field->has_fixed) {
     put(buffer, "- fixed at 0x%llX\n", (unsigned long long)field->fixed);
   }
@@ -566,6 +571,11 @@ static void describe_declaration(Buffer *buffer, const AstField *decl) {
     put(buffer, "- width: %llu bits\n", (unsigned long long)width);
   } else if (decl->width != NULL) {
     put(buffer, "- width: variable%s\n", decl->reserve != NULL ? ", with a reservation" : "");
+  }
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t type_bits = 0;
+  if (ast_type_name(decl->block, &kind, &type_bits)) {
+    put(buffer, "- type: `%s`\n", decl->block);
   }
   put(buffer, "- bit order: %s, byte order: %s\n", bit_order_name(decl->bit_order), byte_order_name(decl->byte_order));
   if (decl->has_fixed) {
@@ -842,9 +852,13 @@ typedef enum {
   TARGET_ENUM_ITEM,
 } TargetKind;
 
-/* A field typed by an enum has a name where a width goes, as a use of a block does, and is a field. */
+/* A field typed by an enum or a type has a name where a width goes, as a use of a block does, and is a
+ * field. */
 static TargetKind instance_or_field(const AstFile *ast, const AstField *decl) {
-  return decl->block != NULL && ast_find_enum(ast, decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  const bool is_type = ast_type_name(decl->block, &kind, &width);
+  return decl->block != NULL && !is_type && ast_find_enum(ast, decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
 }
 
 /* What a name under the cursor refers to, worked out once for hover and definition alike. */
@@ -1293,6 +1307,7 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
   } else if (is(previous, TOK_COLON) && depth > 0) {
     offer_blocks(&completions, navigator->ast);
     offer_enums(&completions, navigator->ast);
+    offer_list(&completions, TYPE_VALUES, NAV_KEYWORD);
     offer(&completions, "valof", NAV_KEYWORD, NULL);
   } else if (
     depth > 0

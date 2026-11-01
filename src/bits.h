@@ -13,6 +13,43 @@
 #include <stdint.h>
 #include <string.h>
 
+/** @brief The low `width` bits of `value`, for a width from 1 to 64. */
+static inline uint64_t bits_low(uint64_t value, uint64_t width) {
+  return width >= 64 ? value : value & (((uint64_t)1 << width) - 1);
+}
+
+/** @brief A `width`-bit two's complement pattern as the number it is, for a width from 1 to 64 (#10). */
+static inline int64_t bits_sign_extend(uint64_t pattern, uint64_t width) {
+  const unsigned shift = (unsigned)(64 - width);
+  return (int64_t)(pattern << shift) >> shift;
+}
+
+/** @brief The IEEE-754 pattern of a double, and of a float in its low 32 bits. */
+static inline uint64_t bits_of_double(double value) {
+  uint64_t pattern;
+  memcpy(&pattern, &value, sizeof(pattern));
+  return pattern;
+}
+
+static inline uint64_t bits_of_float(float value) {
+  uint32_t pattern;
+  memcpy(&pattern, &value, sizeof(pattern));
+  return pattern;
+}
+
+/** @brief A `width`-bit IEEE-754 pattern as a double, which holds every float exactly. */
+static inline double bits_to_double(uint64_t pattern, uint64_t width) {
+  if (width == 32) {
+    const uint32_t low = (uint32_t)pattern;
+    float value;
+    memcpy(&value, &low, sizeof(value));
+    return (double)value;
+  }
+  double value;
+  memcpy(&value, &pattern, sizeof(value));
+  return value;
+}
+
 /** @brief Eight bytes as the big-endian number they spell, wherever they are in memory. */
 static inline uint64_t bits_load_be64(const uint8_t *bytes) {
   uint64_t value;

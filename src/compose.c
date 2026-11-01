@@ -1,8 +1,11 @@
 #include "compose.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "bits.h"
 
 /* More fields than any frame has, used to stop a file that nests blocks two-by-two a dozen deep from
  * expanding into millions. */
@@ -456,7 +459,210 @@ static void refuse_name(Composer *composer, const char *what, const char *name, 
   fail(composer, line, column, 39, message);
 }
 
-/* `name: Enum [= NAME];` becomes an ordinary field of the enum's width. */
+/* Check 8, for a number on a field that holds an unsigned value, whatever else it is. */
+static bool plain_number(Composer *composer, const char *field, const ValueForm *form, int line, int column) {
+  char message[512];
+  if (form->real) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' holds a whole number, so it cannot be given a fraction; only f32 and f64 can",
+      field
+    );
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  if (form->negative) {
+    snprintf(message, sizeof(message), "'%s' is unsigned, so it cannot be given a negative value", field);
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  return true;
+}
+
+/* Check 8, for a number on a signed field: what it stands for, which must be in the type's range (#10).
+ * `i8 := 0xFF` is refused, since 0xFF is 255 and not -1. */
+static bool signed_pattern(
+  Composer *composer,
+  const char *field,
+  uint64_t width,
+  const ValueForm *form,
+  uint64_t value,
+  int line,
+  int column,
+  uint64_t *pattern
+) {
+  char message[512];
+  if (form->real) {
+    snprintf(
+      message, sizeof(message), "'%s' is i%llu, so it cannot be given a fraction", field, (unsigned long long)width
+    );
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  const uint64_t top = (uint64_t)1 << (width - 1);
+  if (form->negative ? value > top : value >= top) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is i%llu, which holds -%llu to %llu, so it cannot hold %s%llu",
+      field,
+      (unsigned long long)width,
+      (unsigned long long)top,
+      (unsigned long long)(top - 1),
+      form->negative ? "-" : "",
+      (unsigned long long)value
+    );
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  *pattern = bits_low(form->negative ? (uint64_t)0 - value : value, width);
+  return true;
+}
+
+/* Check 8, for a number on a float. Hex and binary read as a pattern, so they are refused here rather
+ * than taken for one: a file has no way to write a NaN, and a program sets those by their bits. */
+static bool float_pattern(
+  Composer *composer,
+  const char *field,
+  uint64_t width,
+  const ValueForm *form,
+  int line,
+  int column,
+  uint64_t *pattern
+) {
+  char message[512];
+  if (form->based) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is f%llu, so its value is a decimal number; hex and binary read as a pattern",
+      field,
+      (unsigned long long)width
+    );
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  const double value = form->negative ? -form->number : form->number;
+  if (width == 32 && isinf((float)value)) {
+    snprintf(message, sizeof(message), "'%s' is f32, which cannot hold %g", field, value);
+    fail(composer, line, column, 8, message);
+    return false;
+  }
+  *pattern = width == 32 ? bits_of_float((float)value) : bits_of_double(value);
+  return true;
+}
+
+/* A number on a typed field, as the pattern its slot will hold. */
+static bool typed_pattern(
+  Composer *composer,
+  const AstField *field,
+  const char *name,
+  const ValueForm *form,
+  uint64_t value,
+  int line,
+  int column,
+  uint64_t *pattern
+) {
+  const uint64_t width = field->width->literal;
+  return field->kind == FIELD_KIND_SIGNED ? signed_pattern(composer, name, width, form, value, line, column, pattern)
+                                          : float_pattern(composer, name, width, form, line, column, pattern);
+}
+
+/* `name: i16 [:= -1];` or `name: f32 [?= 1.5];` becomes an ordinary field of that width (#10). */
+static void type_by_name(
+  Composer *composer,
+  const AstField *use,
+  FieldKind kind,
+  uint64_t width_bits,
+  const char *prefix,
+  AstCondition *outer,
+  FieldList *out
+) {
+  char message[512];
+
+  /* Check 44: nothing but the shape says this is meant to be a type, and no block can have it. */
+  if (width_bits == 0) {
+    snprintf(
+      message, sizeof(message), "'%s' is not a type: a signed field is i1 to i64, and a float is f32 or f64", use->block
+    );
+    fail(composer, use->block_line, use->block_column, 44, message);
+    return;
+  }
+
+  /* Check 41, as for an enum. */
+  if (use->anonymous) {
+    snprintf(message, sizeof(message), "'%s' is a type, with no fields to paste in; name the field", use->block);
+    fail(composer, use->line, use->column, 41, message);
+    return;
+  }
+  if (use->repeat != NULL) {
+    snprintf(message, sizeof(message), "'%s' repeats type '%s'; only a block can be repeated", use->name, use->block);
+    fail(composer, use->repeat_line, use->repeat_column, 41, message);
+    return;
+  }
+  if (use->overrides != NULL) {
+    snprintf(
+      message,
+      sizeof(message),
+      "'%s' is a '%s', which has no fields to fix; give its value as '%s: %s := VALUE;'",
+      use->name,
+      use->block,
+      use->name,
+      use->block
+    );
+    fail(composer, use->overrides->line, use->overrides->column, 41, message);
+    return;
+  }
+
+  Expr *width = region_alloc(composer->file->region, sizeof(Expr));
+  if (width == NULL) {
+    fail(composer, 1, 1, 0, "out of memory");
+    return;
+  }
+  *width = (Expr){ .kind = EXPR_LITERAL, .line = use->block_line, .column = use->block_column, .literal = width_bits };
+
+  AstField field = *use;
+  field.name = join(composer, prefix, use->name);
+  field.block = NULL;
+  field.kind = kind;
+  field.width = width;
+  field.reserve = rename_expr(composer, use->reserve, prefix);
+  field.condition = place(composer, use->condition, prefix, outer);
+
+  bool fine = true;
+  if (use->fixed_name != NULL) {
+    refuse_name(composer, field.name, use->fixed_name, use->fixed_line, use->fixed_column);
+    fine = false;
+  } else if (use->has_fixed) {
+    fine = typed_pattern(
+      composer, &field, field.name, &use->fixed_form, use->fixed, use->fixed_line, use->fixed_column, &field.fixed
+    );
+  }
+  if (use->default_name != NULL) {
+    refuse_name(composer, field.name, use->default_name, use->default_line, use->default_column);
+    fine = false;
+  } else if (use->has_default) {
+    fine = typed_pattern(
+             composer,
+             &field,
+             field.name,
+             &use->default_form,
+             use->default_value,
+             use->default_line,
+             use->default_column,
+             &field.default_value
+           )
+           && fine;
+  }
+  field.fixed_form = (ValueForm){ 0 };
+  field.default_form = (ValueForm){ 0 };
+  if (fine) {
+    append(composer, out, &field);
+  }
+}
+
+/* `name: Enum [:= NAME];` becomes an ordinary field of the enum's width. */
 static void type_by_enum(
   Composer *composer,
   const AstField *use,
@@ -516,6 +722,13 @@ static void type_by_enum(
   field.width = width;
   field.reserve = rename_expr(composer, use->reserve, prefix);
   field.condition = place(composer, use->condition, prefix, outer);
+  if (use->has_fixed && !plain_number(composer, field.name, &use->fixed_form, use->fixed_line, use->fixed_column)) {
+    return;
+  }
+  if (use->has_default
+      && !plain_number(composer, field.name, &use->default_form, use->default_line, use->default_column)) {
+    return;
+  }
   if (use->has_fixed || use->fixed_name != NULL) {
     uint64_t value = 0;
     field.has_fixed = enum_value(
@@ -636,10 +849,27 @@ static void apply_overrides(
       continue;
     }
 
-    /* A field typed by an enum takes one of its names, and only such a field takes a name (#11). */
+    /* A field typed by an enum takes one of its names, and only such a field takes a name (#11). A
+     * negative number or a fraction takes a field with a type that can hold it (#10). */
     uint64_t value = override->value;
     const AstEnum *enumeration = ast_find_enum(composer->file, target->enumeration);
-    if (enumeration != NULL) {
+    if (override->value_name == NULL && target->kind != FIELD_KIND_UNSIGNED) {
+      if (!typed_pattern(
+            composer,
+            target,
+            full,
+            &override->form,
+            override->value,
+            override->value_line,
+            override->value_column,
+            &value
+          )) {
+        continue;
+      }
+    } else if (override->value_name == NULL
+               && !plain_number(composer, full, &override->form, override->value_line, override->value_column)) {
+      continue;
+    } else if (enumeration != NULL) {
       if (!enum_value(
             composer,
             enumeration,
@@ -782,6 +1012,12 @@ static void expand(
         refuse_name(composer, field->name, field->default_name, field->default_line, field->default_column);
         continue;
       }
+      if (
+        (field->has_fixed
+         && !plain_number(composer, field->name, &field->fixed_form, field->fixed_line, field->fixed_column))
+        || (field->has_default && !plain_number(composer, field->name, &field->default_form, field->default_line, field->default_column))) {
+        continue;
+      }
       AstField copy = *field;
       copy.name = join(composer, prefix, field->name);
       copy.width = rename_expr(composer, field->width, prefix);
@@ -806,6 +1042,13 @@ static void expand(
         fail(composer, field->line, field->column, 2, message);
         break;
       }
+    }
+
+    FieldKind kind = FIELD_KIND_UNSIGNED;
+    uint64_t type_bits = 0;
+    if (ast_type_name(field->block, &kind, &type_bits)) {
+      type_by_name(composer, field, kind, type_bits, prefix, outer, out);
+      continue;
     }
 
     if (enumeration != NULL) {
@@ -914,7 +1157,14 @@ static void check_enums(Composer *composer) {
       continue;
     }
 
-    /* Check 1: a field's type is a block or an enum, and one name cannot be both. */
+    /* Check 1: a field's type is a block or an enum, and one name cannot be both. A name of a type's
+     * shape could never be used (#10). */
+    FieldKind kind = FIELD_KIND_UNSIGNED;
+    uint64_t width = 0;
+    if (ast_type_name(enumeration->name, &kind, &width)) {
+      snprintf(message, sizeof(message), "an enum cannot be called '%s', which reads as a type", enumeration->name);
+      fail(composer, enumeration->line, enumeration->column, 1, message);
+    }
     for (size_t earlier = 0; earlier < e; ++earlier) {
       if (strcmp(file->enums[earlier].name, enumeration->name) == 0) {
         snprintf(message, sizeof(message), "there is already an enum called '%s'", enumeration->name);
@@ -1263,6 +1513,15 @@ bool compose_file(AstFile *file, DiagList *diags) {
     if (block->field_count == 0) {
       fail(&composer, block->line, block->column, 0, "a block must declare at least one field");
     }
+    /* A type goes where a block's name does, so a block of that shape could never be used (#10). */
+    FieldKind kind = FIELD_KIND_UNSIGNED;
+    uint64_t width = 0;
+    if (ast_type_name(block->name, &kind, &width)) {
+      char message[256];
+      snprintf(message, sizeof(message), "a block cannot be called '%s', which reads as a type", block->name);
+      fail(&composer, block->line, block->column, 1, message);
+    }
+
     /* Names share nothing with packets -- a use can only name a block -- but two blocks of one name
      * would leave every use ambiguous. It is check 1's rule, applied to blocks. */
     for (size_t earlier = 0; earlier < b; ++earlier) {
@@ -1308,11 +1567,14 @@ bool compose_file(AstFile *file, DiagList *diags) {
   for (size_t p = 0; p < file->packet_count; ++p) {
     AstPacket *packet = &file->packets[p];
 
-    /* A value written as a name has to be looked up, or refused, even in a packet that uses nothing. */
+    /* A value written as a name has to be looked up, or refused, even in a packet that uses nothing, and
+     * so does one that only a typed field could hold. */
     bool uses_a_block = false;
     for (size_t f = 0; f < packet->field_count; ++f) {
-      uses_a_block = uses_a_block || packet->fields[f].block != NULL || packet->fields[f].fixed_name != NULL
-                     || packet->fields[f].default_name != NULL || packet->fields[f].condition != NULL;
+      const AstField *field = &packet->fields[f];
+      uses_a_block = uses_a_block || field->block != NULL || field->fixed_name != NULL || field->default_name != NULL
+                     || field->condition != NULL || field->fixed_form.negative || field->fixed_form.real
+                     || field->default_form.negative || field->default_form.real;
     }
     if (!uses_a_block) {
       continue;

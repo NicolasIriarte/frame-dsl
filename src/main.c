@@ -283,6 +283,11 @@ static const char *enum_name_of(const FramedslDefinition *definition, const char
   return "?";
 }
 
+/* What a description adds to a field's width, for one with a type (#10). */
+static const char *kind_word(FramedslKind kind) {
+  return kind == FRAMEDSL_KIND_SIGNED ? " signed" : kind == FRAMEDSL_KIND_FLOAT ? " float" : "";
+}
+
 static void describe(const FramedslDefinition *definition) {
   for (size_t p = 0; p < framedsl_packet_count(definition); ++p) {
     size_t fields = framedsl_field_count(definition, p);
@@ -355,10 +360,11 @@ static void describe(const FramedslDefinition *definition) {
       } else if (field.has_fixed || field.has_default) {
         const uint64_t value = field.has_fixed ? field.fixed : field.default_value;
         printf(
-          "    %-14s %s, %llu bits %s %#llx%s%s%s%s\n",
+          "    %-14s %s, %llu bits%s %s %#llx%s%s%s%s\n",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
+          kind_word(field.kind),
           field.has_fixed ? ":=" : "?=",
           (unsigned long long)value,
           field.enumeration != NULL ? " (" : "",
@@ -368,10 +374,11 @@ static void describe(const FramedslDefinition *definition) {
         );
       } else {
         printf(
-          "    %-14s %s, %llu bits%s%s%s%s%s\n",
+          "    %-14s %s, %llu bits%s%s%s%s%s%s\n",
           field.name,
           offset,
           (unsigned long long)field.width_bits,
+          kind_word(field.kind),
           field.cal != NULL ? ", cal " : "",
           field.cal != NULL ? field.cal : "",
           field.enumeration != NULL ? ", enum " : "",
@@ -513,6 +520,20 @@ static void print_value(
     if (framedsl_get_u64(frame, id, &value) != FRAMEDSL_OK) {
       return;
     }
+    /* A typed field shows the value, then the pattern on the wire (#10). A float prints with enough
+     * digits to read back exactly. */
+    char reading[64];
+    if (field->kind == FRAMEDSL_KIND_SIGNED) {
+      int64_t number = 0;
+      framedsl_get_i64(frame, id, &number);
+      snprintf(reading, sizeof(reading), "%lld", (long long)number);
+    } else if (field->kind == FRAMEDSL_KIND_FLOAT) {
+      double number = 0;
+      framedsl_get_f64(frame, id, &number);
+      snprintf(reading, sizeof(reading), "%.*g", field->width_bits == 32 ? 9 : 17, number);
+    } else {
+      snprintf(reading, sizeof(reading), "%llu", (unsigned long long)value);
+    }
     /* A field typed by an enum shows its name -- or that it has none, which is the reading somebody
      * debugging a device most wants to see, so it is marked rather than left out (#11). */
     if (field->enumeration != NULL) {
@@ -532,17 +553,9 @@ static void print_value(
     /* A calibrated field shows both: the raw value is what is on the wire, and the engineering
      * value is what anybody reading this actually wants to know. */
     if (field->cal != NULL && framedsl_get_eng(frame, id, &eng) == FRAMEDSL_OK) {
-      fprintf(
-        out,
-        "    %-14s %llu (%#llx) = %.10g [%s]\n",
-        label,
-        (unsigned long long)value,
-        (unsigned long long)value,
-        eng,
-        field->cal
-      );
+      fprintf(out, "    %-14s %s (%#llx) = %.10g [%s]\n", label, reading, (unsigned long long)value, eng, field->cal);
     } else {
-      fprintf(out, "    %-14s %llu (%#llx)\n", label, (unsigned long long)value, (unsigned long long)value);
+      fprintf(out, "    %-14s %s (%#llx)\n", label, reading, (unsigned long long)value);
     }
     return;
   }

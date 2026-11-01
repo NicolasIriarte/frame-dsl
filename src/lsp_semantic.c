@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ast.h"
 #include "diag.h"
 #include "lexer.h"
 
@@ -59,6 +60,19 @@ Token *lsp_lex_all(const char *source, size_t *count) {
 static bool is_word(const Token *token, const char *word) {
   size_t length = strlen(word);
   return token != NULL && token->kind == TOK_IDENT && token->length == length && memcmp(token->text, word, length) == 0;
+}
+
+/* Whether an identifier is written as a type is: `i16`, `f32`, or a shape check 44 will refuse. */
+static bool names_a_type(const Token *token) {
+  char name[8];
+  if (token->length >= sizeof(name)) {
+    return false;
+  }
+  memcpy(name, token->text, token->length);
+  name[token->length] = '\0';
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  return ast_type_name(name, &kind, &width);
 }
 
 static bool is(const Token *token, TokenKind kind) {
@@ -274,6 +288,8 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
           type = SEM_PROPERTY;
         } else if (token_is_value_operator(previous)) {
           type = SEM_ENUM_MEMBER; /* `level: TxLevel := HIGH;` */
+        } else if (names_a_type(token)) {
+          type = SEM_TYPE; /* `temp: i16;` */
         } else if (is(next, TOK_DOT)) {
           type = SEM_NAMESPACE;
         } else {

@@ -94,6 +94,13 @@ default stamped there would overwrite what a program set, so defaults are writte
 starts out. From then on a default is in the arena, like any other value, which is why nothing past
 seeding has to know about one.
 
+**A slot holds a pattern, whatever the field's type** (#10). A signed value or a float is at most 64 bits, in
+the low bits of a slot, and the bytes on the wire do not change, so the encode and decode walks and their fast
+paths never ask what a field's type is. The type applies where a value is read or written, where it enters a
+curve, and in the two places the runtime computes with a value: `width_program_eval()` and `condition_test()`.
+Sign extension happens at those places rather than when a field is decoded, which is what keeps
+`framedsl_get_u64()` a raw read.
+
 **There is no "unset".** The arena starts zeroed and a slot keeps whatever was last written to it, so
 a field nobody touched encodes as zero, or as its default. Tracking which fields a caller had set would cost a bit per
 field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
@@ -188,7 +195,9 @@ alternative is finding out on a live link.
 
 8. A fixed value or a default must fit in its field's declared width, and the field must be a scalar --
    a bit string is bytes the caller handed over, not a number to hold one against. The same goes for the
-   value a condition compares a field with: one it cannot hold would make the field it decides dead.
+   value a condition compares a field with: one it cannot hold would make the field it decides dead. On a
+   typed field that means its type's range: `i8 := 0xFF` is 255, and is refused. A float takes a decimal
+   number and no other field a fraction, and only a signed field takes a negative number.
 9. A field may not have both `:= <value>` and a variable width -- a width unknown until decode time
    cannot also be a discriminator.
 
@@ -201,6 +210,8 @@ alternative is finding out on a live link.
     sub-byte fields, so checking the effective setting rather than the written one would make the
     file-level form unusable. What is worth rejecting is an author writing a setting that cannot do
     anything, not a setting that is irrelevant here and meaningful two fields later.
+
+44. A type is `i1` to `i64`, `f32` or `f64`. Any other name of that shape in a width's place is refused.
 
 **Identification**
 

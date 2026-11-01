@@ -127,6 +127,24 @@ AstEnumItem *ast_add_enum_item(AstEnum *enumeration) {
   return item;
 }
 
+bool ast_type_name(const char *name, FieldKind *kind, uint64_t *width_bits) {
+  if (name == NULL || (name[0] != 'i' && name[0] != 'f') || name[1] == '\0') {
+    return false;
+  }
+  uint64_t width = 0;
+  for (const char *digit = name + 1; *digit != '\0'; ++digit) {
+    if (*digit < '0' || *digit > '9') {
+      return false;
+    }
+    width = width > 64 ? width : width * 10 + (uint64_t)(*digit - '0');
+  }
+  const bool leading_zero = name[1] == '0';
+  *kind = name[0] == 'i' ? FIELD_KIND_SIGNED : FIELD_KIND_FLOAT;
+  const bool allowed = name[0] == 'i' ? width >= 1 && width <= 64 : width == 32 || width == 64;
+  *width_bits = allowed && !leading_zero ? width : 0;
+  return true;
+}
+
 const AstEnum *ast_find_enum(const AstFile *file, const char *name) {
   for (size_t i = 0; file != NULL && name != NULL && i < file->enum_count; ++i) {
     if (file->enums[i].name != NULL && strcmp(file->enums[i].name, name) == 0) {

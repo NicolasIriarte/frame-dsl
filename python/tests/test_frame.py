@@ -312,6 +312,30 @@ class Conditions(unittest.TestCase):
         with self.assertRaises(framedsl.AbsentError):
             self.frame.names["TM_OPTIONAL.code"]
 
+    def test_a_field_reads_by_its_type(self):
+        definition = framedsl.loads(
+            "cal celsius(raw) = raw * 0.0625;\n"
+            "pkt P { id: 8 := 0x30; [ @cal: celsius; ] temp: i16; gain: f32; };\n"
+        )
+        frame = definition.frame()
+        frame["P.temp"] = -160
+        frame["P.gain"] = 1.5
+        self.assertEqual(frame.encode("P"), bytes.fromhex("30 FF60 3FC00000"))
+        self.assertEqual(frame["P.temp"], -160)
+        self.assertEqual(frame["P.gain"], 1.5)
+        self.assertEqual(frame.eng["P.temp"], -10.0)
+        self.assertEqual(frame.raw["P.temp"], 0xFF60)
+        self.assertEqual(frame.raw["P.gain"], 0x3FC00000)
+
+        frame.raw["P.gain"] = 0x7FC00001
+        self.assertNotEqual(frame["P.gain"], frame["P.gain"])  # a NaN
+        with self.assertRaises(framedsl.RangeError):
+            frame["P.temp"] = 40000
+        with self.assertRaises(TypeError):
+            frame["P.temp"] = 1.5
+        with self.assertRaises(TypeError):
+            frame["P.gain"] = "1.5"
+
     def test_a_default_is_held_until_replaced(self):
         definition = framedsl.loads(
             "enum Health: 8 { FAULT; OK; };\n"

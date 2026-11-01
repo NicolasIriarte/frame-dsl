@@ -373,7 +373,7 @@ static int us15_tc08_an_enum_and_its_names_are_navigable(const TestArguments *ar
 static int us15_tc09_completion_offers_enums_and_their_names(const TestArguments *args) {
   (void)args;
   const char *types = "enum PowerState: 1 {\n  OFF;\n  ON;\n};\nblock Header {\n  id: 8;\n};\npkt P {\n  p: \n";
-  static const char *const TYPES[] = { "PowerState", "Header", "valof", NULL };
+  static const char *const TYPES[] = { "PowerState", "Header", "i8", "i16", "i32", "i64", "f32", "f64", "valof", NULL };
   Navigator *navigator = nav_open(types, NULL);
   int failure = navigator == NULL || !completes_to(navigator, 9, 6, TYPES) ? __LINE__ : 0;
   nav_close(navigator);
@@ -546,6 +546,33 @@ static int us15_tc12_semantic_tokens_read_a_condition(const TestArguments *args)
   return failure;
 }
 
+/* A typed field is a field, and says its type, in a packet and in a block's own declaration (#10). */
+static int us15_tc14_hover_shows_a_type(const TestArguments *args) {
+  (void)args;
+  const char *const source =
+    "block B {\n" /* 1 */
+    "  s: i16;\n" /* 2 */
+    "};\n" /* 3 */
+    "pkt P {\n" /* 4 */
+    "  id: 8 := 1;\n" /* 5 */
+    "  f:  f32;\n" /* 6 */
+    "};\n";
+  Navigator *navigator = nav_open(source, NULL);
+  NavLocation range;
+  char *field = navigator != NULL ? nav_hover(navigator, 6, 3, &range) : NULL; /* `f` */
+  char *declared = navigator != NULL ? nav_hover(navigator, 2, 3, &range) : NULL; /* `s` in the block */
+  int failure = 0;
+  if (!contains(field, "- type: float") || contains(field, "instance of")) {
+    failure = __LINE__;
+  } else if (!contains(declared, "- type: `i16`") || contains(declared, "instance of")) {
+    failure = __LINE__;
+  }
+  free(field);
+  free(declared);
+  nav_close(navigator);
+  return failure;
+}
+
 /* A default shows on the field, in a block's own declaration as well, and an enum's name written as one
  * goes to the enum (#144). */
 static int us15_tc13_hover_shows_a_default(const TestArguments *args) {
@@ -609,4 +636,5 @@ void register_user_story15(void) {
   ADD_TEST_CASE(us15_tc11_a_condition_is_navigable, "a condition is navigable", false);
   ADD_TEST_CASE(us15_tc12_semantic_tokens_read_a_condition, "semantic tokens read a condition", false);
   ADD_TEST_CASE(us15_tc13_hover_shows_a_default, "hover shows a default, and a name written as one", false);
+  ADD_TEST_CASE(us15_tc14_hover_shows_a_type, "hover shows a field's type", false);
 }

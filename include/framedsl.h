@@ -101,6 +101,14 @@ typedef enum {
   FRAMEDSL_ERROR_FIXED,
 } FramedslStatus;
 
+/** @brief How a field's bits read as a value. A plain width is unsigned; `i16` is two's complement and
+ * `f32` IEEE-754. */
+typedef enum {
+  FRAMEDSL_KIND_UNSIGNED,
+  FRAMEDSL_KIND_SIGNED,
+  FRAMEDSL_KIND_FLOAT,
+} FramedslKind;
+
 typedef enum {
   FRAMEDSL_BIT_ORDER_MSB_FIRST,
   FRAMEDSL_BIT_ORDER_LSB_FIRST,
@@ -187,6 +195,10 @@ typedef struct {
 
   /** @brief A scalar is read and written as an integer; anything else as bytes. */
   bool is_scalar;
+
+  /** @brief How the field's bits read. `fixed` and `default_value` hold the pattern whatever this says:
+   * -1 in an `i8` is 0xFF. */
+  FramedslKind kind;
 
   bool has_fixed;
   uint64_t fixed;
@@ -594,6 +606,52 @@ FramedslStatus framedsl_set_u64(FramedslFrame *frame, FramedslFieldId id, uint64
  * @return FRAMEDSL_OK, or the reason it could not be read.
  */
 FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, uint64_t *out);
+
+/**
+ * @brief Read a signed field, or a member of a repetition that is one (#10). The suffix names the C type,
+ * as `u64` does. framedsl_get_u64() reads the same field's raw bits: -160 in an `i16` is 0xFF60.
+ * @param frame The frame to read from.
+ * @param id A field id from framedsl_find() or framedsl_field_id().
+ * @param out Set to the field's value on success.
+ * @return FRAMEDSL_OK, or the reason it could not be read: FRAMEDSL_ERROR_FIELD for a field of another
+ * type.
+ */
+FramedslStatus framedsl_get_i64(const FramedslFrame *frame, FramedslFieldId id, int64_t *out);
+
+/**
+ * @brief Set a signed field. framedsl_set_u64() writes the same field's raw bits, never refused for its
+ * type, so a test can send any pattern.
+ * @param frame The frame to write into.
+ * @param id A field id from framedsl_find() or framedsl_field_id().
+ * @param value The value to store.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD for a field of another type, FRAMEDSL_ERROR_FIXED for a fixed
+ * one, or FRAMEDSL_ERROR_RANGE for a value outside the type's range, leaving the slot as it was.
+ */
+FramedslStatus framedsl_set_i64(FramedslFrame *frame, FramedslFieldId id, int64_t value);
+
+/**
+ * @brief Read a float field, an `f32` included, since a double holds every float exactly (#10).
+ * @param frame The frame to read from.
+ * @param id A field id from framedsl_find() or framedsl_field_id().
+ * @param out Set to the field's value on success.
+ * @return FRAMEDSL_OK, or the reason it could not be read: FRAMEDSL_ERROR_FIELD for a field of another
+ * type.
+ */
+FramedslStatus framedsl_get_f64(const FramedslFrame *frame, FramedslFieldId id, double *out);
+
+/**
+ * @brief Set a float field. On an `f32` the value rounds to the nearest float.
+ *
+ * NaN and the infinities go through unjudged. A file cannot write those, and a particular NaN is a
+ * pattern, for framedsl_set_u64().
+ *
+ * @param frame The frame to write into.
+ * @param id A field id from framedsl_find() or framedsl_field_id().
+ * @param value The value to store.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD for a field of another type, FRAMEDSL_ERROR_FIXED for a fixed
+ * one, or FRAMEDSL_ERROR_RANGE for a finite value too large for an `f32`, leaving the slot as it was.
+ */
+FramedslStatus framedsl_set_f64(FramedslFrame *frame, FramedslFieldId id, double value);
 
 /**
  * @brief Set a bit-string field: everything wider than FRAMEDSL_SCALAR_MAX_BITS, including every

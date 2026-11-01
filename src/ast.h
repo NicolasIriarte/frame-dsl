@@ -16,6 +16,28 @@ typedef enum {
   BYTE_ORDER_LITTLE_ENDIAN,
 } ByteOrder;
 
+/** @brief How a slot's pattern reads (#10): the same bits either way, so layout never asks. */
+typedef enum {
+  FIELD_KIND_UNSIGNED,
+  FIELD_KIND_SIGNED,
+  FIELD_KIND_FLOAT,
+} FieldKind;
+
+/**
+ * @brief How a value was written, which only the field's type can judge (#10): `i8 := -1;` means
+ * something and `8 := -1;` does not, and a parser reading a value does not know which it is looking at.
+ * Composition reads this and turns the value into the pattern it stands for, so nothing past it sees one.
+ */
+typedef struct {
+  bool negative;
+  /** @brief With a fraction or an exponent. */
+  bool real;
+  /** @brief In hex or binary. */
+  bool based;
+  /** @brief The magnitude, for a float. */
+  double number;
+} ValueForm;
+
 typedef enum {
   EXPR_LITERAL,
   EXPR_VALOF,
@@ -203,6 +225,8 @@ typedef struct AstCondition {
   int mask_line;
   int mask_column;
   uint64_t value;
+  /** @brief How `value` was written: a signed field's constant may be negative (#10). */
+  ValueForm value_form;
   /** @brief The value written as a name of the compared field's enum, or NULL for a number. */
   const char *value_name;
   /** @brief Whether composition has looked `value_name` up: a block's conditions are resolved once, at
@@ -227,6 +251,8 @@ typedef struct AstOverride {
   /** @brief Relative to the instance, and dotted for a field of a nested one: `inner.id`. */
   const char *name;
   uint64_t value;
+  /** @brief How `value` was written. */
+  ValueForm form;
   /** @brief The value written as a name of the field's enum, `type = HK;`, or NULL for a number. */
   const char *value_name;
   /** @brief `?=` rather than `:=` (#144): the field becomes what the use wrote, whatever the block said. */
@@ -291,8 +317,13 @@ typedef struct {
   int reserve_line;
   int reserve_column;
 
+  /** @brief Set by composition, from a type written where a width goes (#10). */
+  FieldKind kind;
+
   bool has_fixed;
+  /** @brief The pattern, once composition has read `fixed_form`. */
   uint64_t fixed;
+  ValueForm fixed_form;
   int fixed_line;
   int fixed_column;
   /**
@@ -308,6 +339,7 @@ typedef struct {
    */
   bool has_default;
   uint64_t default_value;
+  ValueForm default_form;
   int default_line;
   int default_column;
   /** @brief As `fixed_name`, for a default written as a name. */
@@ -453,6 +485,17 @@ AstEnumItem *ast_add_enum_item(AstEnum *enumeration);
 
 /** @brief The enum `file` calls `name`, or NULL. */
 const AstEnum *ast_find_enum(const AstFile *file, const char *name);
+
+/**
+ * @brief Whether `name` has the shape of a type, `i` or `f` followed by digits (#10): no block or enum may
+ * be called that (check 1), so one in a width's place is never anything else.
+ *
+ * @param name The name, as written.
+ * @param kind Set to what it would be.
+ * @param width_bits Set to its width, or to 0 for a shape no type has: `i0`, `i65` or `f16` (check 44).
+ * @return false if the name is any other shape.
+ */
+bool ast_type_name(const char *name, FieldKind *kind, uint64_t *width_bits);
 
 /** @brief The name `enumeration` gives `value`, or NULL when it lists none. Its values increase, so
  * this is a binary search. */

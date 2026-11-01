@@ -279,7 +279,16 @@ static long check_compared(
 ) {
   for (size_t i = 0; i < field_index; ++i) {
     if (strcmp(packet->fields[i].name, expr->reference) == 0) {
-      if (!layout->fields[i].is_scalar) {
+      if (packet->fields[i].kind == FIELD_KIND_FLOAT) {
+        fail(
+          checker,
+          expr->line,
+          expr->column,
+          16,
+          "valof(%s) names a float, which has no whole value to size or decide anything with",
+          expr->reference
+        );
+      } else if (!layout->fields[i].is_scalar) {
         fail(
           checker,
           expr->line,
@@ -398,7 +407,56 @@ static void check_comparisons(
   }
   check_presence(checker, packet, field_index, condition->field, held, "the condition");
   const FieldLayout *read = &layout->fields[compared];
-  if (!read->is_scalar || read->width_bits >= 64) {
+  if (!read->is_scalar) {
+    return;
+  }
+  const ValueForm *form = &condition->value_form;
+  const FieldKind kind = packet->fields[compared].kind;
+  if (condition->value_name == NULL && form->real) {
+    fail(
+      checker,
+      condition->value_line,
+      condition->value_column,
+      8,
+      "'valof(%s)' is compared with whole numbers, so it cannot be compared with a fraction",
+      packet->fields[compared].name
+    );
+    return;
+  }
+  /* A signed field compares as signed, so its constant is in the type's range. A mask works on the
+   * pattern, as `&` means bits, so it is compared as any other field is (#10). */
+  if (condition->value_name == NULL && form->negative && (kind != FIELD_KIND_SIGNED || condition->has_mask)) {
+    fail(
+      checker,
+      condition->value_line,
+      condition->value_column,
+      8,
+      "'%s.%s' is compared %s, so it can never be negative",
+      packet->name,
+      packet->fields[compared].name,
+      condition->has_mask ? "through a mask, as bits" : "as an unsigned value"
+    );
+    return;
+  }
+  if (condition->value_name == NULL && kind == FIELD_KIND_SIGNED && !condition->has_mask) {
+    const uint64_t top = (uint64_t)1 << (read->width_bits - 1);
+    if (form->negative ? condition->value > top : condition->value >= top) {
+      fail(
+        checker,
+        condition->value_line,
+        condition->value_column,
+        8,
+        "'%s.%s' is i%llu, so it can never be %s%llu; the condition compares it with a value it cannot hold",
+        packet->name,
+        packet->fields[compared].name,
+        (unsigned long long)read->width_bits,
+        form->negative ? "-" : "",
+        (unsigned long long)condition->value
+      );
+    }
+    return;
+  }
+  if (read->width_bits >= 64) {
     return;
   }
   if (condition->has_mask && condition->mask >> read->width_bits != 0) {
@@ -472,7 +530,16 @@ static void check_references(
        * it would be a width computed from whatever the first eight bytes of a payload happened to
        * be. */
       const FieldLayout *referenced = &layout->fields[i];
-      if (!referenced->is_scalar) {
+      if (packet->fields[i].kind == FIELD_KIND_FLOAT) {
+        fail(
+          checker,
+          expr->line,
+          expr->column,
+          16,
+          "valof(%s) names a float, which has no whole value to size or decide anything with",
+          expr->reference
+        );
+      } else if (!referenced->is_scalar) {
         fail(
           checker,
           expr->line,

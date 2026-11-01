@@ -141,6 +141,7 @@ static Token lex_number(Lexer *lexer, int line, int column) {
   Token token = make(TOK_INT, line, column);
   size_t start = lexer->position;
   int base = 10;
+  token.based = peek(lexer, 0) == '0' && strchr("xXbB", peek(lexer, 1)) != NULL && peek(lexer, 1) != '\0';
 
   if (peek(lexer, 0) == '0' && (peek(lexer, 1) == 'x' || peek(lexer, 1) == 'X')) {
     base = 16;

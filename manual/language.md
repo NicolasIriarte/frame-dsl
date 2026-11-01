@@ -107,8 +107,9 @@ count: 8 := 170;       # decimal
 
 ### Scalars and bit strings
 
-A field of **64 bits or fewer** is a scalar: an unsigned integer, read and written with
-`framedsl_set_u64()` and `framedsl_get_u64()`.
+A field of **64 bits or fewer** is a scalar. A plain number is an unsigned integer, read and written
+with `framedsl_set_u64()` and `framedsl_get_u64()`. [A type](#signed-and-floating-point-fields) makes it
+something else.
 
 A field **wider than 64 bits** -- including every `valof()`-sized field -- is a bit string, read and
 written as bytes with `framedsl_set_bytes()`, and read with `framedsl_get_bytes()` -- which hands
@@ -189,6 +190,47 @@ one value: `:=` and `?=` together do not parse.
 
 **A repeated block's default is every element's**, and one element differs from the others only from code.
 A use replaces a default with the same words as anything else, as the next section shows.
+
+## Signed and floating-point fields
+
+A type goes where a width goes. `i1` to `i64` are two's complement, and `f32` and `f64` are IEEE-754:
+
+```
+cal celsius(raw) = raw * 0.0625;
+
+pkt TM_THERMAL {
+  id:   8   := 0x30;
+  [ @cal: celsius; ]
+  temp: i16;
+  gain: f32;
+};
+```
+
+A plain number stays unsigned, and there is no `u16`: one form per job. Any other shape, `i0`, `i65` or
+`f16`, is refused (check 44). A block or an enum may not be called `i` or `f` followed by digits (check 1),
+though a field may: `i16: 8;` still works.
+
+**Layout does not change.** A typed field is that many bits, at any offset, under either bit order, and
+`@byte_order` applies to it as to any field. A type says how to read the bits.
+
+**A curve sees the value**, so `temp` above is -160 and -10 C for `FF 60`, and not 65376. Going the other
+way, `framedsl_set_eng()` rounds to the nearest integer on a signed field and does not round on a float.
+
+**A value in a file** is a number in the type's range: `offset: i8 := -1;`, `temp: i16 ?= -160;`. `i8 := 0xFF`
+is refused (check 8), since 0xFF is 255 and not -1. A float takes a decimal number, fractional or whole,
+`gain: f32 ?= 1.5;`. Hex and binary are refused there, since they read as a pattern, and there is no way to
+write a NaN or an infinity: code sets those by their bits. A negative number or a fraction on any other field
+is refused. A fixed value identifies a packet by its pattern, so `i8 := -1` and `8 := 0xFF` cannot tell two
+packets apart.
+
+**`valof()` may name a signed field.** It reads the signed value, in a width, a count or an `@if`. A term may
+go below zero on the way to a width, and a width that ends up negative is `FRAMEDSL_ERROR_RANGE`. `valof()` of a
+float is refused (check 16).
+
+**`@if` on a signed field** compares as signed, with a constant in its range: `valof(t) < -1`. A mask works on
+the pattern, since `&` means bits: `valof(t) & 0x80 != 0`.
+
+**Enums stay unsigned.** A signed value's name is written as its pattern, `ERR = 0xFF`.
 
 ## Fields whose length comes from another field
 
@@ -962,8 +1004,8 @@ as the length field it usually mirrors, which is where the arithmetic mistakes a
 
 ## Not in the language yet
 
-Deferred, each tracked by its own issue: signed integers and floating-point fields, and repeating a
-scalar or a field typed by an enum directly. Calibrations have no lookup tables or built-in functions
+Deferred, tracked by its own issue: repeating a scalar, a typed field or a field typed by an enum
+directly. Calibrations have no lookup tables or built-in functions
 yet.
 
 A CRC or a checksum is an ordinary field: the program using the library computes it and checks it.

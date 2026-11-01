@@ -38,6 +38,8 @@
 typedef enum {
   /** @brief Push the value of the packet's field N. */
   OP_SLOT,
+  /** @brief A signed field's value (#10): the slot in the operand's low half, its width in the high. */
+  OP_SLOT_SIGNED,
   /** @brief Push a literal. */
   OP_LIT,
   OP_ADD,
@@ -62,6 +64,8 @@ typedef struct {
   uint32_t length;
   /** @brief The deepest the operand stack gets, computed here so the evaluator never checks. */
   uint32_t stack_depth;
+  /** @brief It reads a signed field, so a term may go below zero on the way to the result (#10). */
+  bool has_signed;
 } WidthProgram;
 
 /** @brief Where a condition's walk ends: past every instruction, decided (#126). */
@@ -80,6 +84,9 @@ typedef struct {
   /** @brief All ones when the condition writes no mask. */
   uint64_t mask;
   uint64_t value;
+  /** @brief The width of a signed field compared as signed, or 0 (#10). `value` is then its 64-bit
+   * two's complement. */
+  uint8_t sign_bits;
   uint32_t if_true;
   uint32_t if_false;
 } ConditionInstruction;
@@ -98,6 +105,7 @@ typedef struct {
   /** @brief As FieldInstruction.has_default. */
   bool has_default;
   uint64_t default_value;
+  FieldKind kind;
   int32_t cal;
   /** @brief As FieldInstruction.enumeration. */
   int32_t enumeration;
@@ -239,6 +247,9 @@ typedef struct {
   bool has_default;
   uint64_t default_value;
 
+  /** @brief How the slot's pattern reads (#10). Nothing on the wire depends on it. */
+  FieldKind kind;
+
   /** @brief Index into the definition's calibrations, or -1. Resolved here so that reading an
    * engineering value never searches by name. */
   int32_t cal;
@@ -332,19 +343,26 @@ bool width_program_eval(const WidthProgram *program, const uint64_t *slots, uint
 /** @brief Whether one comparison holds for `value`, the field it reads. */
 static inline bool condition_test(const ConditionInstruction *condition, uint64_t value) {
   value &= condition->mask;
+  /* Two's complement orders as unsigned does with the sign bit flipped, so the switch below serves. */
+  uint64_t constant = condition->value;
+  if (condition->sign_bits != 0) {
+    const uint64_t flip = (uint64_t)1 << 63;
+    value = (uint64_t)bits_sign_extend(value, condition->sign_bits) ^ flip;
+    constant ^= flip;
+  }
   switch (condition->op) {
   case COMPARE_EQ:
-    return value == condition->value;
+    return value == constant;
   case COMPARE_NE:
-    return value != condition->value;
+    return value != constant;
   case COMPARE_LT:
-    return value < condition->value;
+    return value < constant;
   case COMPARE_LE:
-    return value <= condition->value;
+    return value <= constant;
   case COMPARE_GT:
-    return value > condition->value;
+    return value > constant;
   case COMPARE_GE:
-    return value >= condition->value;
+    return value >= constant;
   }
   return false;
 }

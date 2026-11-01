@@ -460,7 +460,7 @@ static void repeated(
   );
 }
 
-static bool parse_value(Parser *parser, uint64_t *value, const char **name, int *line, int *column);
+static bool parse_value(Parser *parser, uint64_t *value, ValueForm *form, const char **name, int *line, int *column);
 
 static AstCondition *condition_new(Parser *parser, ConditionKind kind, int line, int column) {
   AstCondition *condition = region_alloc(parser->file->region, sizeof(AstCondition));
@@ -537,7 +537,12 @@ static AstCondition *parse_comparison(Parser *parser) {
   }
   advance(parser);
   if (!parse_value(
-        parser, &condition->value, &condition->value_name, &condition->value_line, &condition->value_column
+        parser,
+        &condition->value,
+        &condition->value_form,
+        &condition->value_name,
+        &condition->value_line,
+        &condition->value_column
       )) {
     return NULL;
   }
@@ -911,14 +916,22 @@ static bool parse_attribute_group(Parser *parser, Attributes *attrs) {
 /* What follows the `=` of a fixed value or an override: a number, or a name of the field's enum (#11).
  * Which enum is composition's business, since only the field's type says; here a name is a name. A
  * dotted one is refused, because the type already says which enum and the name is written bare. */
-static bool parse_value(Parser *parser, uint64_t *value, const char **name, int *line, int *column) {
+static bool parse_value(Parser *parser, uint64_t *value, ValueForm *form, const char **name, int *line, int *column) {
   *line = parser->current.line;
   *column = parser->current.column;
-  if (check(parser, TOK_INT)) {
+  *form = (ValueForm){ .negative = match(parser, TOK_MINUS) };
+  if (check(parser, TOK_INT) || check(parser, TOK_REAL)) {
+    form->real = check(parser, TOK_REAL);
+    form->based = parser->current.based;
+    form->number = parser->current.real;
     *value = parser->current.value;
     *name = NULL;
     advance(parser);
     return true;
+  }
+  if (form->negative) {
+    error_at_current(parser, "a number");
+    return false;
   }
   if (!check(parser, TOK_IDENT)) {
     error_at_current(parser, "a number, or a name of the field's enum");
@@ -968,14 +981,14 @@ static bool parse_field_value(Parser *parser, AstField *field) {
   uint64_t value = 0;
   const char *name = NULL;
   if (is_default) {
-    if (!parse_value(parser, &value, &name, &field->default_line, &field->default_column)) {
+    if (!parse_value(parser, &value, &field->default_form, &name, &field->default_line, &field->default_column)) {
       return false;
     }
     field->has_default = name == NULL;
     field->default_value = value;
     field->default_name = name;
   } else {
-    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
+    if (!parse_value(parser, &value, &field->fixed_form, &name, &field->fixed_line, &field->fixed_column)) {
       return false;
     }
     field->has_fixed = name == NULL;
@@ -1034,7 +1047,9 @@ static bool parse_override(Parser *parser, AstField *field) {
   override->is_default = is_default;
   override->line = line;
   override->column = column;
-  if (!parse_value(parser, &override->value, &override->value_name, &override->value_line, &override->value_column)) {
+  if (!parse_value(
+        parser, &override->value, &override->form, &override->value_name, &override->value_line, &override->value_column
+      )) {
     return false;
   }
 
