@@ -556,9 +556,10 @@ bool framedsl_field_id(const FramedslDefinition *definition, size_t packet, size
  * thing one allocation. Nothing is shared between packets, so building a reply does not disturb the
  * command being answered, and one frame serves both directions of a conversation.
  *
- * Every slot starts at zero and holds whatever was last put in it. **There is no notion of a field
- * being unset**: a field nobody has written and no frame has carried reads back as zero, and encodes
- * as zero. That is one rule for values you wrote and values that arrived, rather than one each.
+ * Every slot starts at zero, or at the field's default, and holds whatever was last put in it. **There
+ * is no notion of a field being unset**: a field nobody has written and no frame has carried reads back
+ * as that, and encodes as that. It is one rule for values you wrote and values that arrived, rather than
+ * one each.
  *
  * Which packet arrived is framedsl_decode()'s return value, not something read back out of a field
  * afterwards -- so a zero is a zero and never has to be interrogated for whether it means anything.
