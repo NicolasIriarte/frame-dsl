@@ -573,6 +573,8 @@ static void describe_declaration(Buffer *buffer, const AstField *decl) {
   }
   if (decl->has_default) {
     put(buffer, "- defaults to 0x%llX\n", (unsigned long long)decl->default_value);
+  } else if (decl->default_name != NULL) {
+    put(buffer, "- defaults to `%s`\n", decl->default_name);
   }
   if (decl->cal != NULL) {
     put(buffer, "- calibrated by `%s`\n", decl->cal);
@@ -840,6 +842,11 @@ typedef enum {
   TARGET_ENUM_ITEM,
 } TargetKind;
 
+/* A field typed by an enum has a name where a width goes, as a use of a block does, and is a field. */
+static TargetKind instance_or_field(const AstFile *ast, const AstField *decl) {
+  return decl->block != NULL && ast_find_enum(ast, decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+}
+
 /* What a name under the cursor refers to, worked out once for hover and definition alike. */
 typedef struct {
   TargetKind kind;
@@ -941,21 +948,20 @@ static Target find_target(const Navigator *navigator, int line, int column) {
       target.decl = field_in(target.container, name);
       target.decl_owner = target.container;
       if (target.decl != NULL) {
-        target.kind = target.decl->block != NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         snprintf(target.expanded, sizeof(target.expanded), "%s", name);
       }
     } else if (valof_path(navigator, index, path, sizeof(path))) {
       /* `valof(len)`, or a field of an instance, `valof(hdr.len)` (#12): each part goes where it names. */
       target.decl = resolve_path(ast, target.container, path, &target.decl_owner);
       if (target.decl != NULL) {
-        target.kind =
-          target.decl->block != NULL && ast_find_enum(ast, target.decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         snprintf(target.expanded, sizeof(target.expanded), "%s", path);
       }
     } else if ((use = override_at(target.container, here->line, here->column, path, sizeof(path))) != NULL) {
       target.decl = resolve_path(ast, find_block(ast, use->block), path, &target.decl_owner);
       if (target.decl != NULL) {
-        target.kind = target.decl->block != NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         if (use->anonymous) {
           snprintf(target.expanded, sizeof(target.expanded), "%s", path);
         } else {

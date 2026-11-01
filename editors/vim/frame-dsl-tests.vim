@@ -102,6 +102,7 @@ function! s:TestEnumSyntax() abort
   call assert_equal('fdslContextual', s:GroupAt(1, 1), 'enum')
   call assert_equal('fdslPacketName', s:GroupAt(1, 6), 'the enum name')
   call assert_equal('fdslTypeName', s:GroupAt(5, 10), 'an enum used as a type, with a value')
+  call assert_equal('fdslOperator', s:GroupAt(5, 18), 'the := of a fixed value')
   call assert_equal('fdslFieldName', s:GroupAt(6, 3), 'a field called enum')
   bwipeout!
 endfunction

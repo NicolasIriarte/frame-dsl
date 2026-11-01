@@ -235,6 +235,32 @@ static int us18_tc06_a_missing_semicolon_is_inserted(const TestArguments *args) 
 
 /* The block goes with its attribute group and one of the blank lines around it, so what is left is
  * what the formatter would have written without it. */
+/* A bare `=` has one repair in each place it can be written, and the file then loads (#144). */
+static int us18_tc13_a_bare_equals_becomes_a_fixed_value(const TestArguments *args) {
+  (void)args;
+  const char *const sources[] = {
+    "pkt A { id: 8 = 1; };\n",
+    "enum E: 8 { X; };\npkt A { id: 8 := 1; e: E = X; };\n",
+    "block B { x: 8; };\npkt A { id: 8 := 1; b: B { x = 1; }; };\n",
+  };
+  for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
+    FramedslResult *result = framedsl_load_string(sources[i], "bare.fdsl");
+    char *fixed = apply(sources[i], find(result, 0));
+    framedsl_result_free(result);
+    if (fixed == NULL) {
+      return __LINE__ * 100 + (int)i;
+    }
+    result = framedsl_load_string(fixed, "bare.fdsl");
+    const bool loaded = framedsl_ok(result);
+    framedsl_result_free(result);
+    free(fixed);
+    if (!loaded) {
+      return __LINE__ * 100 + (int)i;
+    }
+  }
+  return 0;
+}
+
 static int us18_tc07_an_unused_block_is_removed_cleanly(const TestArguments *args) {
   (void)args;
   const char *source =
@@ -442,4 +468,5 @@ void register_user_story18(void) {
     "of an attribute written twice, the earlier goes",
     false
   );
+  ADD_TEST_CASE(us18_tc13_a_bare_equals_becomes_a_fixed_value, "a bare '=' is rewritten to ':=', and loads", false);
 }

@@ -51,6 +51,7 @@ class Structs(unittest.TestCase):
         self.assertEqual(marker.name, b"marker")
         self.assertTrue(marker.has_fixed)
         self.assertEqual(marker.fixed, 0xA)
+        self.assertFalse(marker.has_default)
         self.assertEqual(marker.width_bits, 4)
         self.assertEqual(reading.name, b"reading")
         self.assertFalse(reading.variable)
@@ -65,6 +66,21 @@ class Structs(unittest.TestCase):
         self.assertEqual(reading.member_count, 0)
         self.assertIsNone(reading.enumeration)
         _native.framedsl_result_free(result)
+
+    def test_a_field_reports_its_default(self):
+        result, definition = load("block B { m: 8 ?= 3; };\npkt P { id: 8 := 1; d: 8 ?= 2; o: 8; b: B[2]; };")
+        self.addCleanup(_native.framedsl_result_free, result)
+        field = _native.Field()
+        self.assertTrue(_native.framedsl_field(definition, 0, 1, ctypes.byref(field)))
+        self.assertTrue(field.has_default)
+        self.assertEqual(field.default_value, 2)
+        self.assertFalse(field.has_fixed)
+        self.assertEqual(field.bit_order, 0)
+        self.assertTrue(_native.framedsl_field(definition, 0, 2, ctypes.byref(field)))
+        self.assertFalse(field.has_default)
+        self.assertTrue(_native.framedsl_member(definition, 0, 3, 0, ctypes.byref(field)))
+        self.assertTrue(field.has_default)
+        self.assertEqual(field.default_value, 3)
 
     def test_a_field_typed_by_an_enum_names_it_last(self):
         # Added after the first members (#11), so a Field missing it or holding it out of order reads it wrong.

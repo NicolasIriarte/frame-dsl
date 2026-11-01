@@ -312,6 +312,22 @@ class Conditions(unittest.TestCase):
         with self.assertRaises(framedsl.AbsentError):
             self.frame.names["TM_OPTIONAL.code"]
 
+    def test_a_default_is_held_until_replaced(self):
+        definition = framedsl.loads(
+            "enum Health: 8 { FAULT; OK; };\n"
+            "block Channel { state: Health ?= OK; };\n"
+            "pkt P { id: 8 := 0x40; spare: 8 ?= 0; temp: Health ?= OK; channels: Channel[2]; };\n"
+        )
+        frame = definition.frame()
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 01 01 01"))
+        frame.names["P.temp"] = "FAULT"
+        frame.names["P.channels[1].state"] = "FAULT"
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 00 01 00"))
+        frame.reset()
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 01 01 01"))
+        self.assertEqual(frame.decode(bytes.fromhex("40 80 00 01 01")), "P")
+        self.assertEqual(frame["P.spare"], 0x80)
+
     def test_a_fixed_field_cannot_be_set(self):
         definition = framedsl.loads(
             "enum Mode: 8 { OFF; ON; };\n"

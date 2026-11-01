@@ -461,8 +461,8 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition);
 void framedsl_frame_free(FramedslFrame *frame);
 
 /**
- * @brief Back to the state framedsl_frame_new() returned: every slot zero but for fixed values, every
- * length zero.
+ * @brief Back to the state framedsl_frame_new() returned: every slot zero but for fixed values and
+ * defaults, every length zero.
  *
  * Housekeeping rather than a rule -- nothing requires it, and a frame is usable for as long as you
  * keep it. It is here for the case where "start again, forget what this link has said so far" is

@@ -614,10 +614,10 @@ static int us21_tc13_an_imported_enum_is_a_type_flat_or_named(const TestArgument
 /* `enum` means something only where a declaration starts. */
 static int us21_tc14_a_field_may_still_be_called_enum(const TestArguments *args) {
   (void)args;
-  if (!loads("block B { enum: 8; };\npkt P { enum: 8 = 1; b: B; };\n")) {
+  if (!loads("block B { enum: 8; };\npkt P { enum: 8 := 1; b: B; };\n")) {
     return __LINE__;
   }
-  if (!loads("enum enum: 8 { enum; };\npkt P { enum: enum = enum; };\n")) {
+  if (!loads("enum enum: 8 { enum; };\npkt P { enum: enum := enum; };\n")) {
     return __LINE__;
   }
   return 0;

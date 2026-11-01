@@ -1,0 +1,34 @@
+# Default values: what a field holds until something replaces it.
+#
+# `?=` gives a field a default, and `:=` fixes one. A default goes out when nobody has set the field, a
+# program can set it, and a reset brings it back. Unlike a fixed value it says nothing about which packet
+# a frame is, so a frame carrying another value still decodes, and reads what arrived.
+#
+# A file like this suits one end of a link, where a program should only have to say what differs from
+# the usual. The other end can describe the same bytes with the fields left open, and check them.
+
+enum Health: 8 {
+  FAULT;
+  OK;
+};
+
+block Channel {
+  state: Health ?= OK;  # every element's, and one element differs only from code
+};
+
+block Sensor {
+  id:    8 := 0x01;
+  state: Health ?= OK;
+};
+
+pkt TM_HK {
+  id:       8      := 0x40;
+  spare:    8      ?= 0;     # reserved in the specification, and not worth refusing a frame over
+  power:    Health ?= OK;
+  temp:     Health ?= OK;
+  channels: Channel[4];
+
+  # A use says what the field becomes, in the same words, whatever the block said.
+  main:   Sensor { state ?= FAULT; };
+  backup: Sensor { state := OK; };
+};

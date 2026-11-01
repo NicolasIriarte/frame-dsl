@@ -57,6 +57,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`bit_order.fdsl`](bit_order.fdsl) | attributes at every scope: file, packet, field and `block` |
 | [`uart_device.fdsl`](uart_device.fdsl) | the TM/TC pair the worked example speaks, ids and all, plus a calibrated field |
 | [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
+| [`default_values.fdsl`](default_values.fdsl) | defaults: `?=` beside `:=`, on a repetition, and replaced by a use |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 | [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
@@ -69,6 +70,9 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/unbounded_valof.fdsl`](invalid/unbounded_valof.fdsl) | 5 -- `valof()` width with no reservation |
 | [`invalid/forward_valof.fdsl`](invalid/forward_valof.fdsl) | 7 -- `valof()` names a later field |
 | [`invalid/value_too_wide.fdsl`](invalid/value_too_wide.fdsl) | 8 -- fixed value does not fit its width |
+| [`invalid/default_too_wide.fdsl`](invalid/default_too_wide.fdsl) | 8 -- a default does not fit its width |
+| [`invalid/default_on_a_bit_string.fdsl`](invalid/default_on_a_bit_string.fdsl) | 8 -- a default needs a scalar |
+| [`invalid/default_does_not_identify.fdsl`](invalid/default_does_not_identify.fdsl) | 11 -- a default identifies nothing |
 | [`invalid/byte_order_unaligned.fdsl`](invalid/byte_order_unaligned.fdsl) | 10 -- `@byte_order` on a field with no bytes |
 | [`invalid/odd_packet.fdsl`](invalid/odd_packet.fdsl) | 13 -- packet is not a whole number of bytes |
 | [`invalid/odd_valof_width.fdsl`](invalid/odd_valof_width.fdsl) | 13 -- variable width not provably a byte multiple |

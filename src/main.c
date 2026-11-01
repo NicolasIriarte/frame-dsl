@@ -359,7 +359,7 @@ static void describe(const FramedslDefinition *definition) {
           field.name,
           offset,
           (unsigned long long)field.width_bits,
-          field.has_fixed ? "=" : "?=",
+          field.has_fixed ? ":=" : "?=",
           (unsigned long long)value,
           field.enumeration != NULL ? " (" : "",
           field.enumeration != NULL ? enum_name_of(definition, field.enumeration, value) : "",

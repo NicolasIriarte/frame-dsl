@@ -312,7 +312,7 @@ static void expression(Formatter *f, TokenKind stop_a, TokenKind stop_b, bool fi
     if (token->kind == TOK_EOF || (depth == 0 && (token->kind == stop_a || token->kind == stop_b))) {
       return;
     }
-    if (depth == 0 && token_is_value_operator(token)) {
+    if (depth == 0 && (token->kind == TOK_COLON_EQUALS || token->kind == TOK_QUESTION_EQUALS)) {
       return;
     }
     if (depth == 0 && is_word(token, "inverse")) {
@@ -470,7 +470,7 @@ static void anonymous_use(Formatter *f, int depth) {
 
 /* A field's value and the `;` after it, in the value column. */
 static void value(Formatter *f) {
-  if (!token_is_value_operator(peek(f))) {
+  if (peek(f)->kind != TOK_COLON_EQUALS && peek(f)->kind != TOK_QUESTION_EQUALS) {
     return;
   }
   f->in_value = true;

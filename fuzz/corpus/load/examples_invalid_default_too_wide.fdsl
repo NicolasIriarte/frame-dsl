@@ -1,0 +1,10 @@
+# REJECTED: check 8 -- a default must fit in its field's width.
+#
+# 0x1F needs 5 bits and the field is 4. A default is held to the same as a fixed value: it goes out when
+# nobody sets the field, so a file should not be able to name a value the field cannot carry.
+
+pkt TM_WIDE {
+  id:   8 := 0x01;
+  mode: 4 ?= 0x1F;
+  rest: 4;
+};

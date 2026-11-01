@@ -76,13 +76,13 @@ value; the word `enum' is a keyword only where it declares one."
                         "};\n"
                         "\n"
                         "pkt TM {\n"
-                        "  level: TxLevel = MAX;\n"
+                        "  level: TxLevel ?= MAX;\n"
                         "  mode:  vendor.Mode;\n"
                         "  enum:  8;\n"
                         "};\n")))
     (should (eq (frame-dsl-tests--face-of sample "enum Tx") 'font-lock-keyword-face))
     (should (eq (frame-dsl-tests--face-of sample "TxLevel:") 'font-lock-type-face))
-    (should (eq (frame-dsl-tests--face-of sample "TxLevel =") 'font-lock-type-face))
+    (should (eq (frame-dsl-tests--face-of sample "TxLevel ?=") 'font-lock-type-face))
     (should (eq (frame-dsl-tests--face-of sample "vendor.Mode") 'font-lock-type-face))
     (should-not (eq (frame-dsl-tests--face-of sample "enum:") 'font-lock-keyword-face))))
 

@@ -149,7 +149,7 @@ static int us10_tc02_parses_a_cal_with_and_without_an_inverse(const TestArgument
  * telemetry file with a field called `cal` must go on loading. */
 static int us10_tc03_cal_and_inverse_are_not_reserved(const TestArguments *args) {
   (void)args;
-  if (!checks_as("pkt cal { cal: 8 = 1; inverse: 8; };", -1)) {
+  if (!checks_as("pkt cal { cal: 8 := 1; inverse: 8; };", -1)) {
     return __LINE__;
   }
   if (!checks_as("cal inverse(cal) = cal * 2; pkt A { id: 8 := 1; [ @cal: inverse; ] v: 8; };", -1)) {

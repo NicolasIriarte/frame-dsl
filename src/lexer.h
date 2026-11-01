@@ -76,7 +76,8 @@ typedef struct {
   double real;
 } Token;
 
-/** @brief Whether `token`, which may be NULL, gives a field its value: `:=` or `?=` (#144). */
+/** @brief Whether `token`, which may be NULL, gives a field its value: `:=`, `?=` (#144), or in a file
+ * that does not load yet the bare `=` that is refused in their place. */
 static inline bool token_is_value_operator(const Token *token) {
   return token != NULL
          && (token->kind == TOK_EQUALS || token->kind == TOK_COLON_EQUALS || token->kind == TOK_QUESTION_EQUALS);

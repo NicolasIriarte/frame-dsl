@@ -546,6 +546,42 @@ static int us15_tc12_semantic_tokens_read_a_condition(const TestArguments *args)
   return failure;
 }
 
+/* A default shows on the field, in a block's own declaration as well, and an enum's name written as one
+ * goes to the enum (#144). */
+static int us15_tc13_hover_shows_a_default(const TestArguments *args) {
+  (void)args;
+  const char *const source =
+    "enum Health: 8 {\n" /* 1 */
+    "  FAULT;\n" /* 2 */
+    "  OK;\n" /* 3 */
+    "};\n" /* 4 */
+    "block B {\n" /* 5 */
+    "  s: Health ?= OK;\n" /* 6 */
+    "};\n" /* 7 */
+    "pkt P {\n" /* 8 */
+    "  id: 8 := 1;\n" /* 9 */
+    "  d:  8 ?= 7;\n" /* 10 */
+    "};\n";
+  Navigator *navigator = nav_open(source, NULL);
+  NavLocation range;
+  char *field = navigator != NULL ? nav_hover(navigator, 10, 3, &range) : NULL; /* `d` */
+  char *declared = navigator != NULL ? nav_hover(navigator, 6, 3, &range) : NULL; /* `s` in the block */
+  char *named = navigator != NULL ? nav_hover(navigator, 6, 16, &range) : NULL; /* `OK` */
+  int failure = 0;
+  if (!contains(field, "defaults to 0x7") || contains(field, "fixed at")) {
+    failure = __LINE__;
+  } else if (!contains(declared, "defaults to `OK`")) {
+    failure = __LINE__;
+  } else if (!contains(named, "**OK** = 1")) {
+    failure = __LINE__;
+  }
+  free(field);
+  free(declared);
+  free(named);
+  nav_close(navigator);
+  return failure;
+}
+
 void register_user_story15(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us15_tc01_hover_shows_where_a_field_lands, "hover shows width, offset and the orders in force", true);
@@ -572,4 +608,5 @@ void register_user_story15(void) {
   );
   ADD_TEST_CASE(us15_tc11_a_condition_is_navigable, "a condition is navigable", false);
   ADD_TEST_CASE(us15_tc12_semantic_tokens_read_a_condition, "semantic tokens read a condition", false);
+  ADD_TEST_CASE(us15_tc13_hover_shows_a_default, "hover shows a default, and a name written as one", false);
 }

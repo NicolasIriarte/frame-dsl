@@ -942,11 +942,26 @@ static bool parse_value(Parser *parser, uint64_t *value, const char **name, int 
   return *name != NULL;
 }
 
+/* `=` names something, an enum's value or a curve, and every value on a field says which kind it is
+ * (#144). So a bare one is an error with one obvious repair, and is then read as `:=`, so that the rest
+ * of the line is still checked. */
+static void refuse_bare_equals(Parser *parser) {
+  if (!check(parser, TOK_EQUALS)) {
+    return;
+  }
+  size_t index = parser->diags->count;
+  const int line = parser->current.line;
+  const int column = parser->current.column;
+  diag_add(parser->diags, line, column, 0, "a value is written ':=' to fix it or '?=' to give a default, not '='");
+  diag_set_fix(parser->diags, index, line, column, line, column + 1, ":=", "replace '=' with ':='");
+}
+
 /* A field's value, if one follows: `:=` fixes it and `?=` gives it a default (#144). A name is recorded
  * as written, whatever it turns out to be: composition knows whether it is an enum's. */
 static bool parse_field_value(Parser *parser, AstField *field) {
   const bool is_default = check(parser, TOK_QUESTION_EQUALS);
-  if (!is_default && !check(parser, TOK_COLON_EQUALS) && !check(parser, TOK_EQUALS)) {
+  refuse_bare_equals(parser);
+  if (!token_is_value_operator(&parser->current)) {
     return true;
   }
   advance(parser);
@@ -1002,7 +1017,8 @@ static bool parse_override(Parser *parser, AstField *field) {
   path[used] = '\0';
 
   const bool is_default = check(parser, TOK_QUESTION_EQUALS);
-  if (!is_default && !check(parser, TOK_COLON_EQUALS) && !check(parser, TOK_EQUALS)) {
+  refuse_bare_equals(parser);
+  if (!token_is_value_operator(&parser->current)) {
     error_at_current(parser, "':=' or '?='");
     return false;
   }
