@@ -111,7 +111,7 @@ static const char *const ANTENNA =
   "  MAX = 7;\n"
   "};\n"
   "pkt TM {\n"
-  "  id:    4 = 0x2;\n"
+  "  id:    4 := 0x2;\n"
   "  power: PowerState;\n"
   "  level: TxLevel;\n"
   "};\n";
@@ -163,7 +163,7 @@ static int us21_tc02_a_name_without_a_value_counts_on(const TestArguments *args)
   const char *source =
     "enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };\n"
     "enum Mode: 16 { IDLE = 0x0100; RECEIVE; TRANSMIT; };\n"
-    "pkt P { id: 5 = 1; level: TxLevel; mode: Mode; };\n";
+    "pkt P { id: 5 := 1; level: TxLevel; mode: Mode; };\n";
   if (!fixture_open(&fixture, source)) {
     fixture_close(&fixture);
     return __LINE__;
@@ -208,17 +208,17 @@ static int us21_tc02_a_name_without_a_value_counts_on(const TestArguments *args)
 
 static int us21_tc03_names_are_unique_and_values_increase(const TestArguments *args) {
   (void)args;
-  if (!refused("enum E: 4 { A; B; A; };\npkt P { id: 4 = 1; e: E; };\n", 36, "already has a name 'A'")) {
+  if (!refused("enum E: 4 { A; B; A; };\npkt P { id: 4 := 1; e: E; };\n", 36, "already has a name 'A'")) {
     return __LINE__;
   }
   /* Two names for one value, written or counted, and a value lower than the one before. */
-  if (!refused("enum E: 4 { A; B; C = 1; };\npkt P { id: 4 = 1; e: E; };\n", 37, "does not come after 'B'")) {
+  if (!refused("enum E: 4 { A; B; C = 1; };\npkt P { id: 4 := 1; e: E; };\n", 37, "does not come after 'B'")) {
     return __LINE__;
   }
-  if (!refused("enum E: 4 { A = 5; B; C = 2; };\npkt P { id: 4 = 1; e: E; };\n", 37, "'C' is 2")) {
+  if (!refused("enum E: 4 { A = 5; B; C = 2; };\npkt P { id: 4 := 1; e: E; };\n", 37, "'C' is 2")) {
     return __LINE__;
   }
-  if (!loads("enum E: 4 { A = 2; B = 9; C; };\npkt P { id: 4 = 1; e: E; };\n")) {
+  if (!loads("enum E: 4 { A = 2; B = 9; C; };\npkt P { id: 4 := 1; e: E; };\n")) {
     return __LINE__; /* gaps are fine */
   }
   return 0;
@@ -226,25 +226,25 @@ static int us21_tc03_names_are_unique_and_values_increase(const TestArguments *a
 
 static int us21_tc04_every_value_fits_and_the_width_is_a_scalars(const TestArguments *args) {
   (void)args;
-  if (!refused("enum E: 2 { A; B; C; D; X = 4; };\npkt P { id: 6 = 1; e: E; };\n", 38, "'X' is 4")) {
+  if (!refused("enum E: 2 { A; B; C; D; X = 4; };\npkt P { id: 6 := 1; e: E; };\n", 38, "'X' is 4")) {
     return __LINE__; /* written */
   }
-  if (!refused("enum E: 2 { A = 3; B; };\npkt P { id: 6 = 1; e: E; };\n", 38, "'B' is 4")) {
+  if (!refused("enum E: 2 { A = 3; B; };\npkt P { id: 6 := 1; e: E; };\n", 38, "'B' is 4")) {
     return __LINE__; /* counted */
   }
   if (!refused(
-        "enum E: 64 { A = 0xFFFFFFFFFFFFFFFF; B; };\npkt P { e: E = A; };\n", 38, "counts past the largest 64-bit"
+        "enum E: 64 { A = 0xFFFFFFFFFFFFFFFF; B; };\npkt P { e: E := A; };\n", 38, "counts past the largest 64-bit"
       )) {
     return __LINE__; /* counted past anything a field can hold */
   }
-  if (!loads("enum E: 64 { A = 0xFFFFFFFFFFFFFFFE; B; };\npkt P { e: E = B; };\n")) {
+  if (!loads("enum E: 64 { A = 0xFFFFFFFFFFFFFFFE; B; };\npkt P { e: E := B; };\n")) {
     return __LINE__; /* the largest value is a value */
   }
-  if (!refused("enum E: 0 { A; };\npkt P { id: 8 = 1; };\n", 35, "1 to 64 bits")
-      || !refused("enum E: 65 { A; };\npkt P { id: 8 = 1; };\n", 35, "65 bits")) {
+  if (!refused("enum E: 0 { A; };\npkt P { id: 8 := 1; };\n", 35, "1 to 64 bits")
+      || !refused("enum E: 65 { A; };\npkt P { id: 8 := 1; };\n", 35, "65 bits")) {
     return __LINE__;
   }
-  if (!refused("enum E: 4 { };\npkt P { id: 8 = 1; };\n", 0, "at least one value")) {
+  if (!refused("enum E: 4 { };\npkt P { id: 8 := 1; };\n", 0, "at least one value")) {
     return __LINE__;
   }
   return 0;
@@ -255,9 +255,9 @@ static int us21_tc04_every_value_fits_and_the_width_is_a_scalars(const TestArgum
 static const char *const FAMILY =
   "enum PktType: 4 { HK = 0x1; EVENT; };\n"
   "block Header { type: PktType; seq: 12; };\n"
-  "pkt A { hdr: Header { type = HK; }; x: 8; };\n"
-  "pkt B { hdr: Header { type = %s; }; y: 8; };\n"
-  "pkt C { kind: PktType = %s; pad: 4; z: 16; };\n";
+  "pkt A { hdr: Header { type := HK; }; x: 8; };\n"
+  "pkt B { hdr: Header { type := %s; }; y: 8; };\n"
+  "pkt C { kind: PktType := %s; pad: 4; z: 16; };\n";
 
 static int us21_tc05_a_name_is_a_fixed_value_and_identifies_a_packet(const TestArguments *args) {
   (void)args;
@@ -277,9 +277,9 @@ static int us21_tc05_a_name_is_a_fixed_value_and_identifies_a_packet(const TestA
   const char *family =
     "enum PktType: 4 { HK = 0x1; EVENT; STATUS = 0x8; };\n"
     "block Header { type: PktType; seq: 12; };\n"
-    "pkt A { hdr: Header { type = HK; }; x: 8; };\n"
-    "pkt B { hdr: Header { type = EVENT; }; y: 8; };\n"
-    "pkt C { kind: PktType = STATUS; pad: 4; z: 16; };\n";
+    "pkt A { hdr: Header { type := HK; }; x: 8; };\n"
+    "pkt B { hdr: Header { type := EVENT; }; y: 8; };\n"
+    "pkt C { kind: PktType := STATUS; pad: 4; z: 16; };\n";
   if (!fixture_open(&fixture, family)) {
     fixture_close(&fixture);
     return __LINE__;
@@ -313,14 +313,14 @@ static int us21_tc06_a_value_is_a_name_the_fields_enum_lists(const TestArguments
     const char *body;
     const char *text;
   } cases[] = {
-    { "pkt P { e: E = 1; pad: 6; };",                        "write 'B' for 1"               },
-    { "pkt P { e: E = 3; pad: 6; };",                        "not a number"                  },
-    { "pkt P { e: E = C; pad: 6; };",                        "enum 'E' has no name 'C'"      },
-    { "pkt P { e: E = X; pad: 6; };",                        "enum 'E' has no name 'X'"      }, /* F's, not E's */
-    { "pkt P { n: 8 = A; };",                                "'n' is not typed by an enum"   },
-    { "pkt P { h: H { e = 1; }; };",                         "'h.e' is typed by enum 'E'"    },
-    { "pkt P { h: H { n = A; e = A; }; };",                  "'h.n' is not typed by an enum" },
-    { "block G { e: E = Z; n: 6; };\npkt P { id: 8 = 1; };", "enum 'E' has no name 'Z'"      },
+    { "pkt P { e: E := 1; pad: 6; };",                         "write 'B' for 1"               },
+    { "pkt P { e: E := 3; pad: 6; };",                         "not a number"                  },
+    { "pkt P { e: E := C; pad: 6; };",                         "enum 'E' has no name 'C'"      },
+    { "pkt P { e: E := X; pad: 6; };",                         "enum 'E' has no name 'X'"      }, /* F's, not E's */
+    { "pkt P { n: 8 := A; };",                                 "'n' is not typed by an enum"   },
+    { "pkt P { h: H { e := 1; }; };",                          "'h.e' is typed by enum 'E'"    },
+    { "pkt P { h: H { n := A; e := A; }; };",                  "'h.n' is not typed by an enum" },
+    { "block G { e: E := Z; n: 6; };\npkt P { id: 8 := 1; };", "enum 'E' has no name 'Z'"      },
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
     char source[512];
@@ -333,16 +333,16 @@ static int us21_tc06_a_value_is_a_name_the_fields_enum_lists(const TestArguments
   /* A misspelt name comes with the one it meant. */
   FramedslResult *result = NULL;
   const FramedslDiagnostic *typo =
-    refusal("enum E: 2 { ALPHA; BETA; };\npkt P { e: E = BTEA; pad: 6; };\n", 39, &result);
+    refusal("enum E: 2 { ALPHA; BETA; };\npkt P { e: E := BTEA; pad: 6; };\n", 39, &result);
   int failure = 0;
   if (typo == NULL || typo->fix_text == NULL || strcmp(typo->fix_text, "BETA") != 0 || typo->line != 2
-      || typo->fix_column != 16) {
+      || typo->fix_column != 17) {
     failure = __LINE__;
   }
   framedsl_result_free(result);
 
   /* The type says which enum, so the name is written bare. */
-  if (failure == 0 && !refused("enum E: 2 { A; };\npkt P { e: E = E.A; pad: 6; };\n", 0, "bare name")) {
+  if (failure == 0 && !refused("enum E: 2 { A; };\npkt P { e: E := E.A; pad: 6; };\n", 0, "bare name")) {
     failure = __LINE__;
   }
   return failure;
@@ -352,13 +352,13 @@ static int us21_tc06_a_value_is_a_name_the_fields_enum_lists(const TestArguments
 
 static int us21_tc07_an_enum_and_a_block_share_their_names(const TestArguments *args) {
   (void)args;
-  if (!refused("block X { a: 8; };\nenum X: 2 { A; };\npkt P { id: 8 = 1; x: X; };\n", 1, "already a block")) {
+  if (!refused("block X { a: 8; };\nenum X: 2 { A; };\npkt P { id: 8 := 1; x: X; };\n", 1, "already a block")) {
     return __LINE__;
   }
-  if (!refused("enum X: 2 { A; };\nblock X { a: 8; };\npkt P { id: 8 = 1; x: X; };\n", 1, "already an enum")) {
+  if (!refused("enum X: 2 { A; };\nblock X { a: 8; };\npkt P { id: 8 := 1; x: X; };\n", 1, "already an enum")) {
     return __LINE__; /* reported at the later of the two */
   }
-  if (!refused("enum X: 2 { A; };\nenum X: 2 { B; };\npkt P { id: 6 = 1; x: X; };\n", 1, "already an enum")) {
+  if (!refused("enum X: 2 { A; };\nenum X: 2 { B; };\npkt P { id: 6 := 1; x: X; };\n", 1, "already an enum")) {
     return __LINE__;
   }
   return 0;
@@ -366,7 +366,7 @@ static int us21_tc07_an_enum_and_a_block_share_their_names(const TestArguments *
 
 static int us21_tc08_an_enum_field_takes_no_calibration(const TestArguments *args) {
   (void)args;
-  const char *source = "cal twice(raw) = raw * 2;\nenum E: 4 { A; };\npkt P { id: 4 = 1; [ @cal: twice; ] e: E; };\n";
+  const char *source = "cal twice(raw) = raw * 2;\nenum E: 4 { A; };\npkt P { id: 4 := 1; [ @cal: twice; ] e: E; };\n";
   if (!refused(source, 40, "'P.e' is typed by enum 'E'")) {
     return __LINE__;
   }
@@ -381,12 +381,12 @@ static int us21_tc09_an_enum_field_is_named_once_and_not_repeated(const TestArgu
     int check;
     const char *text;
   } cases[] = {
-    { "pkt P { id: 8 = 1; E; };",               41, "name the field, 'name: E;'"      },
-    { "pkt P { id: 8 = 1; E { x = 1; }; };",    41, "no fields to paste in"           },
-    { "pkt P { id: 8 = 1; e: E { x = 1; }; };", 41, "'e: E = NAME;'"                  },
-    { "pkt P { id: 8 = 1; e: E[2]; };",         41, "only a block can be repeated"    },
-    { "pkt P { id: 8 = 1; e[4]: E; };",         14, NULL                              },
-    { "pkt P { id: 8 = 1; e: Ee; };",           23, "which is not a block or an enum" },
+    { "pkt P { id: 8 := 1; E; };",                41, "name the field, 'name: E;'"      },
+    { "pkt P { id: 8 := 1; E { x := 1; }; };",    41, "no fields to paste in"           },
+    { "pkt P { id: 8 := 1; e: E { x := 1; }; };", 41, "'e: E := NAME;'"                 },
+    { "pkt P { id: 8 := 1; e: E[2]; };",          41, "only a block can be repeated"    },
+    { "pkt P { id: 8 := 1; e[4]: E; };",          14, NULL                              },
+    { "pkt P { id: 8 := 1; e: Ee; };",            23, "which is not a block or an enum" },
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
     char source[512];
@@ -396,11 +396,11 @@ static int us21_tc09_an_enum_field_is_named_once_and_not_repeated(const TestArgu
     }
   }
   /* Declared above everything that uses it, as a block is. */
-  if (!refused("pkt P { id: 8 = 1; e: E; };\nenum E: 8 { A; };\n", 24, "before it is declared")) {
+  if (!refused("pkt P { id: 8 := 1; e: E; };\nenum E: 8 { A; };\n", 24, "before it is declared")) {
     return __LINE__;
   }
   /* An enum sets no layout, so a group has nothing to say to it. */
-  if (!refused("[ @byte_order: little_endian; ]\nenum E: 8 { A; };\npkt P { id: 8 = 1; };\n", 0, "no layout")) {
+  if (!refused("[ @byte_order: little_endian; ]\nenum E: 8 { A; };\npkt P { id: 8 := 1; };\n", 0, "no layout")) {
     return __LINE__;
   }
   return 0;
@@ -414,7 +414,7 @@ static int us21_tc10_orders_come_from_where_the_field_is_used(const TestArgument
     "enum Mode: 16 { IDLE = 0x1234; RUN; };\n"
     "[ @byte_order: little_endian; ]\n"
     "pkt P {\n"
-    "  id:    8 = 0x40;\n"
+    "  id:    8 := 0x40;\n"
     "  mode:  Mode;\n"
     "  [ @byte_order: big_endian; ]\n"
     "  other: Mode;\n"
@@ -432,7 +432,7 @@ static int us21_tc10_orders_come_from_where_the_field_is_used(const TestArgument
   }
   fixture_close(&fixture);
 
-  const char *bits = "enum Nib: 4 { A = 0x1; };\npkt Q { [ @bit_order: lsb_first; ] n: Nib = A; m: Nib; };\n";
+  const char *bits = "enum Nib: 4 { A = 0x1; };\npkt Q { [ @bit_order: lsb_first; ] n: Nib := A; m: Nib; };\n";
   const uint8_t reversed[] = { 0x80 };
   if (failure == 0 && (!fixture_open(&fixture, bits) || !encodes_to(&fixture, "Q", reversed, sizeof(reversed)))) {
     failure = __LINE__;
@@ -441,7 +441,7 @@ static int us21_tc10_orders_come_from_where_the_field_is_used(const TestArgument
 
   /* Check 10 holds as for any field: a 4-bit field has no bytes to reorder. */
   if (failure == 0
-      && !refused("enum Nib: 4 { A; };\npkt R { id: 4 = 1; [ @byte_order: little_endian; ] n: Nib; };\n", 10, NULL)) {
+      && !refused("enum Nib: 4 { A; };\npkt R { id: 4 := 1; [ @byte_order: little_endian; ] n: Nib; };\n", 10, NULL)) {
     failure = __LINE__;
   }
   return failure;
@@ -534,10 +534,10 @@ static int us21_tc13_an_imported_enum_is_a_type_flat_or_named(const TestArgument
         "import \"modes.fdsl\";\n"
         "import \"modes.fdsl\" as vendor;\n"
         "pkt P {\n"
-        "  id:  8 = 1;\n"
-        "  a:   Mode = RX;\n"
-        "  b:   vendor.Mode = TX;\n"
-        "  r:   vendor.Radio { mode = TX; };\n"
+        "  id:  8 := 1;\n"
+        "  a:   Mode := RX;\n"
+        "  b:   vendor.Mode := TX;\n"
+        "  r:   vendor.Radio { mode := TX; };\n"
         "  pad: 4;\n"
         "};\n"
       )) {
@@ -576,8 +576,8 @@ static int us21_tc13_an_imported_enum_is_a_type_flat_or_named(const TestArgument
   /* Two different enums of one name, flat: a clash, as for blocks. So is an enum and a block. */
   if (!write_file(args, "other.fdsl", "enum Mode: 2 { OFF; };\n")
       || !write_file(args, "blocky.fdsl", "block Mode { x: 8; };\n")
-      || !write_file(args, "clash.fdsl", "import \"modes.fdsl\";\nimport \"other.fdsl\";\npkt P { id: 8 = 1; };\n")
-      || !write_file(args, "mixed.fdsl", "import \"modes.fdsl\";\nimport \"blocky.fdsl\";\npkt P { id: 8 = 1; };\n")) {
+      || !write_file(args, "clash.fdsl", "import \"modes.fdsl\";\nimport \"other.fdsl\";\npkt P { id: 8 := 1; };\n")
+      || !write_file(args, "mixed.fdsl", "import \"modes.fdsl\";\nimport \"blocky.fdsl\";\npkt P { id: 8 := 1; };\n")) {
     return __LINE__;
   }
   const char *clashing[] = { "clash.fdsl", "mixed.fdsl" };

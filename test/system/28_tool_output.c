@@ -30,7 +30,7 @@
   "  a: 8;\n"                                                                                                          \
   "};\n"                                                                                                               \
   "pkt P {\n"                                                                                                          \
-  "  id: 8 = 0x01;\n"                                                                                                  \
+  "  id: 8 := 0x01;\n"                                                                                                 \
   "};\n"
 
 typedef struct {

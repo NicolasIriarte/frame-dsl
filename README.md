@@ -65,7 +65,7 @@ A definition file declares packets. Widths are in bits, everywhere:
 @byte_order: big_endian;
 
 pkt TM_DATAGRAM_02 {
-  some_header: 8 = 0xAA;        # a fixed value: this is what identifies the packet
+  some_header: 8 := 0xAA;       # a fixed value: this is what identifies the packet
   len:         32;              # counts payload bytes
   data[128]:   valof(len) * 8;  # 128 bytes of arena; the width is worked out per frame
   crc:         16;
@@ -90,8 +90,8 @@ differs -- usually the id that tells them apart:
 ```
 block Header { id: 8; sequence: 16; };
 
-pkt TC_PING  { hdr: Header { id = 0x01; }; };
-pkt TM_REPLY { hdr: Header { id = 0x81; }; status: 8; };   # fields: hdr.id, hdr.sequence, status
+pkt TC_PING  { hdr: Header { id := 0x01; }; };
+pkt TM_REPLY { hdr: Header { id := 0x81; }; status: 8; };   # fields: hdr.id, hdr.sequence, status
 ```
 
 A field whose values mean something is typed by an enum, and a discriminator reads as what it means:
@@ -100,7 +100,7 @@ A field whose values mean something is typed by an enum, and a discriminator rea
 enum PktType: 4 { HK = 0x1; EVENT; };
 enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };
 
-pkt TM_ANTENNA { type: PktType = HK; level: TxLevel; pad: 1; };   # level is 3 bits
+pkt TM_ANTENNA { type: PktType := HK; level: TxLevel; pad: 1; };   # level is 3 bits
 ```
 
 Part of a frame that is there only sometimes -- a secondary header a flag announces -- is conditional,
@@ -110,7 +110,7 @@ and a decoded frame says which parts it carried:
 block Time { seconds: 32; subsecs: 16; };
 
 pkt TM_SPACE {
-  id:      8 = 0x08;
+  id:      8 := 0x08;
   sec_hdr: 8;
   [ @if: valof(sec_hdr) == 1; ]
   time:    Time;                                       # read as absent from a frame without it

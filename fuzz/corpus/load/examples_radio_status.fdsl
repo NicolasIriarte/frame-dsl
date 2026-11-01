@@ -44,7 +44,7 @@ block Header {
 };
 
 pkt TM_ANTENNA {
-  hdr:   Header { type = HK; };
+  hdr:   Header { type := HK; };
   power: PowerState;
   level: TxLevel;
   spare: 4;
@@ -54,6 +54,6 @@ pkt TM_ANTENNA {
 };
 
 pkt TM_EVENT {
-  hdr:  Header { type = EVENT; };
-  mode: Mode = TRANSMIT;
+  hdr:  Header { type := EVENT; };
+  mode: Mode := TRANSMIT;
 };

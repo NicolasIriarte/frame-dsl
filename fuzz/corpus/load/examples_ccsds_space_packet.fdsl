@@ -21,8 +21,8 @@
 @byte_order: big_endian;
 
 pkt TM_SPACE_PACKET {
-  version:          3 = 0b000;       # fixed: the only version the standard defines
-  type:             1 = 0b0;         # fixed: 0 is telemetry, 1 is telecommand
+  version:          3 := 0b000;       # fixed: the only version the standard defines
+  type:             1 := 0b0;         # fixed: 0 is telemetry, 1 is telecommand
   sec_hdr_flag:     1;               # whether a secondary header follows this one
   apid:            11;               # application process identifier
   seq_flags:        2;               # standalone, first, continuation or last segment

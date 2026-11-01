@@ -7,7 +7,7 @@
 # Writing `data[64]:` would fix it.
 
 pkt TM_UNBOUNDED {
-  hdr:  8 = 0xAA;
+  hdr:  8 := 0xAA;
   len:  32;
   data: valof(len) * 8;
 };

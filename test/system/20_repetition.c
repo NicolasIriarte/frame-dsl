@@ -60,7 +60,7 @@ static const char *const SAMPLES =
   "  value:   16;\n"
   "};\n"
   "pkt TM {\n"
-  "  id:          8 = 0x10;\n"
+  "  id:          8 := 0x10;\n"
   "  count:       8;\n"
   "  samples[12]: Sample[valof(count)];\n"
   "  last:        Sample[2];\n"
@@ -141,8 +141,8 @@ static int us20_tc02_a_counted_repetition_carries_as_many_as_the_count_says(cons
 /* The same bound a valof() width must have: the reservation, in bytes, is what the arena sets aside. */
 static int us20_tc03_a_counted_repetition_needs_a_bound(const TestArguments *args) {
   (void)args;
-  const char *unbounded = "block S {\n  a: 8;\n};\npkt P {\n  id: 8 = 1;\n  n:  8;\n  xs: S[valof(n)];\n};\n";
-  const char *redundant = "block S {\n  a: 8;\n};\npkt P {\n  id:    8 = 1;\n  xs[4]: S[2];\n};\n";
+  const char *unbounded = "block S {\n  a: 8;\n};\npkt P {\n  id: 8 := 1;\n  n:  8;\n  xs: S[valof(n)];\n};\n";
+  const char *redundant = "block S {\n  a: 8;\n};\npkt P {\n  id:    8 := 1;\n  xs[4]: S[2];\n};\n";
   if (first_check(unbounded) != 5) {
     return __LINE__;
   }
@@ -247,14 +247,14 @@ static int us20_tc06_what_is_not_an_element_is_refused(const TestArguments *args
 static const char *const TYPED =
   "cal half(raw) = raw / 2;\n"
   "block Reading {\n"
-  "  marker: 4 = 0xA;\n"
+  "  marker: 4 := 0xA;\n"
   "  [ @bit_order: lsb_first; ]\n"
   "  flags:  4;\n"
   "  [ @byte_order: little_endian; @cal: half; ]\n"
   "  value:  16;\n"
   "};\n"
   "pkt TM {\n"
-  "  id:       8 = 0x20;\n"
+  "  id:       8 := 0x20;\n"
   "  readings: Reading[2];\n"
   "};\n";
 
@@ -291,9 +291,9 @@ static int us20_tc08_a_repeated_block_is_one_size_and_whole_bytes(const TestArgu
   (void)args;
   const char *varying =
     "block M {\n  n:    8;\n  t[4]: valof(n) * 8;\n};\n"
-    "pkt P {\n  id: 8 = 1;\n  ms: M[2];\n};\n";
-  const char *nibble = "block N {\n  a: 4;\n};\npkt P {\n  id: 8 = 1;\n  ns: N[2];\n};\n";
-  const char *override = "block B {\n  k: 8;\n};\npkt P {\n  id: 8 = 1;\n  bs: B[2] { k = 1; };\n};\n";
+    "pkt P {\n  id: 8 := 1;\n  ms: M[2];\n};\n";
+  const char *nibble = "block N {\n  a: 4;\n};\npkt P {\n  id: 8 := 1;\n  ns: N[2];\n};\n";
+  const char *override = "block B {\n  k: 8;\n};\npkt P {\n  id: 8 := 1;\n  bs: B[2] { k := 1; };\n};\n";
   if (first_check(varying) != 32 || first_check(nibble) != 32) {
     return __LINE__;
   }
@@ -306,7 +306,7 @@ static int us20_tc09_a_repetition_inside_an_instance_counts_by_that_instance(con
   const char *source =
     "block S {\n  a: 8;\n};\n"
     "block Body {\n  count: 8;\n  xs[4]: S[valof(count)];\n};\n"
-    "pkt P {\n  id:    8 = 1;\n  count: 8;\n  body:  Body;\n};\n";
+    "pkt P {\n  id:    8 := 1;\n  count: 8;\n  body:  Body;\n};\n";
   Fixture fixture;
   if (!fixture_open(&fixture, source)) {
     return __LINE__;
@@ -444,13 +444,13 @@ static int every_shape_of_member(unsigned lead) {
     "block E {\n"
     "  a: 8;\n"
     "  [ @byte_order: little_endian; ] w: 16;\n"
-    "  m: 3 = 5;\n"
+    "  m: 3 := 5;\n"
     "  [ @bit_order: lsb_first; ] l: 7;\n"
     "  x: 13;\n"
     "  [ @bit_order: lsb_first; ] s: 9;\n"
-    "  f: 8 = 0xA5;\n"
+    "  f: 8 := 0xA5;\n"
     "};\n"
-    "pkt P { id: 8 = 0x5A; count: 8; pre: %u; items[64]: E[valof(count)]; post: %u; };\n",
+    "pkt P { id: 8 := 0x5A; count: 8; pre: %u; items[64]: E[valof(count)]; post: %u; };\n",
     lead,
     lead
   );

@@ -9,5 +9,5 @@ block Header {
 };
 
 pkt TC_PING {
-  hdr: Heder { id = 0x01; };
+  hdr: Heder { id := 0x01; };
 };

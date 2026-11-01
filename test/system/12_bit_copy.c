@@ -69,7 +69,7 @@ static int round_trip_under(
   const uint64_t tail = (8 - (lead + width) % 8) % 8;
 
   char source[512];
-  int written = snprintf(source, sizeof(source), "%spkt P {\n  %sid: 8 = 0x5A;\n", header, scalars);
+  int written = snprintf(source, sizeof(source), "%spkt P {\n  %sid: 8 := 0x5A;\n", header, scalars);
   if (lead > 0) {
     written += snprintf(source + written, sizeof(source) - (size_t)written, "  %slead: %u;\n", scalars, lead);
   }

@@ -141,7 +141,7 @@ static const char *const EXIT = "{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}";
   "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file:///tmp/"    \
   "t.fdsl\",\"version\":2},\"contentChanges\":[{\"text\":\"" text "\"}]}}"
 
-#define GOOD "pkt TM {\\n  id: 8 = 1;\\n};\\n"
+#define GOOD "pkt TM {\\n  id: 8 := 1;\\n};\\n"
 #define BROKEN "pkt TM {\\n  id: 8\\n};\\n"
 
 /* ---- The cases ------------------------------------------------------------------------------------ */
@@ -276,7 +276,7 @@ static int us13_tc04_an_open_document_is_diagnosed(const TestArguments *args) {
 static int us13_tc05_a_warning_is_a_warning(const TestArguments *args) {
   (void)args;
   const char *const messages[] = { INITIALIZE,
-                                   DID_OPEN("block Spare {\\n  s: 8;\\n};\\npkt TM {\\n  id: 8 = 1;\\n};\\n"),
+                                   DID_OPEN("block Spare {\\n  s: 8;\\n};\\npkt TM {\\n  id: 8 := 1;\\n};\\n"),
                                    EXIT };
   Session session;
   if (!run(&session, messages, 3)) {
@@ -297,7 +297,7 @@ static int us13_tc06_formatting_is_one_edit(const TestArguments *args) {
   (void)args;
   const char *const messages[] = {
     INITIALIZE,
-    DID_OPEN("pkt TM {\\n\\tid:8=1;\\n};\\n"),
+    DID_OPEN("pkt TM {\\n\\tid:8:=1;\\n};\\n"),
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/formatting\",\"params\":{\"textDocument\":{\"uri\":"
     "\"file:///tmp/t.fdsl\"},\"options\":{\"tabSize\":2,\"insertSpaces\":true}}}",
     DID_CHANGE(GOOD),
@@ -321,7 +321,7 @@ static int us13_tc06_formatting_is_one_edit(const TestArguments *args) {
     const Json *edit = edits->items[0];
     const char *text = json_string(json_get(edit, "newText"));
     const Json *start = json_get(json_get(edit, "range"), "start");
-    if (text == NULL || strcmp(text, "pkt TM {\n  id: 8 = 1;\n};\n") != 0) {
+    if (text == NULL || strcmp(text, "pkt TM {\n  id: 8 := 1;\n};\n") != 0) {
       failure = __LINE__;
     } else if (integer_at(start, "line") != 0 || integer_at(start, "character") != 0) {
       failure = __LINE__;
@@ -344,7 +344,7 @@ static int us13_tc07_semantic_tokens_say_what_each_name_is(const TestArguments *
   (void)args;
   const char *const messages[] = {
     INITIALIZE,
-    DID_OPEN("pkt TM {\\n  id: 8 = 1;\\n};\\n"),
+    DID_OPEN("pkt TM {\\n  id: 8 := 1;\\n};\\n"),
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/semanticTokens/full\",\"params\":{\"textDocument\":"
     "{\"uri\":\"file:///tmp/t.fdsl\"}}}",
     EXIT,
@@ -354,14 +354,14 @@ static int us13_tc07_semantic_tokens_say_what_each_name_is(const TestArguments *
     return __LINE__;
   }
   const Json *data = json_get(json_get(response_to(&session, 2), "result"), "data");
-  /* `pkt` `TM` `id` `8` `=` `1` -- six tokens of five numbers each. */
+  /* `pkt` `TM` `id` `8` `:=` `1` -- six tokens of five numbers each. */
   const int64_t expected[] = {
     0, 0, 3, SEM_KEYWORD,  0, /* pkt */
     0, 4, 2, SEM_TYPE,     1, /* TM, declared here */
     1, 2, 2, SEM_PROPERTY, 1, /* id, declared here */
     0, 4, 1, SEM_NUMBER,   0, /* 8 */
-    0, 2, 1, SEM_OPERATOR, 0, /* = */
-    0, 2, 1, SEM_NUMBER,   0, /* 1 */
+    0, 2, 2, SEM_OPERATOR, 0, /* := */
+    0, 3, 1, SEM_NUMBER,   0, /* 1 */
   };
   int failure = 0;
   if (data == NULL || data->count != sizeof(expected) / sizeof(*expected)) {
@@ -412,16 +412,16 @@ static int us13_tc09_a_range_change_is_spliced_in(const TestArguments *args) {
     INITIALIZE,
     DID_OPEN(GOOD),
     "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":\"file:///tmp/"
-    "t.fdsl\",\"version\":2},\"contentChanges\":[{\"range\":{\"start\":{\"line\":1,\"character\":11},\"end\":{\"line\":"
+    "t.fdsl\",\"version\":2},\"contentChanges\":[{\"range\":{\"start\":{\"line\":1,\"character\":12},\"end\":{\"line\":"
     "1,"
-    "\"character\":12}},\"text\":\"\"}]}}",
+    "\"character\":13}},\"text\":\"\"}]}}",
     EXIT,
   };
   Session session;
   if (!run(&session, messages, 4)) {
     return __LINE__;
   }
-  /* The `;` of `id: 8 = 1;` removed, so the next line is where the error is. */
+  /* The `;` of `id: 8 := 1;` removed, so the next line is where the error is. */
   const Json *diagnostics = json_get(last_diagnostics(&session), "diagnostics");
   int failure = 0;
   if (diagnostics == NULL || diagnostics->count != 1) {
@@ -469,7 +469,7 @@ static int us13_tc11_every_state_of_typing_is_survivable(const TestArguments *ar
   (void)args;
   const char *typed =
     "import \\\"x.fdsl\\\" as n;\\n@byte_order: little_endian;\\ncal f(x) = x * 2;\\nblock H {\\n  "
-    "id: 8 = 1;\\n};\\npkt TM {\\n  h: H { id = 2; };\\n  [ @cal: f; ]\\n  v: 16;\\n};\\n";
+    "id: 8 := 1;\\n};\\npkt TM {\\n  h: H { id := 2; };\\n  [ @cal: f; ]\\n  v: 16;\\n};\\n";
   size_t length = strlen(typed);
 
   const char *messages[512];
@@ -567,7 +567,7 @@ static int us13_tc13_hover_definition_and_completion_are_answered(const TestArgu
   (void)args;
   const char *const messages[] = {
     INITIALIZE,
-    DID_OPEN("block H {\\n  id: 8;\\n};\\npkt TM {\\n  h:   H { id = 1; };\\n  len: 8;\\n  [ @\\n"),
+    DID_OPEN("block H {\\n  id: 8;\\n};\\npkt TM {\\n  h:   H { id := 1; };\\n  len: 8;\\n  [ @\\n"),
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":"
     "\"file:///tmp/t.fdsl\"},\"position\":{\"line\":4,\"character\":2}}}",
     "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"textDocument/definition\",\"params\":{\"textDocument\":{\"uri\":"
@@ -618,7 +618,7 @@ static int us13_tc14_a_fix_is_offered_as_a_code_action(const TestArguments *args
   (void)args;
   const char *const messages[] = {
     INITIALIZE,
-    DID_OPEN("@byte_ordre: big_endian;\\npkt TM {\\n  id: 8 = 1;\\n};\\n"),
+    DID_OPEN("@byte_ordre: big_endian;\\npkt TM {\\n  id: 8 := 1;\\n};\\n"),
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/codeAction\",\"params\":{\"textDocument\":{\"uri\":"
     "\"file:///tmp/t.fdsl\"},\"range\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":3}},"
     "\"context\":{\"diagnostics\":[]}}}",
@@ -664,7 +664,7 @@ static int us13_tc15_an_attribute_written_twice_is_a_warning_with_a_fix(const Te
   (void)args;
   const char *const messages[] = {
     INITIALIZE,
-    DID_OPEN("pkt TM {\\n  id: 8 = 1;\\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\\n  x: 8;\\n};\\n"),
+    DID_OPEN("pkt TM {\\n  id: 8 := 1;\\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\\n  x: 8;\\n};\\n"),
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/codeAction\",\"params\":{\"textDocument\":{\"uri\":"
     "\"file:///tmp/t.fdsl\"},\"range\":{\"start\":{\"line\":2,\"character\":30},\"end\":{\"line\":2,\"character\":30}},"
     "\"context\":{\"diagnostics\":[]}}}",

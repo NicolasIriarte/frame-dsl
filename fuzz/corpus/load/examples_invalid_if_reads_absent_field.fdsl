@@ -5,7 +5,7 @@
 # same `@if`.
 
 pkt TM_DATA {
-  id:       8 = 0x60;
+  id:       8 := 0x60;
   has_len:  8;
   [ @if: valof(has_len) == 1; ]
   len:      8;

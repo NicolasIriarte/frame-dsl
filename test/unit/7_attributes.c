@@ -48,8 +48,8 @@ static int us7_tc01_a_file_attribute_reaches_every_packet(const TestArguments *a
 
   Parsed parsed = parse_source(
     "@bit_order: lsb_first;\n"
-    "pkt A { h: 8 = 1; };\n"
-    "pkt B { h: 8 = 2; };\n"
+    "pkt A { h: 8 := 1; };\n"
+    "pkt B { h: 8 := 2; };\n"
   );
 
   int failure = 0;
@@ -72,8 +72,8 @@ static int us7_tc02_a_packet_group_stops_at_the_packet(const TestArguments *args
 
   Parsed parsed = parse_source(
     "[ @bit_order: lsb_first; ]\n"
-    "pkt A { h: 8 = 1; };\n"
-    "pkt B { h: 8 = 2; };\n"
+    "pkt A { h: 8 := 1; };\n"
+    "pkt B { h: 8 := 2; };\n"
   );
 
   int failure = 0;
@@ -95,7 +95,7 @@ static int us7_tc03_a_field_group_reaches_one_field(const TestArguments *args) {
 
   Parsed parsed = parse_source(
     "pkt A {\n"
-    "  h: 8 = 1;\n"
+    "  h: 8 := 1;\n"
     "  [ @bit_order: lsb_first; ] a: 8;\n"
     "  b: 8;\n"
     "};\n"
@@ -122,7 +122,7 @@ static int us7_tc04_a_block_group_reaches_every_field_in_it(const TestArguments 
 
   Parsed parsed = parse_source(
     "pkt A {\n"
-    "  h: 8 = 1;\n"
+    "  h: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  block { a: 16; b: 16; };\n"
     "  c: 16;\n"
@@ -150,8 +150,8 @@ static int us7_tc04_a_block_group_reaches_every_field_in_it(const TestArguments 
 static int us7_tc05_a_block_is_invisible_to_the_layout(const TestArguments *args) {
   (void)args;
 
-  Parsed with = parse_source("pkt A { h: 8 = 1; block { a: 8; b: 8; }; c: 8; };");
-  Parsed without = parse_source("pkt A { h: 8 = 1; a: 8; b: 8; c: 8; };");
+  Parsed with = parse_source("pkt A { h: 8 := 1; block { a: 8; b: 8; }; c: 8; };");
+  Parsed without = parse_source("pkt A { h: 8 := 1; a: 8; b: 8; c: 8; };");
 
   int failure = 0;
   if (with.file == NULL || without.file == NULL || with.diags.count != 0) {
@@ -177,7 +177,7 @@ static int us7_tc06_blocks_nest_and_the_innermost_wins(const TestArguments *args
 
   Parsed parsed = parse_source(
     "pkt A {\n"
-    "  h: 8 = 1;\n"
+    "  h: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  block {\n"
     "    a: 16;\n"
@@ -214,7 +214,7 @@ static int us7_tc07_resolution_runs_field_block_packet_file(const TestArguments 
     "@byte_order: big_endian;\n"
     "[ @byte_order: little_endian; ]\n"
     "pkt A {\n"
-    "  h: 8 = 1;\n"
+    "  h: 8 := 1;\n"
     "  [ @byte_order: big_endian; ]\n"
     "  block {\n"
     "    a: 16;\n"
@@ -243,7 +243,7 @@ static int us7_tc07_resolution_runs_field_block_packet_file(const TestArguments 
 
 static int us7_tc08_a_bare_attribute_inside_a_packet_is_rejected(const TestArguments *args) {
   (void)args;
-  const char *source = "pkt A { h: 8 = 1; @bit_order: lsb_first; a: 8; };";
+  const char *source = "pkt A { h: 8 := 1; @bit_order: lsb_first; a: 8; };";
   if (!rejected_saying(source, "[ ... ]") || !rejected_saying(source, "goes at the top of the file")
       || rejected_saying(source, "first packet")) {
     FORCE_FAILURE();
@@ -257,9 +257,9 @@ static int us7_tc08_a_bare_attribute_inside_a_packet_is_rejected(const TestArgum
 static int us7_tc09_a_bare_attribute_after_a_declaration_is_rejected(const TestArguments *args) {
   (void)args;
   const char *sources[] = {
-    "pkt A { h: 8 = 1; };\n@bit_order: lsb_first;\npkt B { h: 8 = 2; };",
-    "cal c(x) = x;\n@bit_order: lsb_first;\npkt A { h: 8 = 1; [ @cal: c; ] v: 8; };",
-    "[ @byte_order: little_endian; ]\nblock B { v: 8; };\n@bit_order: lsb_first;\npkt A { h: 8 = 1; B; };",
+    "pkt A { h: 8 := 1; };\n@bit_order: lsb_first;\npkt B { h: 8 := 2; };",
+    "cal c(x) = x;\n@bit_order: lsb_first;\npkt A { h: 8 := 1; [ @cal: c; ] v: 8; };",
+    "[ @byte_order: little_endian; ]\nblock B { v: 8; };\n@bit_order: lsb_first;\npkt A { h: 8 := 1; B; };",
   };
   const char *expected[] = {
     "before the first declaration (the 'pkt' starting on line 1)",
@@ -276,19 +276,20 @@ static int us7_tc09_a_bare_attribute_after_a_declaration_is_rejected(const TestA
   /* After a group, the attribute belongs in it; after a misplaced import, there is no declaration to
    * name. And written where they belong -- after the imports, before everything -- defaults are fine. */
   if (!rejected_saying(
-        "[ @byte_order: little_endian; ]\n@bit_order: lsb_first;\npkt A { h: 8 = 1; };", "put this one inside the group"
+        "[ @byte_order: little_endian; ]\n@bit_order: lsb_first;\npkt A { h: 8 := 1; };",
+        "put this one inside the group"
       )) {
     return __LINE__;
   }
   if (!rejected_saying(
-        "@byte_order: little_endian;\nimport \"x.fdsl\";\n@bit_order: lsb_first;\npkt A { h: 8 = 1; };",
+        "@byte_order: little_endian;\nimport \"x.fdsl\";\n@bit_order: lsb_first;\npkt A { h: 8 := 1; };",
         "after the imports and before the first declaration"
       )) {
     return __LINE__;
   }
   Parsed parsed = parse_source(
     "@byte_order: little_endian;\n@bit_order: lsb_first;\ncal c(x) = x;\nblock B { v: 8; };\n"
-    "pkt A { h: 8 = 1; B; [ @cal: c; ] w: 8; };"
+    "pkt A { h: 8 := 1; B; [ @cal: c; ] w: 8; };"
   );
   int failure = parsed.diags.count == 0 ? 0 : __LINE__;
   parsed_free(&parsed);
@@ -298,7 +299,7 @@ static int us7_tc09_a_bare_attribute_after_a_declaration_is_rejected(const TestA
 /* Reported by name, rather than as a parse failure two tokens further on. */
 static int us7_tc10_an_unknown_attribute_is_named(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying("@endianness: big;\npkt A { h: 8 = 1; };", "unknown attribute 'endianness'")) {
+  if (!rejected_saying("@endianness: big;\npkt A { h: 8 := 1; };", "unknown attribute 'endianness'")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -306,7 +307,7 @@ static int us7_tc10_an_unknown_attribute_is_named(const TestArguments *args) {
 
 static int us7_tc11_a_bad_value_is_reported_with_what_was_written(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying("@bit_order: sideways;\npkt A { h: 8 = 1; };", "'sideways'")) {
+  if (!rejected_saying("@bit_order: sideways;\npkt A { h: 8 := 1; };", "'sideways'")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -314,10 +315,10 @@ static int us7_tc11_a_bad_value_is_reported_with_what_was_written(const TestArgu
 
 static int us7_tc12_empty_groups_and_blocks_are_rejected(const TestArguments *args) {
   (void)args;
-  if (!rejected_saying("pkt A { h: 8 = 1; [ ] a: 8; };", "at least one attribute")) {
+  if (!rejected_saying("pkt A { h: 8 := 1; [ ] a: 8; };", "at least one attribute")) {
     FORCE_FAILURE();
   }
-  if (!rejected_saying("pkt A { h: 8 = 1; block { }; };", "at least one field")) {
+  if (!rejected_saying("pkt A { h: 8 := 1; block { }; };", "at least one field")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -328,7 +329,7 @@ static int us7_tc12_empty_groups_and_blocks_are_rejected(const TestArguments *ar
 static int us7_tc13_attribute_names_are_usable_as_field_names(const TestArguments *args) {
   (void)args;
 
-  Parsed parsed = parse_source("pkt A { h: 8 = 1; bit_order: 4; little_endian: 4; };");
+  Parsed parsed = parse_source("pkt A { h: 8 := 1; bit_order: 4; little_endian: 4; };");
 
   int failure = 0;
   if (parsed.diags.count != 0 || parsed.file == NULL) {

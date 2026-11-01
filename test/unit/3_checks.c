@@ -40,7 +40,7 @@ static bool rejected_by(const char *source, int wanted) {
 
 static int us3_tc01_rejects_a_duplicate_packet_name(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; };\npkt A { h: 8 = 2; };", 1)) {
+  if (!rejected_by("pkt A { h: 8 := 1; };\npkt A { h: 8 := 2; };", 1)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -48,7 +48,7 @@ static int us3_tc01_rejects_a_duplicate_packet_name(const TestArguments *args) {
 
 static int us3_tc02_rejects_a_duplicate_field_name(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; x: 4; x: 4; };", 2)) {
+  if (!rejected_by("pkt A { h: 8 := 1; x: 4; x: 4; };", 2)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -56,7 +56,7 @@ static int us3_tc02_rejects_a_duplicate_field_name(const TestArguments *args) {
 
 static int us3_tc03_rejects_a_zero_width_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; x: 4 - 4; };", 4)) {
+  if (!rejected_by("pkt A { h: 8 := 1; x: 4 - 4; };", 4)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -64,7 +64,7 @@ static int us3_tc03_rejects_a_zero_width_field(const TestArguments *args) {
 
 static int us3_tc04_rejects_a_valof_width_without_a_reservation(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d: valof(n) * 8; };", 5)) {
+  if (!rejected_by("pkt A { h: 8 := 1; n: 16; d: valof(n) * 8; };", 5)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -72,7 +72,7 @@ static int us3_tc04_rejects_a_valof_width_without_a_reservation(const TestArgume
 
 static int us3_tc05_rejects_a_reservation_that_is_not_constant(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[valof(n)]: valof(n) * 8; };", 6)) {
+  if (!rejected_by("pkt A { h: 8 := 1; n: 16; d[valof(n)]: valof(n) * 8; };", 6)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -80,7 +80,7 @@ static int us3_tc05_rejects_a_reservation_that_is_not_constant(const TestArgumen
 
 static int us3_tc06_rejects_a_valof_naming_a_later_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; d[8]: valof(n) * 8; n: 16; };", 7)) {
+  if (!rejected_by("pkt A { h: 8 := 1; d[8]: valof(n) * 8; n: 16; };", 7)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -89,7 +89,7 @@ static int us3_tc06_rejects_a_valof_naming_a_later_field(const TestArguments *ar
 /* A field in another packet is not in scope: each packet is decoded on its own. */
 static int us3_tc07_rejects_a_valof_naming_another_packets_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; };\npkt B { h: 8 = 2; d[8]: valof(n) * 8; };", 7)) {
+  if (!rejected_by("pkt A { h: 8 := 1; n: 16; };\npkt B { h: 8 := 2; d[8]: valof(n) * 8; };", 7)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -97,7 +97,7 @@ static int us3_tc07_rejects_a_valof_naming_another_packets_field(const TestArgum
 
 static int us3_tc08_rejects_a_fixed_value_too_wide_for_its_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { k: 4 = 0xFF; b: 16; };", 8)) {
+  if (!rejected_by("pkt A { k: 4 := 0xFF; b: 16; };", 8)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -105,7 +105,7 @@ static int us3_tc08_rejects_a_fixed_value_too_wide_for_its_field(const TestArgum
 
 static int us3_tc09_rejects_a_field_with_both_fixed_value_and_max(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[8]: valof(n) * 8 = 3; };", 9)) {
+  if (!rejected_by("pkt A { h: 8 := 1; n: 16; d[8]: valof(n) * 8 := 3; };", 9)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -115,7 +115,7 @@ static int us3_tc09_rejects_a_field_with_both_fixed_value_and_max(const TestArgu
  * and encoding it read past those 64 bits. */
 static int us3_tc10_rejects_a_fixed_value_on_a_bit_string(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; b: 72 = 0xCAFE; };", 8)) {
+  if (!rejected_by("pkt A { h: 8 := 1; b: 72 := 0xCAFE; };", 8)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -125,7 +125,7 @@ static int us3_tc10_rejects_a_fixed_value_on_a_bit_string(const TestArguments *a
  * it let a field ask the arena for up to 4GiB before this. */
 static int us3_tc11_rejects_a_reservation_over_the_ceiling(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; n: 16; d[600000000]: valof(n) * 8; };", 6)) {
+  if (!rejected_by("pkt A { h: 8 := 1; n: 16; d[600000000]: valof(n) * 8; };", 6)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -144,7 +144,7 @@ static int us3_tc12_rejects_a_packet_with_too_many_fields(const TestArguments *a
   if (source == NULL) {
     FORCE_FAILURE();
   }
-  size_t length = (size_t)snprintf(source, capacity, "pkt A { h: 8 = 1;");
+  size_t length = (size_t)snprintf(source, capacity, "pkt A { h: 8 := 1;");
   for (size_t i = 0; i < count; ++i) {
     length += (size_t)snprintf(source + length, capacity - length, " f%zu: 1;", i);
   }

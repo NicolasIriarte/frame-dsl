@@ -9,7 +9,7 @@ block Message {
 };
 
 pkt TM_LOG {
-  id:          8 = 0x40;
+  id:          8 := 0x40;
   count:       8;
   entries[64]: Message[valof(count)];
 };

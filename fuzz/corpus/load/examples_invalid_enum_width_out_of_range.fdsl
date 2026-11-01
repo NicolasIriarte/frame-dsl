@@ -9,6 +9,6 @@ enum Checksum: 128 {
 };
 
 pkt TM_BLOCK {
-  id:  8 = 0x51;
+  id:  8 := 0x51;
   sum: Checksum;
 };

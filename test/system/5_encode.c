@@ -61,7 +61,7 @@ static int us5_tc01_a_byte_aligned_packet_encodes_plainly(const TestArguments *a
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { hdr: 8 = 0xAA; seq: 16; tail: 8; };", &fixture)) {
+  if (!open_fixture("pkt A { hdr: 8 := 0xAA; seq: 16; tail: 8; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -92,7 +92,7 @@ static int us5_tc02_sub_byte_fields_pack_and_straddle(const TestArguments *args)
 
   Fixture fixture;
   if (!open_fixture(
-        "pkt A { version: 3 = 0b000; type: 1 = 0b0; sec: 1; apid: 11;"
+        "pkt A { version: 3 := 0b000; type: 1 := 0b0; sec: 1; apid: 11;"
         " seq_flags: 2; seq_count: 14; };",
         &fixture
       )) {
@@ -121,7 +121,7 @@ static int us5_tc03_bit_order_changes_the_bytes(const TestArguments *args) {
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { h: 8 = 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8; };", &fixture)) {
+  if (!open_fixture("pkt A { h: 8 := 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -146,8 +146,8 @@ static int us5_tc04_byte_order_swaps_only_its_own_field(const TestArguments *arg
 
   Fixture fixture;
   if (!open_fixture(
-        "pkt A { h: 8 = 0xBB; big: 32;"
-        " [ @byte_order: little_endian; ] little: 32; t: 8 = 0xBB; };",
+        "pkt A { h: 8 := 0xBB; big: 32;"
+        " [ @byte_order: little_endian; ] little: 32; t: 8 := 0xBB; };",
         &fixture
       )) {
     close_fixture(&fixture);
@@ -172,7 +172,7 @@ static int us5_tc05_a_fixed_field_comes_from_the_definition(const TestArguments 
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { hdr: 8 = 0xAA; body: 8; };", &fixture)) {
+  if (!open_fixture("pkt A { hdr: 8 := 0xAA; body: 8; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -191,7 +191,7 @@ static int us5_tc05_a_fixed_field_comes_from_the_definition(const TestArguments 
   return failure;
 }
 
-#define VARIABLE_DEFINITION "pkt A { hdr: 8 = 0xAA; len: 8; data[8]: valof(len) * 8; crc: 8; };"
+#define VARIABLE_DEFINITION "pkt A { hdr: 8 := 0xAA; len: 8; data[8]: valof(len) * 8; crc: 8; };"
 
 static int us5_tc06_a_variable_field_encodes_at_every_length(const TestArguments *args) {
   (void)args;
@@ -286,7 +286,7 @@ static int us5_tc09_an_unknown_packet_is_an_error(const TestArguments *args) {
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { hdr: 8 = 0xAA; body: 8; };", &fixture)) {
+  if (!open_fixture("pkt A { hdr: 8 := 0xAA; body: 8; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -348,7 +348,7 @@ static int us5_tc11_a_bit_string_passes_through_unchanged(const TestArguments *a
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { h: 8 = 0xAA; wide: 72; };", &fixture)) {
+  if (!open_fixture("pkt A { h: 8 := 0xAA; wide: 72; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -379,7 +379,7 @@ static int us5_tc12_a_bit_string_off_a_byte_boundary_is_shifted(const TestArgume
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { h: 4 = 0xA; wide: 72; pad: 4; };", &fixture)) {
+  if (!open_fixture("pkt A { h: 4 := 0xA; wide: 72; pad: 4; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }
@@ -505,7 +505,7 @@ static int us5_tc15_a_buffer_too_small_is_refused_with_the_size_needed(const Tes
   (void)args;
 
   Fixture fixture;
-  if (!open_fixture("pkt A { hdr: 8 = 0xAA; seq: 16; tail: 8; };", &fixture)) {
+  if (!open_fixture("pkt A { hdr: 8 := 0xAA; seq: 16; tail: 8; };", &fixture)) {
     close_fixture(&fixture);
     FORCE_FAILURE();
   }

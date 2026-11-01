@@ -17,24 +17,24 @@
 
 static const char *const DEFINITIONS[] = {
   /* Whole bytes, a valof() payload counted in bytes, and three distinguishable packets. */
-  "pkt A { id: 8 = 0x01; seq: 16; };\n"
-  "pkt B { id: 8 = 0x02; seq: 16; mode: 8; };\n"
-  "pkt C { id: 8 = 0x03; seq: 16; len: 16; body[64]: valof(len) * 8; };\n",
+  "pkt A { id: 8 := 0x01; seq: 16; };\n"
+  "pkt B { id: 8 := 0x02; seq: 16; mode: 8; };\n"
+  "pkt C { id: 8 := 0x03; seq: 16; len: 16; body[64]: valof(len) * 8; };\n",
 
   /* Sub-byte fields crossing byte boundaries, a length counting itself, lsb_first and little_endian. */
   "pkt S {\n"
-  "  version: 3 = 0b000; type: 1 = 0b1; flag: 1; apid: 11; seq_flags: 2; count: 14;\n"
+  "  version: 3 := 0b000; type: 1 := 0b1; flag: 1; apid: 11; seq_flags: 2; count: 14;\n"
   "  data_length: 16;\n"
   "  user[128]: (valof(data_length) + 1) * 8;\n"
   "};\n"
-  "[ @bit_order: lsb_first; ] pkt L { id: 8 = 0x10; a: 3; b: 13; [ @byte_order: little_endian; ] c: 32; };\n",
+  "[ @bit_order: lsb_first; ] pkt L { id: 8 := 0x10; a: 3; b: 13; [ @byte_order: little_endian; ] c: 32; };\n",
 
   /* A bit string at an odd offset, a 64-bit scalar, composition and calibrations. */
   "cal volts(raw) = raw * 3.3 / 4095;\n"
   "cal ohms(raw) = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);\n"
   "block H { id: 8; seq: 16; };\n"
-  "pkt W { h: H { id = 0x20; }; pad: 5; blob: 72; big: 64; tail: 3; };\n"
-  "pkt X { h: H { id = 0x21; }; [ @cal: volts; ] v: 12; [ @cal: ohms; ] r: 12; n: 8; d[16]: valof(n) * 8; };\n",
+  "pkt W { h: H { id := 0x20; }; pad: 5; blob: 72; big: 64; tail: 3; };\n"
+  "pkt X { h: H { id := 0x21; }; [ @cal: volts; ] v: 12; [ @cal: ohms; ] r: 12; n: 8; d[16]: valof(n) * 8; };\n",
 
   /* Enums (#11): a discriminator fixed by name, sub-byte and little-endian fields, and names that leave
    * most values unlisted -- which must decode, and read back as unlisted rather than as anything. */
@@ -42,8 +42,8 @@ static const char *const DEFINITIONS[] = {
   "enum Level: 3 { OFF; LOW; MAX = 7; };\n"
   "enum Mode: 16 { IDLE = 0x0100; RUN; };\n"
   "block Hdr { type: T; seq: 12; };\n"
-  "pkt E1 { h: Hdr { type = HK; }; level: Level; pad: 5; [ @byte_order: little_endian; ] mode: Mode; };\n"
-  "pkt E2 { h: Hdr { type = EVENT; }; mode: Mode = RUN; };\n",
+  "pkt E1 { h: Hdr { type := HK; }; level: Level; pad: 5; [ @byte_order: little_endian; ] mode: Mode; };\n"
+  "pkt E2 { h: Hdr { type := EVENT; }; mode: Mode := RUN; };\n",
 
   /* Conditional fields (#12): on a named use, a pasted one, an anonymous block and a field; nested,
    * compared with an enum name and with `!=`; a counted payload and a repetition under one; a field of
@@ -54,15 +54,15 @@ static const char *const DEFINITIONS[] = {
   "  [ @if: valof(flags) != 0; ] block { n: 8; [ @if: valof(n) == 3; @byte_order: little_endian; ] y: 16; }; };\n"
   "block H { type: 8; f: 8; [ @if: valof(type) == 0x41; ] ext: 8; };\n"
   "block Pt { a: 8; [ @bit_order: lsb_first; ] b: 8; };\n"
-  "pkt C1 { id: 8 = 0x40; flag: 1; pad: 7; [ @if: valof(flag) == 1; ] o: Opt; [ @if: valof(flag) != 1; ] Pt;\n"
+  "pkt C1 { id: 8 := 0x40; flag: 1; pad: 7; [ @if: valof(flag) == 1; ] o: Opt; [ @if: valof(flag) != 1; ] Pt;\n"
   "  len: 8; [ @if: valof(len) != 0; ] d[32]: valof(len) * 8; };\n"
-  "pkt C2 { h: H { type = 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
+  "pkt C2 { h: H { type := 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
   "  [ @if: valof(h.f) == 2; @byte_order: little_endian; ] w: 32; tail: 8; };\n",
 
   /* Combined conditions (#126): `&&` and `||` with parentheses, orderings, masks, and an enum compared
    * by name, on a field, an anonymous block and a field nested in it. */
   "enum K2: 2 { IDLE; HK; EVENT; DUMP; };\n"
-  "pkt CC { id: 8 = 0x7E; version: 4; flags: 4; kind: K2; spare: 6;\n"
+  "pkt CC { id: 8 := 0x7E; version: 4; flags: 4; kind: K2; spare: 6;\n"
   "  [ @if: valof(flags) & 0x1 != 0; ] seq: 16;\n"
   "  [ @if: valof(version) >= 2 && valof(version) < 5; ] ext: 8;\n"
   "  [ @if: valof(kind) == HK || valof(kind) == EVENT; ] block { n: 8;\n"
@@ -73,8 +73,8 @@ static const char *const DEFINITIONS[] = {
   /* Fixed values past the known prefix (#141): they identify nothing, so a frame may differ from them,
    * and what it answers has to follow what arrived. */
   "block S { v: 8; };\n"
-  "pkt FP { id: 8 = 0x71; size: 8; pad[4]: valof(size) * 8; flag: 8 = 1;\n"
-  "  [ @if: valof(flag) == 1; ] extra: 8; count: 8 = 2; list[8]: S[valof(count)]; end: 8 = 0x7F; };\n",
+  "pkt FP { id: 8 := 0x71; size: 8; pad[4]: valof(size) * 8; flag: 8 := 1;\n"
+  "  [ @if: valof(flag) == 1; ] extra: 8; count: 8 := 2; list[8]: S[valof(count)]; end: 8 := 0x7F; };\n",
 };
 
 #define DEFINITION_COUNT (sizeof(DEFINITIONS) / sizeof(*DEFINITIONS))

@@ -6,7 +6,7 @@
 cal volts(raw) = raw * 3.3 / 4095;
 
 pkt TM_ADC {
-  id:      8 = 0x01;
+  id:      8 := 0x01;
   [ @cal: volts; ]
   samples: 128;
 };

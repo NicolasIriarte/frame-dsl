@@ -9,7 +9,7 @@
 # a setting that is irrelevant here and meaningful two fields later is not a mistake.
 
 pkt TM_ODD {
-  hdr: 8 = 0xAA;
+  hdr: 8 := 0xAA;
 
   [ @byte_order: little_endian; ]
   seq: 15;

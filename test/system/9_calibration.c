@@ -22,7 +22,7 @@ static const char *const SOURCE =
   "                   inverse (eng) = 4095 * eng / (10000 + eng);\n"
   "cal square(raw)  = raw * raw;\n"
   "pkt TM {\n"
-  "  id: 8 = 0x10;\n"
+  "  id: 8 := 0x10;\n"
   "  [ @cal: celsius; ] board: 16;\n"
   "  [ @cal: volts; ]   bus: 12;\n"
   "  [ @cal: ohms; ]    sensor: 12;\n"
@@ -576,7 +576,7 @@ static void two_packets(
   snprintf(
     out,
     size,
-    "%spkt CAL {\n  id: 8 = 1;\n  %s\n  v: %d;\n%s};\npkt RAW {\n  id: 8 = 2;\n  %s\n  v: %d;\n%s};\n",
+    "%spkt CAL {\n  id: 8 := 1;\n  %s\n  v: %d;\n%s};\npkt RAW {\n  id: 8 := 2;\n  %s\n  v: %d;\n%s};\n",
     CURVES,
     cal_group,
     width,
@@ -686,13 +686,13 @@ static int us9_tc13_orders_from_an_enclosing_scope_are_the_same_to_the_curve(con
 
   static const char packet_group[] =
     "[ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
-    "pkt CAL {\n  id: 8 = 1;\n  [ @cal: celsius; ]\n  v: 16;\n};\n"
+    "pkt CAL {\n  id: 8 := 1;\n  [ @cal: celsius; ]\n  v: 16;\n};\n"
     "[ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
-    "pkt RAW {\n  id: 8 = 2;\n  v: 16;\n};\n";
+    "pkt RAW {\n  id: 8 := 2;\n  v: 16;\n};\n";
   static const char block_group[] =
-    "pkt CAL {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
+    "pkt CAL {\n  id: 8 := 1;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
     "  block {\n    [ @cal: celsius; ]\n    v: 16;\n  };\n};\n"
-    "pkt RAW {\n  id: 8 = 2;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
+    "pkt RAW {\n  id: 8 := 2;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
     "  block {\n    v: 16;\n  };\n};\n";
   /* Pasted into packets whose own group says the opposite, which the blocks' fields do not take. */
   static const char named_block[] =
@@ -700,13 +700,13 @@ static int us9_tc13_orders_from_an_enclosing_scope_are_the_same_to_the_curve(con
     "block Calibrated {\n  [ @cal: celsius; ]\n  v: 16;\n};\n"
     "[ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
     "block Plain {\n  v: 16;\n};\n"
-    "pkt CAL {\n  id: 8 = 1;\n  Calibrated;\n};\n"
-    "pkt RAW {\n  id: 8 = 2;\n  Plain;\n};\n";
+    "pkt CAL {\n  id: 8 := 1;\n  Calibrated;\n};\n"
+    "pkt RAW {\n  id: 8 := 2;\n  Plain;\n};\n";
   static const char field_override[] =
     "[ @byte_order: little_endian; ]\n"
-    "pkt CAL {\n  id: 8 = 1;\n  [ @byte_order: big_endian; @cal: celsius; ]\n  v: 16;\n};\n"
+    "pkt CAL {\n  id: 8 := 1;\n  [ @byte_order: big_endian; @cal: celsius; ]\n  v: 16;\n};\n"
     "[ @byte_order: little_endian; ]\n"
-    "pkt RAW {\n  id: 8 = 2;\n  [ @byte_order: big_endian; ]\n  v: 16;\n};\n";
+    "pkt RAW {\n  id: 8 := 2;\n  [ @byte_order: big_endian; ]\n  v: 16;\n};\n";
   cases[0].text = packet_group;
   cases[0].want = little_lsb;
   cases[1].text = block_group;
@@ -745,7 +745,7 @@ static bool reports(const char *source, int check, FramedslSeverity severity, co
 static int us9_tc14_the_order_rules_hold_beside_a_curve(const TestArguments *args) {
   (void)args;
   if (!reports(
-        "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: c; @byte_order: little_endian; ]\n  v: 12;\n  pad: "
+        "cal c(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  [ @cal: c; @byte_order: little_endian; ]\n  v: 12;\n  pad: "
         "4;\n};\n",
         10,
         FRAMEDSL_SEVERITY_ERROR,
@@ -754,7 +754,7 @@ static int us9_tc14_the_order_rules_hold_beside_a_curve(const TestArguments *arg
     return __LINE__;
   }
   if (!reports(
-        "cal c(x) = x * 2;\n[ @cal: c; @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n  v: 16;\n};\n",
+        "cal c(x) = x * 2;\n[ @cal: c; @byte_order: little_endian; ]\npkt TM {\n  id: 8 := 1;\n  v: 16;\n};\n",
         0,
         FRAMEDSL_SEVERITY_ERROR,
         "cannot apply to a packet"
@@ -762,7 +762,7 @@ static int us9_tc14_the_order_rules_hold_beside_a_curve(const TestArguments *arg
     return __LINE__;
   }
   if (!reports(
-        "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: c; @bit_order: lsb_first; ]\n  block {\n    v: 16;\n  "
+        "cal c(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  [ @cal: c; @bit_order: lsb_first; ]\n  block {\n    v: 16;\n  "
         "};\n};\n",
         0,
         FRAMEDSL_SEVERITY_ERROR,
@@ -772,7 +772,7 @@ static int us9_tc14_the_order_rules_hold_beside_a_curve(const TestArguments *arg
   }
 
   const char *redundant =
-    "cal c(x) = x * 2;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n"
+    "cal c(x) = x * 2;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 := 1;\n"
     "  [ @cal: c; @byte_order: little_endian; ]\n  v: 16;\n};\n";
   if (!reports(redundant, 31, FRAMEDSL_SEVERITY_WARNING, NULL)) {
     return __LINE__;
@@ -810,7 +810,7 @@ static int us9_tc15_the_widest_and_narrowest_scalars_carry_a_curve(const TestArg
   snprintf(
     source,
     sizeof(source),
-    "%spkt TM {\n  id: 8 = 1;\n  [ @cal: celsius; @bit_order: lsb_first; ]\n  on: 1;\n  pad: 7;\n};\n",
+    "%spkt TM {\n  id: 8 := 1;\n  [ @cal: celsius; @bit_order: lsb_first; ]\n  on: 1;\n  pad: 7;\n};\n",
     CURVES
   );
   FramedslResult *result = framedsl_load_string(source, "orders.fdsl");
@@ -833,7 +833,7 @@ static int us9_tc15_the_widest_and_narrowest_scalars_carry_a_curve(const TestArg
 static int us9_tc16_a_fixed_value_reads_through_its_curve(const TestArguments *args) {
   (void)args;
   FramedslResult *result = framedsl_load_string(
-    "cal celsius(raw) = raw * 0.0625 - 40;\npkt TM {\n  [ @cal: celsius; @bit_order: msb_first; ]\n  id: 8 = 0x10;\n"
+    "cal celsius(raw) = raw * 0.0625 - 40;\npkt TM {\n  [ @cal: celsius; @bit_order: msb_first; ]\n  id: 8 := 0x10;\n"
     "  v:  8;\n};\n",
     "fixed.fdsl"
   );

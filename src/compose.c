@@ -491,7 +491,7 @@ static void type_by_enum(
     snprintf(
       message,
       sizeof(message),
-      "'%s' is typed by enum '%s', which has no fields to fix; give its value as '%s: %s = NAME;'",
+      "'%s' is typed by enum '%s', which has no fields to fix; give its value as '%s: %s := NAME;'",
       use->name,
       enumeration->name,
       use->name,

@@ -1,6 +1,6 @@
 # Found by fuzzing (#59): quadratic checks (duplicate names, chiefly) made a packet this size
 # a multi-minute hang before check 29. Trimmed to just over the ceiling.
-pkt A { h: 8 = 1;
+pkt A { h: 8 := 1;
 f0: 1;
 f1: 1;
 f2: 1;

@@ -1,11 +1,11 @@
 block Header { id: 8; flags: 4; rest: 4; };
 pkt TM { # opening
   id: 8 # mid-field
-    = 1;
+    := 1;
   hdr: Header { # in overrides
-    flags = 2;
+    flags := 2;
     # alone in overrides
-    rest = 1; };
+    rest := 1; };
   [ # after bracket
     @byte_order: little_endian;
     # before close bracket

@@ -15,13 +15,13 @@
 
 # Ask the device for what it is reading right now.
 pkt TC_HK_REQ {
-  id:       8 = 0x01;
+  id:       8 := 0x01;
   sequence: 16;
 };
 
 # Set the limit the device compares its readings against.
 pkt TC_SET_LIMIT {
-  id:       8 = 0x02;
+  id:       8 := 0x02;
   sequence: 16;
   channel:  8;
   limit:    32;
@@ -29,7 +29,7 @@ pkt TC_SET_LIMIT {
 
 # Variable size packet
 pkt TC_WRITE {
-  id:        8 = 0x03;
+  id:        8 := 0x03;
   size:      8;
   data[256]: valof(size) * 8;
   crc:       16;
@@ -41,14 +41,14 @@ pkt TC_WRITE {
 
 # The device's answer to a command: the sequence it is answering, and whether it took it.
 pkt TM_ACK {
-  id:       8 = 0x81;
+  id:       8 := 0x81;
   sequence: 16;
   result:   8;
 };
 
 # Housekeeping: the reading, and the limit the device is holding for that channel.
 pkt TM_HK {
-  id:       8 = 0x82;
+  id:       8 := 0x82;
   sequence: 16;
   channel:  8;
   reading:  32;

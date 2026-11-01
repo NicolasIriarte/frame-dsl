@@ -8,7 +8,7 @@
 # writing it here, where it can do nothing, is the mistake -- the same rule as check 10.
 
 pkt TM_WIDE {
-  hdr: 8 = 0xAA;
+  hdr: 8 := 0xAA;
 
   [ @byte_order: little_endian; ]
   payload: 128;

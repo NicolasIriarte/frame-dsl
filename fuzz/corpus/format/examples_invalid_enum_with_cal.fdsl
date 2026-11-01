@@ -12,7 +12,7 @@ enum TxLevel: 3 {
 };
 
 pkt TM_ANTENNA {
-  id:    5 = 0x08;
+  id:    5 := 0x08;
   [ @cal: dbm; ]
   level: TxLevel;
 };

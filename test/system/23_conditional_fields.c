@@ -150,7 +150,7 @@ static bool write_file(const TestArguments *args, const char *name, const char *
 
 static const char *const BASIC =
   "pkt P {\n"
-  "  id:   8 = 0x10;\n"
+  "  id:   8 := 0x10;\n"
   "  flag: 8;\n"
   "  [ @if: valof(flag) == 1; ]\n"
   "  ext:  16;\n"
@@ -161,7 +161,7 @@ static const char *const SHAPES =
   "block Pair { a: 8; b: 8; };\n"
   "block Item { v: 8; };\n"
   "pkt S {\n"
-  "  id: 8 = 0x20;\n"
+  "  id: 8 := 0x20;\n"
   "  m:  8;\n"
   "  [ @if: valof(m) == 1; ] named: Pair;\n"
   "  [ @if: valof(m) == 2; ] Pair;\n"
@@ -265,7 +265,7 @@ static int us23_tc03_nested_conditions_all_have_to_hold(const TestArguments *arg
   if (!fixture_open(
         &fixture,
         "pkt N {\n"
-        "  id: 8 = 0x30;\n"
+        "  id: 8 := 0x30;\n"
         "  a:  4;\n"
         "  b:  4;\n"
         "  [ @if: valof(a) == 1; ]\n"
@@ -325,7 +325,7 @@ static int us23_tc04_an_enum_field_is_compared_by_name(const TestArguments *args
         &fixture,
         "enum Mode: 4 { OFF; ON; TEST = 9; };\n"
         "pkt E {\n"
-        "  id:   8 = 0x40;\n"
+        "  id:   8 := 0x40;\n"
         "  mode: Mode;\n"
         "  pad:  4;\n"
         "  [ @if: valof(mode) == TEST; ] t: 8;\n"
@@ -356,7 +356,7 @@ static int us23_tc05_fields_after_a_conditional_part_are_found_in_both_cases(con
   if (!fixture_open(
         &fixture,
         "pkt O {\n"
-        "  id:  8 = 0x50;\n"
+        "  id:  8 := 0x50;\n"
         "  f:   1;\n"
         "  g:   3;\n"
         "  [ @if: valof(f) == 1; ] block { h: 4; i: 4; };\n"
@@ -405,7 +405,7 @@ static const char *const GETTERS =
   "enum M: 8 { A; B; };\n"
   "block It { v: 8; };\n"
   "pkt G {\n"
-  "  id: 8 = 0x60;\n"
+  "  id: 8 := 0x60;\n"
   "  on: 8;\n"
   "  [ @if: valof(on) == 1; ]\n"
   "  block {\n"
@@ -606,10 +606,10 @@ static int us23_tc10_a_fixed_field_is_compared_as_its_fixed_value(const TestArgu
         &fixture,
         "block H { type: 8; [ @if: valof(type) == 0x41; ] ext: 8; };\n"
         "block It { v: 8; };\n"
-        "pkt F1 { h: H { type = 0x41; }; t: 8; };\n"
-        "pkt F2 { h: H { type = 0x42; }; t: 8; };\n"
-        "pkt F3 { k: 8 = 0x43; [ @if: valof(k) == 0x43; ] e: 8; };\n"
-        "pkt F4 { n: 8 = 0x02; d[4]: valof(n) * 8; c: 8 = 0x03; its[3]: It[valof(c)]; };\n"
+        "pkt F1 { h: H { type := 0x41; }; t: 8; };\n"
+        "pkt F2 { h: H { type := 0x42; }; t: 8; };\n"
+        "pkt F3 { k: 8 := 0x43; [ @if: valof(k) == 0x43; ] e: 8; };\n"
+        "pkt F4 { n: 8 := 0x02; d[4]: valof(n) * 8; c: 8 := 0x03; its[3]: It[valof(c)]; };\n"
       )) {
     fixture_close(&fixture);
     FORCE_FAILURE();
@@ -654,7 +654,7 @@ static int us23_tc11_valof_names_a_field_of_an_instance(const TestArguments *arg
         "  d[4]:  valof(inner.len) * 8;\n"
         "};\n"
         "pkt D {\n"
-        "  id:      8 = 0x70;\n"
+        "  id:      8 := 0x70;\n"
         "  hdr:     Len;\n"
         "  body[8]: valof(hdr.len) * 8;\n"
         "  [ @if: valof(hdr.flag) == 1; ] opt: 8;\n"
@@ -694,7 +694,7 @@ static int us23_tc12_each_instance_has_its_own_conditions(const TestArguments *a
         &fixture,
         "block Opt { f: 8; [ @if: valof(f) == 1; ] v: 8; };\n"
         "block Tail { mode: 8; [ @if: valof(mode) == 2; ] t: 8; };\n"
-        "pkt T2 { id: 8 = 0x71; a: Opt; b: Opt; Tail; };\n"
+        "pkt T2 { id: 8 := 0x71; a: Opt; b: Opt; Tail; };\n"
       )) {
     fixture_close(&fixture);
     FORCE_FAILURE();
@@ -724,7 +724,7 @@ static int us23_tc12_each_instance_has_its_own_conditions(const TestArguments *a
 
   /* A block's condition reading a field outside it is the block's mistake, whatever uses it. */
   EXPECT(refused(
-    "block Tail { [ @if: valof(mode) == 2; ] t: 8; };\npkt X { id: 8 = 1; mode: 8; Tail; };\n",
+    "block Tail { [ @if: valof(mode) == 2; ] t: 8; };\npkt X { id: 8 := 1; mode: 8; Tail; };\n",
     7,
     "names no field in 'Tail'"
   ));
@@ -744,13 +744,13 @@ static int us23_tc13_an_imported_block_keeps_its_conditions(const TestArguments 
     args,
     "flat.fdsl",
     "import \"lib.fdsl\";\n"
-    "pkt A { id: 8 = 0x01; h: Hdr; [ @if: valof(h.kind) != NONE; ] more: 8; };\n"
+    "pkt A { id: 8 := 0x01; h: Hdr; [ @if: valof(h.kind) != NONE; ] more: 8; };\n"
   ));
   EXPECT(write_file(
     args,
     "named.fdsl",
     "import \"lib.fdsl\" as v;\n"
-    "pkt B { id: 8 = 0x02; h: v.Hdr; [ @if: valof(h.kind) == EXT; ] more: 8; };\n"
+    "pkt B { id: 8 := 0x02; h: v.Hdr; [ @if: valof(h.kind) == EXT; ] more: 8; };\n"
   ));
   const char *const files[] = { "flat.fdsl", "named.fdsl" };
   const char *const packets[] = { "A", "B" };

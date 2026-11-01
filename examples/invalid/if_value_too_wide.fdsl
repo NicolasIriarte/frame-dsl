@@ -3,7 +3,7 @@
 # `flag` is one bit, so it is never 2 and `ext` could never be present.
 
 pkt TM_FLAG {
-  id:   8 = 0x63;
+  id:   8 := 0x63;
   flag: 1;
   pad:  7;
   [ @if: valof(flag) == 2; ]

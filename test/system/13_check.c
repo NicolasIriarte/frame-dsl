@@ -70,8 +70,8 @@ static bool write_file(const TestArguments *args, const char *name, const char *
   return true;
 }
 
-static const char BROKEN[] = "pkt TM {\n  id: 8 = 1;\n  len: 8\n  data: valof(len);\n};\n";
-static const char CLEAN[] = "pkt TM {\n  id: 8 = 1;\n  len: 8;\n};\n";
+static const char BROKEN[] = "pkt TM {\n  id: 8 := 1;\n  len: 8\n  data: valof(len);\n};\n";
+static const char CLEAN[] = "pkt TM {\n  id: 8 := 1;\n  len: 8;\n};\n";
 
 static int us13_tc01_an_error_is_one_plain_line(const TestArguments *args) {
   char path[1024];
@@ -100,7 +100,7 @@ static int us13_tc01_an_error_is_one_plain_line(const TestArguments *args) {
 /* The check number goes at the end, where a reader skimming the message does not trip on it. */
 static int us13_tc02_a_check_number_follows_the_message(const TestArguments *args) {
   char path[1024];
-  if (!write_file(args, "wide.fdsl", "pkt TM {\n  id: 4 = 0x1F;\n  rest: 4;\n};\n", path, sizeof(path))) {
+  if (!write_file(args, "wide.fdsl", "pkt TM {\n  id: 4 := 0x1F;\n  rest: 4;\n};\n", path, sizeof(path))) {
     return __LINE__;
   }
   char arguments[1200];
@@ -161,7 +161,7 @@ static int us13_tc04_several_files_are_each_checked(const TestArguments *args) {
 static int us13_tc05_an_imported_problem_names_its_own_file(const TestArguments *args) {
   char library[1024];
   char top[1024];
-  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 = 1\n};\n", library, sizeof(library))
+  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 := 1\n};\n", library, sizeof(library))
       || !write_file(args, "top.fdsl", "import \"lib/link.fdsl\";\npkt TM {\n  h: Header;\n};\n", top, sizeof(top))) {
     return __LINE__;
   }
@@ -179,7 +179,7 @@ static int us13_tc05_an_imported_problem_names_its_own_file(const TestArguments 
 static int us13_tc06_standard_input_is_checked_as_the_named_file(const TestArguments *args) {
   char library[1024];
   char top[1024];
-  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 = 1;\n};\n", library, sizeof(library))
+  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 := 1;\n};\n", library, sizeof(library))
       || !write_file(args, "top.fdsl", "# not what is checked\n", top, sizeof(top))) {
     return __LINE__;
   }
@@ -257,7 +257,7 @@ static int us13_tc08_an_unreadable_file_is_status_2(const TestArguments *args) {
 /* The span is what gets underlined: the whole offending name, not its first character. */
 static int us13_tc09_a_diagnostic_spans_its_token(const TestArguments *args) {
   (void)args;
-  FramedslResult *result = framedsl_load_string("pkt TM {\n  id: 8 = 1;\n  h: Heder;\n};\n", "t.fdsl");
+  FramedslResult *result = framedsl_load_string("pkt TM {\n  id: 8 := 1;\n  h: Heder;\n};\n", "t.fdsl");
   int failure = 0;
   if (framedsl_ok(result) || framedsl_diagnostic_count(result) != 1) {
     failure = __LINE__;
@@ -275,7 +275,7 @@ static int us13_tc09_a_diagnostic_spans_its_token(const TestArguments *args) {
     return failure;
   }
 
-  result = framedsl_load_string("pkt TM {\n  id: 8 = 1;\n  length 8;\n};\n", "t.fdsl");
+  result = framedsl_load_string("pkt TM {\n  id: 8 := 1;\n  length 8;\n};\n", "t.fdsl");
   if (framedsl_ok(result) || framedsl_diagnostic_count(result) < 1) {
     failure = __LINE__;
   } else {
@@ -362,7 +362,7 @@ static int us13_tc10_every_span_is_well_formed(const TestArguments *args) {
 static int us13_tc11_load_source_behaves_as_the_named_file(const TestArguments *args) {
   char library[1024];
   char top[1024];
-  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 = 1;\n};\n", library, sizeof(library))) {
+  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 := 1;\n};\n", library, sizeof(library))) {
     return __LINE__;
   }
   snprintf(top, sizeof(top), "%s/not_saved_yet.fdsl", args->tmp_dir);

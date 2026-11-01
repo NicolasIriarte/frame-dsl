@@ -28,24 +28,24 @@ static const char *const DEFINITION =
   "\n"
   "block Header  { id: 8; sequence: 16; };\n"
   "block Vector3 { x: 16; y: 16; z: 16; };\n"
-  "block Sample  { marker: 4 = 0xA; channel: 4; [ @byte_order: little_endian; ] reading: 16; };\n"
+  "block Sample  { marker: 4 := 0xA; channel: 4; [ @byte_order: little_endian; ] reading: 16; };\n"
   "\n"
-  "pkt TC_SET_LIMIT { id: 8 = 0x02; sequence: 16; channel: 8; limit: 32; };\n"
+  "pkt TC_SET_LIMIT { id: 8 := 0x02; sequence: 16; channel: 8; limit: 32; };\n"
   "\n"
   "pkt TM_BITS {\n"
-  "  id: 8 = 0x10; version: 3; type: 1; flag: 1; apid: 11; seq_flags: 2; seq_count: 14;\n"
+  "  id: 8 := 0x10; version: 3; type: 1; flag: 1; apid: 11; seq_flags: 2; seq_count: 14;\n"
   "  [ @byte_order: little_endian; ] counter: 32;\n"
   "};\n"
   "\n"
-  "pkt TM_PAYLOAD { id: 8 = 0x03; len: 16; data[256]: valof(len) * 8; };\n"
+  "pkt TM_PAYLOAD { id: 8 := 0x03; len: 16; data[256]: valof(len) * 8; };\n"
   "\n"
   "pkt TM_IMU {\n"
-  "  hdr: Header { id = 0x83; };\n"
+  "  hdr: Header { id := 0x83; };\n"
   "  accel: Vector3; gyro: Vector3;\n"
   "  [ @cal: volts; ] bus: 12; [ @cal: ohms; ] sensor: 12;\n"
   "};\n"
   "\n"
-  "pkt TM_SAMPLES { id: 8 = 0x30; count: 8; samples[96]: Sample[valof(count)]; };\n";
+  "pkt TM_SAMPLES { id: 8 := 0x30; count: 8; samples[96]: Sample[valof(count)]; };\n";
 
 /* Elements in the repetition measurements: all the room TM_SAMPLES reserves. */
 #define SAMPLES 32

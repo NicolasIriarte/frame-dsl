@@ -934,7 +934,7 @@ static bool parse_value(Parser *parser, uint64_t *value, const char **name, int 
       written.line,
       written.column,
       0,
-      "a value is written as a bare name, '= HK', since the field's type already says which enum it "
+      "a value is written as a bare name, ':= HK', since the field's type already says which enum it "
       "is from"
     );
     return false;

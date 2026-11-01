@@ -12,7 +12,7 @@
 
 [ @byte_order: little_endian; ]      # the whole packet
 pkt TM_MIXED {
-  marker: 16 = 0xCAFE;               # little_endian, from the packet
+  marker: 16 := 0xCAFE;               # little_endian, from the packet
 
   [ @byte_order: big_endian; ]       # one field, overriding the packet
   count:  32;

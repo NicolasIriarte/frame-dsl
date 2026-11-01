@@ -6,6 +6,6 @@
 @byte_order: big_endian;
 
 pkt FIXED_OVER {
-  hdr:  8 = 0xAA;
+  hdr:  8 := 0xAA;
   body: 8;
 };

@@ -477,7 +477,7 @@ allocated. The alternative was an allocation count that depended on the input.
 ## Composition
 
 A named block is a group of fields declared once at file level and used in packets as an *instance*:
-`hdr: Header { id = 0x02; };`. It exists so that the header every packet in a protocol shares is
+`hdr: Header { id := 0x02; };`. It exists so that the header every packet in a protocol shares is
 written once, and each packet changes only what differs -- almost always the value that identifies it.
 
 **Expanded before anything else sees it.** `compose_file()` runs between the parser and the checks and
@@ -665,7 +665,7 @@ the bytecode see `level: 3;` with a name attached, and a field typed by an enum 
 time a plain one does not. What composition refuses on a block's use -- a value, a reservation, a
 group -- moved there from the parser, since until then it is not known to be a block's.
 
-**Values are bare names.** `type: PktType = HK;` -- the type already says which enum, and qualifying the
+**Values are bare names.** `type: PktType := HK;` -- the type already says which enum, and qualifying the
 name would say it twice. A name is looked up only in the field's own enum, so two enums may share one,
 and a number there is refused: the point of naming a discriminator is that it reads as what it means.
 

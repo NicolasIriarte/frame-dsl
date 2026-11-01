@@ -85,7 +85,7 @@ static double distance(double a, double b) {
   return a > b ? a - b : b - a;
 }
 
-#define PKT "pkt A { id: 8 = 1; [ @cal: k; ] v: 16; };"
+#define PKT "pkt A { id: 8 := 1; [ @cal: k; ] v: 16; };"
 
 static int us10_tc01_lexes_real_literals(const TestArguments *args) {
   (void)args;
@@ -152,7 +152,7 @@ static int us10_tc03_cal_and_inverse_are_not_reserved(const TestArguments *args)
   if (!checks_as("pkt cal { cal: 8 = 1; inverse: 8; };", -1)) {
     return __LINE__;
   }
-  if (!checks_as("cal inverse(cal) = cal * 2; pkt A { id: 8 = 1; [ @cal: inverse; ] v: 8; };", -1)) {
+  if (!checks_as("cal inverse(cal) = cal * 2; pkt A { id: 8 := 1; [ @cal: inverse; ] v: 8; };", -1)) {
     return __LINE__;
   }
   return 0;
@@ -162,9 +162,9 @@ static int us10_tc03_cal_and_inverse_are_not_reserved(const TestArguments *args)
 static int us10_tc04_cal_attaches_only_to_a_field(const TestArguments *args) {
   (void)args;
   const char *sources[] = {
-    "@cal: k;\ncal k(x) = x; pkt A { id: 8 = 1; };",
-    "cal k(x) = x; [ @cal: k; ] pkt A { id: 8 = 1; };",
-    "cal k(x) = x; pkt A { id: 8 = 1; [ @cal: k; ] block { v: 8; }; };",
+    "@cal: k;\ncal k(x) = x; pkt A { id: 8 := 1; };",
+    "cal k(x) = x; [ @cal: k; ] pkt A { id: 8 := 1; };",
+    "cal k(x) = x; pkt A { id: 8 := 1; [ @cal: k; ] block { v: 8; }; };",
   };
   for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
     if (!parse_reports(sources[i], "attaches a calibration to one field")) {
@@ -176,7 +176,7 @@ static int us10_tc04_cal_attaches_only_to_a_field(const TestArguments *args) {
 
 static int us10_tc05_a_width_is_not_a_real(const TestArguments *args) {
   (void)args;
-  if (!parse_reports("pkt A { id: 8 = 1; v: 2.5; };", "not a whole number")) {
+  if (!parse_reports("pkt A { id: 8 := 1; v: 2.5; };", "not a whole number")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -227,10 +227,10 @@ static int us10_tc09_check_20_recursion(const TestArguments *args) {
 
 static int us10_tc10_check_21_a_bit_string_is_not_calibrated(const TestArguments *args) {
   (void)args;
-  if (!checks_as("cal k(x) = x; pkt A { id: 8 = 1; [ @cal: k; ] v: 128; };", 21)) {
+  if (!checks_as("cal k(x) = x; pkt A { id: 8 := 1; [ @cal: k; ] v: 128; };", 21)) {
     return __LINE__;
   }
-  if (!checks_as("cal k(x) = x; pkt A { id: 8 = 1; n: 8; [ @cal: k; ] v[4]: valof(n) * 8; };", 21)) {
+  if (!checks_as("cal k(x) = x; pkt A { id: 8 := 1; n: 8; [ @cal: k; ] v[4]: valof(n) * 8; };", 21)) {
     return __LINE__;
   }
   return 0;

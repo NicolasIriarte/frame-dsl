@@ -5,6 +5,6 @@
 @byte_order: big_endian;
 
 pkt BIT_STRING {
-  h:     8 = 0xAA;
+  h:     8 := 0xAA;
   wide: 72;
 };

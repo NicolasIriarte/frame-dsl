@@ -56,7 +56,7 @@ static int us8_tc01_a_constant_packet_compiles_field_by_field(const TestArgument
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; a: 11; b: 1; c: 4; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; a: 11; b: 1; c: 4; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -86,7 +86,7 @@ static int us8_tc02_a_constant_width_compiles_to_no_program(const TestArguments 
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; a: 4 * 4; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; a: 4 * 4; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -107,7 +107,7 @@ static int us8_tc03_a_valof_width_compiles_to_postfix(const TestArguments *args)
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[8]: valof(n) * 8; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 16; d[8]: valof(n) * 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -137,7 +137,7 @@ static int us8_tc04_constant_subtrees_are_folded(const TestArguments *args) {
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[8]: valof(n) * (4 * 2); };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 16; d[8]: valof(n) * (4 * 2); };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -161,7 +161,7 @@ static int us8_tc05_a_nested_expression_evaluates_correctly(const TestArguments 
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[512]: (valof(n) + 1) * 8; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 16; d[512]: (valof(n) + 1) * 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -198,7 +198,7 @@ static int us8_tc06_every_operator_evaluates(const TestArguments *args) {
   int failure = 0;
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases) && failure == 0; ++i) {
     char source[256];
-    snprintf(source, sizeof(source), "pkt A { h: 8 = 0xAA; n: 16; d[512]: %s; };", cases[i].width);
+    snprintf(source, sizeof(source), "pkt A { h: 8 := 0xAA; n: 16; d[512]: %s; };", cases[i].width);
 
     Compiled compiled;
     if (!compile_source(source, &compiled)) {
@@ -224,7 +224,7 @@ static int us8_tc07_the_stack_depth_is_the_true_maximum(const TestArguments *arg
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[512]: valof(n) * 8 + valof(n) * 8; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 16; d[512]: valof(n) * 8 + valof(n) * 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -249,7 +249,7 @@ static int us8_tc08_a_runaway_width_is_refused(const TestArguments *args) {
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 64; d[8]: valof(n) * 8; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 64; d[8]: valof(n) * 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -271,7 +271,7 @@ static int us8_tc08_a_runaway_width_is_refused(const TestArguments *args) {
   /* And a subtraction that would go below zero, which is what a length field claiming less than the
    * header it counts produces. */
   Compiled second;
-  if (!compile_source("pkt A { h: 8 = 0xAA; n: 16; d[512]: valof(n) * 8 - 32; };", &second)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; n: 16; d[512]: valof(n) * 8 - 32; };", &second)) {
     compiled_free(&second);
     FORCE_FAILURE();
   }
@@ -291,7 +291,7 @@ static int us8_tc09_a_fixed_field_carries_its_value(const TestArguments *args) {
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { h: 8 = 0xAA; a: 8; };", &compiled)) {
+  if (!compile_source("pkt A { h: 8 := 0xAA; a: 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -316,14 +316,14 @@ static int us8_tc10_orders_are_carried_resolved(const TestArguments *args) {
   Compiled inherited;
   Compiled written;
   bool ok = compile_source(
-              "pkt A { h: 8 = 0xAA;\n"
+              "pkt A { h: 8 := 0xAA;\n"
               "  [ @byte_order: little_endian; ]\n"
               "  block { a: 32; };\n"
               "};",
               &inherited
             )
             && compile_source(
-              "pkt A { h: 8 = 0xAA;\n"
+              "pkt A { h: 8 := 0xAA;\n"
               "  [ @byte_order: little_endian; ] a: 32;\n"
               "};",
               &written
@@ -352,7 +352,7 @@ static int us8_tc11_several_packets_compile_independently(const TestArguments *a
   (void)args;
 
   Compiled compiled;
-  if (!compile_source("pkt A { t: 8 = 1; a: 8; };\npkt B { t: 8 = 2; b: 16; c: 8; };", &compiled)) {
+  if (!compile_source("pkt A { t: 8 := 1; a: 8; };\npkt B { t: 8 := 2; b: 16; c: 8; };", &compiled)) {
     compiled_free(&compiled);
     FORCE_FAILURE();
   }
@@ -379,10 +379,10 @@ static int us8_tc12_every_example_compiles(const TestArguments *args) {
    * system -- examples/ is walked by the system tests, which drive the real binary over the real
    * files. */
   const char *sources[] = {
-    "@bit_order: msb_first;\npkt A { h: 8 = 0xAA; n: 32; d[128]: valof(n) * 8; c: 16; };",
-    "pkt A { v: 3 = 0b000; t: 1 = 0b0; f: 1; i: 11; s: 2; q: 14; l: 16;"
+    "@bit_order: msb_first;\npkt A { h: 8 := 0xAA; n: 32; d[128]: valof(n) * 8; c: 16; };",
+    "pkt A { v: 3 := 0b000; t: 1 := 0b0; f: 1; i: 11; s: 2; q: 14; l: 16;"
     " u[65536]: (valof(l) + 1) * 8; };",
-    "pkt A { t: 8 = 1; s: 16; };\npkt B { t: 8 = 2; s: 16; m: 8; };",
+    "pkt A { t: 8 := 1; s: 16; };\npkt B { t: 8 := 2; s: 16; m: 8; };",
   };
 
   int failure = 0;

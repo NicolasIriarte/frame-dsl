@@ -169,7 +169,7 @@ static const char *const SHAPES =
   "block Pair { a: 8; b: 8; };\n"
   "block Item { v: 8; };\n"
   "pkt S {\n"
-  "  id: 8 = 0x20;\n"
+  "  id: 8 := 0x20;\n"
   "  m:  8;\n"
   "  [ @if: valof(m) == 1; ] named: Pair;\n"
   "  [ @if: valof(m) == 2; ] Pair;\n"
@@ -187,7 +187,7 @@ static int us24_tc01_a_condition_shares_its_group(const TestArguments *args) {
         &fixture,
         "cal twice(raw) = raw * 2;\n"
         "pkt L {\n"
-        "  id: 8 = 0x80;\n"
+        "  id: 8 := 0x80;\n"
         "  f:  8;\n"
         "  [ @byte_order: little_endian; @if: valof(f) == 1; ] le: 16;\n"
         "  [ @if: valof(f) == 1; @bit_order: lsb_first; @cal: twice; ] bits: 8;\n"
@@ -224,41 +224,44 @@ static int us24_tc02_a_valof_reads_only_a_field_that_is_there(const TestArgument
   int failure = 0;
   /* A width outside the condition. */
   EXPECT(
-    refused("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] len: 8; d[4]: valof(len) * 8; };\n", 42, "valof(h) == 1")
+    refused("pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] len: 8; d[4]: valof(len) * 8; };\n", 42, "valof(h) == 1")
   );
   /* A count outside it. */
   EXPECT(refused(
-    "block I { v: 8; };\npkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] n: 8; is[4]: I[valof(n)]; };\n", 42, NULL
+    "block I { v: 8; };\npkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] n: 8; is[4]: I[valof(n)]; };\n", 42, NULL
   ));
   /* A condition outside it, and one under a different condition. */
   EXPECT(
-    refused("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] k: 8; [ @if: valof(k) == 2; ] x: 8; };\n", 42, NULL)
+    refused("pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] k: 8; [ @if: valof(k) == 2; ] x: 8; };\n", 42, NULL)
   );
   EXPECT(refused(
-    "pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] k: 8; [ @if: valof(h) == 2; ] block { [ @if: valof(k) == 2; ] x: "
+    "pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] k: 8; [ @if: valof(h) == 2; ] block { [ @if: valof(k) == 2; ] "
+    "x: "
     "8; }; };\n",
     42,
     NULL
   ));
   /* `!=` is a different condition from `==`, whatever the value. */
   EXPECT(refused(
-    "pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] len: 8; [ @if: valof(h) != 1; ] d[4]: valof(len) * 8; };\n",
+    "pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] len: 8; [ @if: valof(h) != 1; ] d[4]: valof(len) * 8; };\n",
     42,
     NULL
   ));
   /* Under the same condition -- in one group, in another group saying the same, and nested deeper. */
-  EXPECT(loads("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] block { len: 8; d[4]: valof(len) * 8; }; };\n"));
-  EXPECT(
-    loads("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] len: 8; [ @if: valof(h) == 1; ] d[4]: valof(len) * 8; };\n")
-  );
+  EXPECT(loads("pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] block { len: 8; d[4]: valof(len) * 8; }; };\n"));
   EXPECT(loads(
-    "pkt T { id: 8 = 1; h: 8; g: 8; [ @if: valof(h) == 1; ] len: 8;\n"
+    "pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] len: 8; [ @if: valof(h) == 1; ] d[4]: valof(len) * 8; };\n"
+  ));
+  EXPECT(loads(
+    "pkt T { id: 8 := 1; h: 8; g: 8; [ @if: valof(h) == 1; ] len: 8;\n"
     "  [ @if: valof(g) == 0; ] block { [ @if: valof(h) == 1; ] d[4]: valof(len) * 8; }; };\n"
   ));
   /* A nested condition reading a field of the part it is in. */
-  EXPECT(loads("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] block { k: 8; [ @if: valof(k) == 2; ] x: 8; }; };\n"));
+  EXPECT(
+    loads("pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] block { k: 8; [ @if: valof(k) == 2; ] x: 8; }; };\n")
+  );
   /* An unconditional field is readable from anywhere. */
-  EXPECT(loads("pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] block { [ @if: valof(id) == 1; ] x: 8; }; };\n"));
+  EXPECT(loads("pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] block { [ @if: valof(id) == 1; ] x: 8; }; };\n"));
   return failure;
 }
 
@@ -266,21 +269,21 @@ static int us24_tc02_a_valof_reads_only_a_field_that_is_there(const TestArgument
 static int us24_tc03_a_conditional_part_is_whole_bytes(const TestArguments *args) {
   (void)args;
   int failure = 0;
-  EXPECT(refused("pkt T { id: 8 = 1; f: 4; [ @if: valof(f) == 1; ] e: 4; p: 4; };\n", 13, "4 bit(s)"));
+  EXPECT(refused("pkt T { id: 8 := 1; f: 4; [ @if: valof(f) == 1; ] e: 4; p: 4; };\n", 13, "4 bit(s)"));
   EXPECT(
-    refused("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] e: 12; [ @if: valof(f) == 2; ] g: 4; };\n", 13, NULL)
+    refused("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] e: 12; [ @if: valof(f) == 2; ] g: 4; };\n", 13, NULL)
   );
   /* Sub-byte fields that make up bytes between them, in one group or in two saying the same. */
-  EXPECT(loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] block { a: 3; b: 5; }; };\n"));
-  EXPECT(loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] a: 3; [ @if: valof(f) == 1; ] b: 5; };\n"));
+  EXPECT(loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] block { a: 3; b: 5; }; };\n"));
+  EXPECT(loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] a: 3; [ @if: valof(f) == 1; ] b: 5; };\n"));
   /* A nested part is its own part: the outer's three bits do not make up the inner's five. */
   EXPECT(refused(
-    "pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] block { a: 3; [ @if: valof(a) == 1; ] b: 5; }; };\n", 13, NULL
+    "pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] block { a: 3; [ @if: valof(a) == 1; ] b: 5; }; };\n", 13, NULL
   ));
-  EXPECT(refused("pkt T { id: 8 = 1; f: 8; n: 8; [ @if: valof(f) == 1; ] d[4]: valof(n) * 3; };\n", 13, NULL));
-  EXPECT(loads("pkt T { id: 8 = 1; f: 8; n: 8; [ @if: valof(f) == 1; ] d[4]: valof(n) * 8; };\n"));
+  EXPECT(refused("pkt T { id: 8 := 1; f: 8; n: 8; [ @if: valof(f) == 1; ] d[4]: valof(n) * 3; };\n", 13, NULL));
+  EXPECT(loads("pkt T { id: 8 := 1; f: 8; n: 8; [ @if: valof(f) == 1; ] d[4]: valof(n) * 8; };\n"));
   /* What every frame carries is still held to whole bytes on its own. */
-  EXPECT(refused("pkt T { id: 8 = 1; f: 4; [ @if: valof(f) == 1; ] e: 8; };\n", 13, NULL));
+  EXPECT(refused("pkt T { id: 8 := 1; f: 4; [ @if: valof(f) == 1; ] e: 8; };\n", 13, NULL));
   return failure;
 }
 
@@ -289,18 +292,18 @@ static int us24_tc04_a_discriminator_is_carried_at_a_known_position(const TestAr
   (void)args;
   int failure = 0;
   EXPECT(
-    refused("pkt T { f: 8; [ @if: valof(f) == 1; ] id: 8 = 1; };\n", 11, "'id' is present only when valof(f) == 1")
+    refused("pkt T { f: 8; [ @if: valof(f) == 1; ] id: 8 := 1; };\n", 11, "'id' is present only when valof(f) == 1")
   );
   EXPECT(refused(
-    "pkt T { f: 8; [ @if: valof(f) == 1; ] e: 16; id: 8 = 1; };\n", 11, "'id' comes after 'e', which is conditional"
+    "pkt T { f: 8; [ @if: valof(f) == 1; ] e: 16; id: 8 := 1; };\n", 11, "'id' comes after 'e', which is conditional"
   ));
-  EXPECT(refused("pkt T { n: 8; d[4]: valof(n) * 8; id: 8 = 1; };\n", 11, "which is sized by another field"));
-  EXPECT(refused("pkt T { f: 8; [ @if: valof(f) == 1; ] block { e: 8; id: 8 = 1; }; };\n", 11, NULL));
+  EXPECT(refused("pkt T { n: 8; d[4]: valof(n) * 8; id: 8 := 1; };\n", 11, "which is sized by another field"));
+  EXPECT(refused("pkt T { f: 8; [ @if: valof(f) == 1; ] block { e: 8; id: 8 := 1; }; };\n", 11, NULL));
   /* One before the first conditional field is enough; one inside a part is written when it is there. */
-  EXPECT(loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] block { sync: 8 = 0xAA; e: 8; }; };\n"));
+  EXPECT(loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] block { sync: 8 := 0xAA; e: 8; }; };\n"));
   Fixture fixture;
   if (!fixture_open(
-        &fixture, "pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] block { sync: 8 = 0xAA; e: 8; }; };\n"
+        &fixture, "pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] block { sync: 8 := 0xAA; e: 8; }; };\n"
       )) {
     fixture_close(&fixture);
     FORCE_FAILURE();
@@ -317,8 +320,8 @@ static int us24_tc05_a_conditional_value_does_not_tell_packets_apart(const TestA
   (void)args;
   int failure = 0;
   EXPECT(refused(
-    "pkt A { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] k: 8 = 1; };\n"
-    "pkt B { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] k: 8 = 2; };\n",
+    "pkt A { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] k: 8 := 1; };\n"
+    "pkt B { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] k: 8 := 2; };\n",
     12,
     NULL
   ));
@@ -326,8 +329,8 @@ static int us24_tc05_a_conditional_value_does_not_tell_packets_apart(const TestA
   Fixture fixture;
   if (!fixture_open(
         &fixture,
-        "pkt A { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] k: 8; };\n"
-        "pkt B { id: 8 = 2; f: 8; [ @if: valof(f) == 1; ] k: 8; };\n"
+        "pkt A { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] k: 8; };\n"
+        "pkt B { id: 8 := 2; f: 8; [ @if: valof(f) == 1; ] k: 8; };\n"
       )) {
     fixture_close(&fixture);
     FORCE_FAILURE();
@@ -345,25 +348,25 @@ static int us24_tc06_a_condition_compares_with_a_value_of_the_fields_type(const 
   const char *const kinds = "enum K: 4 { IDLE; RUN; };\n";
   char source[512];
 
-  snprintf(source, sizeof(source), "%spkt T { id: 8 = 1; k: K; p: 4; [ @if: valof(k) == 1; ] x: 8; };\n", kinds);
+  snprintf(source, sizeof(source), "%spkt T { id: 8 := 1; k: K; p: 4; [ @if: valof(k) == 1; ] x: 8; };\n", kinds);
   EXPECT(refused(source, 39, "write 'RUN' for 1"));
-  snprintf(source, sizeof(source), "%spkt T { id: 8 = 1; k: K; p: 4; [ @if: valof(k) == 9; ] x: 8; };\n", kinds);
+  snprintf(source, sizeof(source), "%spkt T { id: 8 := 1; k: K; p: 4; [ @if: valof(k) == 9; ] x: 8; };\n", kinds);
   EXPECT(refused(source, 39, "not a number"));
-  snprintf(source, sizeof(source), "%spkt T { id: 8 = 1; k: K; p: 4; [ @if: valof(k) == RNU; ] x: 8; };\n", kinds);
+  snprintf(source, sizeof(source), "%spkt T { id: 8 := 1; k: K; p: 4; [ @if: valof(k) == RNU; ] x: 8; };\n", kinds);
   EXPECT(refused(source, 39, "no name 'RNU'"));
   FramedslResult *result = NULL;
   const FramedslDiagnostic *typo = refusal(source, 39, &result);
   EXPECT(typo != NULL && typo->fix_text != NULL && strcmp(typo->fix_text, "RUN") == 0);
   framedsl_result_free(result);
-  EXPECT(refused("pkt T { id: 8 = 1; k: 8; [ @if: valof(k) == RUN; ] x: 8; };\n", 39, "not typed by an enum"));
-  EXPECT(refused("pkt T { id: 8 = 1; k: 4; p: 4; [ @if: valof(k) == 16; ] x: 8; };\n", 8, "can never be 0x10"));
-  EXPECT(loads("pkt T { id: 8 = 1; k: 4; p: 4; [ @if: valof(k) != 15; ] x: 8; };\n"));
-  EXPECT(loads("pkt T { id: 8 = 1; k: 64; [ @if: valof(k) == 0xFFFFFFFFFFFFFFFF; ] x: 8; };\n"));
+  EXPECT(refused("pkt T { id: 8 := 1; k: 8; [ @if: valof(k) == RUN; ] x: 8; };\n", 39, "not typed by an enum"));
+  EXPECT(refused("pkt T { id: 8 := 1; k: 4; p: 4; [ @if: valof(k) == 16; ] x: 8; };\n", 8, "can never be 0x10"));
+  EXPECT(loads("pkt T { id: 8 := 1; k: 4; p: 4; [ @if: valof(k) != 15; ] x: 8; };\n"));
+  EXPECT(loads("pkt T { id: 8 := 1; k: 64; [ @if: valof(k) == 0xFFFFFFFFFFFFFFFF; ] x: 8; };\n"));
   /* A name from another enum is not this one's. */
   snprintf(
     source,
     sizeof(source),
-    "%senum J: 4 { OTHER; };\npkt T { id: 8 = 1; k: K; p: 4; [ @if: valof(k) == OTHER; ] x: 8; };\n",
+    "%senum J: 4 { OTHER; };\npkt T { id: 8 := 1; k: K; p: 4; [ @if: valof(k) == OTHER; ] x: 8; };\n",
     kinds
   );
   EXPECT(refused(source, 39, NULL));
@@ -374,22 +377,23 @@ static int us24_tc06_a_condition_compares_with_a_value_of_the_fields_type(const 
 static int us24_tc07_a_condition_reads_a_scalar_already_read(const TestArguments *args) {
   (void)args;
   int failure = 0;
-  EXPECT(refused("pkt T { id: 8 = 1; [ @if: valof(f) == 1; ] e: 8; f: 8; };\n", 7, "declared later"));
-  EXPECT(refused("pkt T { id: 8 = 1; [ @if: valof(e) == 1; ] e: 8; };\n", 7, "the one it decides"));
-  EXPECT(refused("pkt T { id: 8 = 1; flag: 8; [ @if: valof(flga) == 1; ] e: 8; };\n", 7, "names no field"));
+  EXPECT(refused("pkt T { id: 8 := 1; [ @if: valof(f) == 1; ] e: 8; f: 8; };\n", 7, "declared later"));
+  EXPECT(refused("pkt T { id: 8 := 1; [ @if: valof(e) == 1; ] e: 8; };\n", 7, "the one it decides"));
+  EXPECT(refused("pkt T { id: 8 := 1; flag: 8; [ @if: valof(flga) == 1; ] e: 8; };\n", 7, "names no field"));
   FramedslResult *result = NULL;
   const FramedslDiagnostic *typo =
-    refusal("pkt T { id: 8 = 1; flag: 8; [ @if: valof(flga) == 1; ] e: 8; };\n", 7, &result);
+    refusal("pkt T { id: 8 := 1; flag: 8; [ @if: valof(flga) == 1; ] e: 8; };\n", 7, &result);
   EXPECT(typo != NULL && typo->fix_text != NULL && strcmp(typo->fix_text, "flag") == 0);
   framedsl_result_free(result);
   /* A did-you-mean through an instance offers the part written, not the instance's prefix. */
-  typo = refusal("block H { flag: 8; };\npkt T { id: 8 = 1; h: H; [ @if: valof(h.flga) == 1; ] e: 8; };\n", 7, &result);
+  typo =
+    refusal("block H { flag: 8; };\npkt T { id: 8 := 1; h: H; [ @if: valof(h.flga) == 1; ] e: 8; };\n", 7, &result);
   EXPECT(typo != NULL && typo->fix_text != NULL && strcmp(typo->fix_text, "h.flag") == 0);
   framedsl_result_free(result);
-  EXPECT(refused("pkt T { id: 8 = 1; b: 72; [ @if: valof(b) == 1; ] e: 8; };\n", 16, NULL));
-  EXPECT(refused("block I { v: 8; };\npkt T { id: 8 = 1; is: I[2]; [ @if: valof(is) == 1; ] e: 8; };\n", 16, NULL));
+  EXPECT(refused("pkt T { id: 8 := 1; b: 72; [ @if: valof(b) == 1; ] e: 8; };\n", 16, NULL));
+  EXPECT(refused("block I { v: 8; };\npkt T { id: 8 := 1; is: I[2]; [ @if: valof(is) == 1; ] e: 8; };\n", 16, NULL));
   /* Each mistake in a group's condition is reported once, not once per field it covers. */
-  EXPECT(refused_once("pkt T { id: 8 = 1; [ @if: valof(nope) == 1; ] block { a: 8; b: 8; c: 8; }; };\n", "nope"));
+  EXPECT(refused_once("pkt T { id: 8 := 1; [ @if: valof(nope) == 1; ] block { a: 8; b: 8; c: 8; }; };\n", "nope"));
   return failure;
 }
 
@@ -398,15 +402,15 @@ static int us24_tc08_a_repetition_is_conditional_only_as_a_whole(const TestArgum
   (void)args;
   int failure = 0;
   EXPECT(
-    refused("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 = 1; s: S[2]; };\n", 32, "conditional")
+    refused("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 := 1; s: S[2]; };\n", 32, "conditional")
   );
   EXPECT(refused(
-    "block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 = 1; n: 8; s[8]: S[valof(n)]; };\n", 32, NULL
+    "block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 := 1; n: 8; s[8]: S[valof(n)]; };\n", 32, NULL
   ));
-  EXPECT(loads("block S { k: 8; e: 8; };\npkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] s: S[2]; };\n"));
+  EXPECT(loads("block S { k: 8; e: 8; };\npkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] s: S[2]; };\n"));
   /* A block with a conditional field is still usable once, named or pasted. */
-  EXPECT(loads("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 = 1; s: S; };\n"));
-  EXPECT(loads("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 = 1; S; };\n"));
+  EXPECT(loads("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 := 1; s: S; };\n"));
+  EXPECT(loads("block S { k: 8; [ @if: valof(k) == 1; ] e: 8; };\npkt T { id: 8 := 1; S; };\n"));
   return failure;
 }
 
@@ -414,26 +418,26 @@ static int us24_tc08_a_repetition_is_conditional_only_as_a_whole(const TestArgum
 static int us24_tc09_if_goes_in_front_of_what_may_be_absent(const TestArguments *args) {
   (void)args;
   int failure = 0;
-  EXPECT(refused_once("@if: valof(x) == 1;\npkt T { id: 8 = 1; };\n", "a whole file"));
-  EXPECT(refused_once("[ @if: valof(x) == 1; ] pkt T { id: 8 = 1; };\n", "a packet"));
-  EXPECT(refused_once("[ @if: valof(x) == 1; ] block B { x: 8; };\npkt T { id: 8 = 1; b: B; };\n", "named block"));
+  EXPECT(refused_once("@if: valof(x) == 1;\npkt T { id: 8 := 1; };\n", "a whole file"));
+  EXPECT(refused_once("[ @if: valof(x) == 1; ] pkt T { id: 8 := 1; };\n", "a packet"));
+  EXPECT(refused_once("[ @if: valof(x) == 1; ] block B { x: 8; };\npkt T { id: 8 := 1; b: B; };\n", "named block"));
   EXPECT(
-    refused_once("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; @if: valof(f) == 2; ] e: 8; };\n", "written twice")
+    refused_once("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; @if: valof(f) == 2; ] e: 8; };\n", "written twice")
   );
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: f == 1; ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) = 1; ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) ! 1; ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == ; ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1 ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) + 1 == 1; ] e: 8; };\n"));
-  EXPECT(!loads("enum K: 8 { A; };\npkt T { id: 8 = 1; f: K; [ @if: valof(f) == K.A; ] e: 8; };\n"));
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1.5; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: f == 1; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) = 1; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) ! 1; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == ; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1 ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) + 1 == 1; ] e: 8; };\n"));
+  EXPECT(!loads("enum K: 8 { A; };\npkt T { id: 8 := 1; f: K; [ @if: valof(f) == K.A; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1.5; ] e: 8; };\n"));
   /* Nothing to apply to. */
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) == 1; ] };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) == 1; ] };\n"));
   /* In front of an enum's declaration, as any group is. */
-  EXPECT(!loads("[ @if: valof(f) == 1; ] enum K: 8 { A; };\npkt T { id: 8 = 1; };\n"));
+  EXPECT(!loads("[ @if: valof(f) == 1; ] enum K: 8 { A; };\npkt T { id: 8 := 1; };\n"));
   /* The unknown-attribute message lists it. */
-  EXPECT(refused_once("pkt T { id: 8 = 1; [ @iff: valof(id) == 1; ] e: 8; };\n", "'cal' and 'if'"));
+  EXPECT(refused_once("pkt T { id: 8 := 1; [ @iff: valof(id) == 1; ] e: 8; };\n", "'cal' and 'if'"));
   return failure;
 }
 
@@ -441,10 +445,10 @@ static int us24_tc09_if_goes_in_front_of_what_may_be_absent(const TestArguments 
 static int us24_tc10_a_field_may_still_be_called_if(const TestArguments *args) {
   (void)args;
   int failure = 0;
-  EXPECT(loads("pkt T { if: 8 = 1; [ @if: valof(if) == 1; ] e: 8; };\n"));
-  EXPECT(loads("block if { if: 8; };\npkt T { id: 8 = 1; i: if; [ @if: valof(i.if) == 2; ] e: 8; };\n"));
+  EXPECT(loads("pkt T { if: 8 := 1; [ @if: valof(if) == 1; ] e: 8; };\n"));
+  EXPECT(loads("block if { if: 8; };\npkt T { id: 8 := 1; i: if; [ @if: valof(i.if) == 2; ] e: 8; };\n"));
   /* `==` written apart is two `=`, which no declaration takes. */
-  EXPECT(!loads("pkt T { id: 8 = 1; f: 8; [ @if: valof(f) = = 1; ] e: 8; };\n"));
+  EXPECT(!loads("pkt T { id: 8 := 1; f: 8; [ @if: valof(f) = = 1; ] e: 8; };\n"));
   return failure;
 }
 
@@ -489,7 +493,7 @@ static int us24_tc11_a_conditional_field_describes_its_condition(const TestArgum
   /* Nested deep, a description stops growing and says so: it would otherwise grow with the square of
    * the depth, every level holding all of the ones above it. */
   static char deep[8192];
-  size_t used = (size_t)snprintf(deep, sizeof(deep), "pkt D { id: 8 = 1; f: 8;\n");
+  size_t used = (size_t)snprintf(deep, sizeof(deep), "pkt D { id: 8 := 1; f: 8;\n");
   for (int i = 0; i < 60; ++i) {
     used += (size_t)snprintf(deep + used, sizeof(deep) - used, "[ @if: valof(f) != %d; ] block {\n", i);
   }
@@ -522,7 +526,7 @@ static int us24_tc12_the_cli_shows_conditions_and_absent_fields(const TestArgume
     "cond.fdsl",
     "enum K: 4 { IDLE; RUN; };\n"
     "pkt T {\n"
-    "  id: 8 = 0x10;\n"
+    "  id: 8 := 0x10;\n"
     "  k:  K;\n"
     "  f:  4;\n"
     "  [@if:valof(k)!=IDLE;] e: 8;\n"
@@ -556,11 +560,11 @@ static int us24_tc12_the_cli_shows_conditions_and_absent_fields(const TestArgume
   EXPECT(run_capture(command, output, sizeof(output)) == 0);
 
   EXPECT(
-    write_file(args, "bad.fdsl", "pkt T { id: 8 = 1; h: 8; [ @if: valof(h) == 1; ] n: 8; d[4]: valof(n) * 8; };\n")
+    write_file(args, "bad.fdsl", "pkt T { id: 8 := 1; h: 8; [ @if: valof(h) == 1; ] n: 8; d[4]: valof(n) * 8; };\n")
   );
   snprintf(command, sizeof(command), "%s %s/bad.fdsl --check 2>&1", FRAMEDSL_BIN, args->tmp_dir);
   EXPECT(run_capture(command, output, sizeof(output)) == 1);
-  EXPECT(strstr(output, "bad.fdsl:1:62: error:") != NULL && strstr(output, "[check 42]") != NULL);
+  EXPECT(strstr(output, "bad.fdsl:1:63: error:") != NULL && strstr(output, "[check 42]") != NULL);
   return failure;
 }
 
@@ -572,9 +576,9 @@ static const char *const RANDOM =
   "  [ @if: valof(flags) != 0; ] block { n: 8; [ @if: valof(n) == 3; @byte_order: little_endian; ] y: 16; }; };\n"
   "block H { type: 8; f: 8; [ @if: valof(type) == 0x41; ] ext: 8; };\n"
   "block Pt { a: 8; [ @bit_order: lsb_first; ] b: 8; };\n"
-  "pkt C1 { id: 8 = 0x40; flag: 1; pad: 7; [ @if: valof(flag) == 1; ] o: Opt; [ @if: valof(flag) != 1; ] Pt;\n"
+  "pkt C1 { id: 8 := 0x40; flag: 1; pad: 7; [ @if: valof(flag) == 1; ] o: Opt; [ @if: valof(flag) != 1; ] Pt;\n"
   "  len: 8; [ @if: valof(len) != 0; ] d[32]: valof(len) * 8; };\n"
-  "pkt C2 { h: H { type = 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
+  "pkt C2 { h: H { type := 0x41; }; c: 8; [ @if: valof(h.f) == 1; ] pts[16]: Pt[valof(c)];\n"
   "  [ @if: valof(h.f) == 2; @byte_order: little_endian; ] w: 32; tail: 8; };\n";
 
 static uint64_t next_random(uint64_t *state) {

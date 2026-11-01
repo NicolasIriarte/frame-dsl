@@ -14,6 +14,6 @@ block Header {
 };
 
 pkt TM_EVENT {
-  hdr:  Header { type = EVNT; };
+  hdr:  Header { type := EVNT; };
   code: 8;
 };

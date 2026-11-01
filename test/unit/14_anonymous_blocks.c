@@ -80,7 +80,7 @@ static const char *reported(const char *source, int wanted, int *line, int *colu
 static int us14_tc01_the_fields_keep_their_own_names(const TestArguments *args) {
   (void)args;
   const char *const braced[] = { "id", "sequence", "result", NULL };
-  if (!composes_to(HEADER "pkt P { Header { id = 0x82; }; result: 8; };\n", braced)) {
+  if (!composes_to(HEADER "pkt P { Header { id := 0x82; }; result: 8; };\n", braced)) {
     return __LINE__;
   }
   /* Without overrides, braces or none. */
@@ -90,7 +90,7 @@ static int us14_tc01_the_fields_keep_their_own_names(const TestArguments *args) 
   }
   /* And the named form is unchanged beside it. */
   const char *const named[] = { "hdr.id", "hdr.sequence", "result", NULL };
-  if (!composes_to(HEADER "pkt P { hdr: Header { id = 0x82; }; result: 8; };\n", named)) {
+  if (!composes_to(HEADER "pkt P { hdr: Header { id := 0x82; }; result: 8; };\n", named)) {
     return __LINE__;
   }
   return 0;
@@ -99,7 +99,7 @@ static int us14_tc01_the_fields_keep_their_own_names(const TestArguments *args) 
 static int us14_tc02_overrides_fix_the_pasted_fields(const TestArguments *args) {
   (void)args;
   Composed composed;
-  compose_source(HEADER "pkt P { Header { id = 0x82; }; };\n", &composed);
+  compose_source(HEADER "pkt P { Header { id := 0x82; }; };\n", &composed);
   int failure = 0;
   if (!composed.composed) {
     failure = __LINE__;
@@ -116,7 +116,7 @@ static int us14_tc02_overrides_fix_the_pasted_fields(const TestArguments *args) 
 
   int line = 0;
   int column = 0;
-  const char *message = reported(HEADER "pkt P { Header { nope = 1; }; };\n", 25, &line, &column);
+  const char *message = reported(HEADER "pkt P { Header { nope := 1; }; };\n", 25, &line, &column);
   failure = message == NULL || strstr(message, "no field 'nope'") == NULL ? __LINE__ : 0;
   return failure;
 }
@@ -127,14 +127,14 @@ static int us14_tc03_a_block_can_paste_in_another(const TestArguments *args) {
   (void)args;
   const char *const want[] = { "f.id", "f.sequence", "f.crc", "tail", NULL };
   if (!composes_to(
-        HEADER "block Framed { Header { id = 0x10; }; crc: 16; };\n"
-               "pkt P { f: Framed { id = 0x12; }; tail: 8; };\n",
+        HEADER "block Framed { Header { id := 0x10; }; crc: 16; };\n"
+               "pkt P { f: Framed { id := 0x12; }; tail: 8; };\n",
         want
       )) {
     return __LINE__;
   }
   const char *const flat[] = { "id", "sequence", "crc", NULL };
-  if (!composes_to(HEADER "block Framed { Header; crc: 16; };\npkt P { Framed { id = 0x11; }; };\n", flat)) {
+  if (!composes_to(HEADER "block Framed { Header; crc: 16; };\npkt P { Framed { id := 0x11; }; };\n", flat)) {
     return __LINE__;
   }
   return 0;
@@ -144,7 +144,7 @@ static int us14_tc04_a_clash_with_an_earlier_field_is_reported_at_the_use(const 
   (void)args;
   int line = 0;
   int column = 0;
-  const char *message = reported(HEADER "pkt P {\n  sequence: 8;\n  Header { id = 1; };\n};\n", 2, &line, &column);
+  const char *message = reported(HEADER "pkt P {\n  sequence: 8;\n  Header { id := 1; };\n};\n", 2, &line, &column);
   int failure = 0;
   if (message == NULL || line != 4 || column != 3) {
     failure = __LINE__;
@@ -158,7 +158,7 @@ static int us14_tc05_a_clash_with_a_later_field_is_reported_at_the_use(const Tes
   (void)args;
   int line = 0;
   int column = 0;
-  const char *message = reported(HEADER "pkt P {\n  Header { id = 1; };\n  sequence: 8;\n};\n", 2, &line, &column);
+  const char *message = reported(HEADER "pkt P {\n  Header { id := 1; };\n  sequence: 8;\n};\n", 2, &line, &column);
   int failure = message == NULL || line != 3 || strstr(message, "line 4") == NULL ? __LINE__ : 0;
   return failure;
 }
@@ -168,7 +168,7 @@ static int us14_tc06_two_pastes_that_clash_name_each_other(const TestArguments *
   (void)args;
   int line = 0;
   int column = 0;
-  const char *message = reported(HEADER "pkt P {\n  Header { id = 1; };\n  Header;\n};\n", 2, &line, &column);
+  const char *message = reported(HEADER "pkt P {\n  Header { id := 1; };\n  Header;\n};\n", 2, &line, &column);
   int failure = message == NULL || line != 4 || strstr(message, "line 3") == NULL ? __LINE__ : 0;
   if (failure != 0) {
     return failure;
@@ -176,7 +176,7 @@ static int us14_tc06_two_pastes_that_clash_name_each_other(const TestArguments *
 
   /* Inside a block's declaration too, where the block is checked on its own. */
   message =
-    reported(HEADER "block Outer {\n  id: 4;\n  Header;\n};\npkt P { o: Outer; x: 8 = 1; };\n", 2, &line, &column);
+    reported(HEADER "block Outer {\n  id: 4;\n  Header;\n};\npkt P { o: Outer; x: 8 := 1; };\n", 2, &line, &column);
   failure = message == NULL || line != 4 || strstr(message, "'Outer'") == NULL ? __LINE__ : 0;
   return failure;
 }
@@ -186,7 +186,7 @@ static int us14_tc07_a_name_that_is_not_a_block(const TestArguments *args) {
   (void)args;
   int line = 0;
   int column = 0;
-  const char *message = reported("pkt P { id: 8 = 1; seq; };\n", 23, &line, &column);
+  const char *message = reported("pkt P { id: 8 := 1; seq; };\n", 23, &line, &column);
   int failure = message == NULL || strstr(message, "'seq: 8;'") == NULL ? __LINE__ : 0;
   return failure;
 }
@@ -196,7 +196,7 @@ static int us14_tc07_a_name_that_is_not_a_block(const TestArguments *args) {
 static int us14_tc08_attributes_in_front_are_refused(const TestArguments *args) {
   (void)args;
   Composed composed;
-  compose_source(HEADER "pkt P { [ @byte_order: little_endian; ] Header { id = 1; }; };\n", &composed);
+  compose_source(HEADER "pkt P { [ @byte_order: little_endian; ] Header { id := 1; }; };\n", &composed);
   bool found = false;
   for (size_t i = 0; i < composed.diags.count; ++i) {
     found |= strstr(composed.diags.items[i].message, "layout is fixed where the block is declared") != NULL;
@@ -210,7 +210,7 @@ static int us14_tc09_a_block_used_only_anonymously_is_used(const TestArguments *
   (void)args;
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse(HEADER "block Spare { s: 8; };\npkt P { Header { id = 1; }; };\n", &diags);
+  AstFile *file = parse(HEADER "block Spare { s: 8; };\npkt P { Header { id := 1; }; };\n", &diags);
   size_t parsed = diags.count;
   if (file != NULL) {
     lint_unused(file, &diags);
@@ -229,7 +229,7 @@ static int us14_tc10_the_formatter_writes_one_plain_line(const TestArguments *ar
   DiagList diags;
   diag_init(&diags);
   char *formatted = format_source(
-    HEADER "pkt P {\n  a_long_name: 8;\n  Header{id=1;}\n  ;\n  x : 4;\n  vendor . Header;\n};\n", &diags
+    HEADER "pkt P {\n  a_long_name: 8;\n  Header{id:=1;}\n  ;\n  x : 4;\n  vendor . Header;\n};\n", &diags
   );
   const char *want =
     "block Header {\n"
@@ -239,7 +239,7 @@ static int us14_tc10_the_formatter_writes_one_plain_line(const TestArguments *ar
     "\n"
     "pkt P {\n"
     "  a_long_name: 8;\n"
-    "  Header { id = 1; };\n"
+    "  Header { id := 1; };\n"
     "  x:           4;\n"
     "  vendor.Header;\n"
     "};\n";
@@ -262,7 +262,7 @@ static bool token_is(const SemanticToken *tokens, size_t count, const char *text
 static int us14_tc11_the_language_server_highlights_the_block_name(const TestArguments *args) {
   (void)args;
   size_t count = 0;
-  SemanticToken *tokens = semantic_tokens("pkt P {\n  Header { id = 1; };\n  vendor.Frame;\n  crc: 16;\n};\n", &count);
+  SemanticToken *tokens = semantic_tokens("pkt P {\n  Header { id := 1; };\n  vendor.Frame;\n  crc: 16;\n};\n", &count);
   int failure = 0;
   if (tokens == NULL) {
     failure = __LINE__;

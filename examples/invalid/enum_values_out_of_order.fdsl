@@ -12,6 +12,6 @@ enum State: 4 {
 };
 
 pkt TM_STATE {
-  id:    4 = 0x3;
+  id:    4 := 0x3;
   state: State;
 };

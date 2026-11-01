@@ -68,7 +68,7 @@ static int us22_tc01_a_repeated_blocks_element_has_names_too(const TestArguments
   const char *source =
     "enum PowerState: 1 { OFF; ON; };\n"
     "block Channel { power: PowerState; level: 7; };\n"
-    "pkt TM { id: 8 = 0x30; ch: Channel[2]; };\n";
+    "pkt TM { id: 8 := 0x30; ch: Channel[2]; };\n";
   if (!fixture_open(&fixture, source)) {
     fixture_close(&fixture);
     return __LINE__;
@@ -96,7 +96,7 @@ static int us22_tc02_the_emitted_c_names_every_value(const TestArguments *args) 
   const char *source =
     "enum TxLevel: 3 { OFF; LOW; MID; HIGH; MAX = 7; };\n"
     "enum Big: 64 { LOW; TOP = 0xFFFFFFFFFFFFFFF0; };\n"
-    "pkt P { id: 5 = 1; level: TxLevel; big: Big; };\n";
+    "pkt P { id: 5 := 1; level: TxLevel; big: Big; };\n";
   if (!fixture_open(&fixture, source)) {
     fixture_close(&fixture);
     return __LINE__;
@@ -155,10 +155,10 @@ static int us22_tc03_the_formatter_lays_an_enum_out(const TestArguments *args) {
     "};\n"
     "\n"
     "pkt P {\n"
-    "  id: 6 = 1;\n"
-    "  e:  E = B;\n"
+    "  id: 6 := 1;\n"
+    "  e:  E := B;\n"
     "};\n";
-  if (framedsl_format("enum E:2{A;B=2;CHUNK=3;};pkt P{id:6=1;e:E=B;};", &out) != FRAMEDSL_OK
+  if (framedsl_format("enum E:2{A;B=2;CHUNK=3;};pkt P{id:6:=1;e:E:=B;};", &out) != FRAMEDSL_OK
       || strcmp(out, want) != 0) {
     free(out);
     return __LINE__;
@@ -172,7 +172,7 @@ static int us22_tc03_the_formatter_lays_an_enum_out(const TestArguments *args) {
 
 static int us22_tc04_an_enum_nothing_uses_is_a_warning(const TestArguments *args) {
   (void)args;
-  FramedslResult *result = framedsl_load_string("enum Spare: 2 {\n  A;\n};\npkt P { id: 8 = 1; };\n", "e.fdsl");
+  FramedslResult *result = framedsl_load_string("enum Spare: 2 {\n  A;\n};\npkt P { id: 8 := 1; };\n", "e.fdsl");
   const FramedslDiagnostic *warning = framedsl_diagnostic_count(result) == 1 ? framedsl_diagnostic(result, 0) : NULL;
   int failure = 0;
   if (!framedsl_ok(result) || warning == NULL || warning->check != 30 || warning->severity != FRAMEDSL_SEVERITY_WARNING

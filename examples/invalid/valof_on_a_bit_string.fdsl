@@ -5,7 +5,7 @@
 # not a rule anybody could predict from reading the file.
 
 pkt TM_WIDE_LENGTH {
-  hdr:      8 = 0xAA;
+  hdr:      8 := 0xAA;
   len:      128;
   data[64]: valof(len) * 8;
 };

@@ -16,9 +16,9 @@
 @byte_order: big_endian;
 
 block Header {
-  id:       8;        # left open: every packet fixes its own
+  id:       8;         # left open: every packet fixes its own
   sequence: 16;
-  version:  4 = 0x1;  # fixed by the block, the same everywhere unless a use says otherwise
+  version:  4 := 0x1;  # fixed by the block, the same everywhere unless a use says otherwise
   flags:    4;
 };
 
@@ -36,28 +36,28 @@ block Sample {
 };
 
 pkt TC_SET_LIMIT {
-  hdr:     Header { id = 0x02; };
+  hdr:     Header { id := 0x02; };
   channel: 8;
   limit:   32;
 };
 
 pkt TM_ACK {
-  hdr:    Header { id = 0x81; };
+  hdr:    Header { id := 0x81; };
   result: 8;
 };
 
 pkt TM_IMU {
-  hdr:   Header { id = 0x83; flags = 0x3; };
+  hdr:   Header { id := 0x83; flags := 0x3; };
   accel: Vector3;  # the same block twice: that is why an instance has a name
   gyro:  Vector3;
 };
 
 pkt TM_SAMPLE {
-  hdr:    Header { id = 0x84; version = 0x2; };
-  sample: Sample { axes.z = 0; };
+  hdr:    Header { id := 0x84; version := 0x2; };
+  sample: Sample { axes.z := 0; };
 };
 
 pkt TM_STATUS {
-  Header { id = 0x85; };  # pasted: its fields are TM_STATUS.id, TM_STATUS.sequence, ...
+  Header { id := 0x85; };  # pasted: its fields are TM_STATUS.id, TM_STATUS.sequence, ...
   mode: 8;
 };

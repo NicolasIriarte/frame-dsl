@@ -11,7 +11,7 @@
 @byte_order: big_endian;
 
 pkt TM_ODD_PAYLOAD {
-  header:       8 = 0xAA;
+  header:       8 := 0xAA;
   count:        32;
   payload[384]: valof(count) * 3;
 };

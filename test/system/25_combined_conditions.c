@@ -104,7 +104,7 @@ static int us25_tc01_and_binds_tighter_than_or(const TestArguments *args) {
   if (!fixture_open(
         &fixture,
         "pkt P {\n"
-        "  id: 8 = 0x5A;\n"
+        "  id: 8 := 0x5A;\n"
         "  a: 1; b: 1; c: 1; pad: 5;\n"
         "  [ @if: valof(a) == 1 || valof(b) == 1 && valof(c) == 1; ] x: 8;\n"
         "  [ @if: (valof(a) == 1 || valof(b) == 1) && valof(c) == 1; ] y: 8;\n"
@@ -137,7 +137,7 @@ static int us25_tc02_orderings_compare_with_a_number(const TestArguments *args) 
   if (!fixture_open(
         &fixture,
         "pkt P {\n"
-        "  id: 8 = 0x5A;\n"
+        "  id: 8 := 0x5A;\n"
         "  v: 4; pad: 4;\n"
         "  [ @if: valof(v) < 5; ]  lt: 8;\n"
         "  [ @if: valof(v) <= 5; ] le: 8;\n"
@@ -172,7 +172,7 @@ static int us25_tc03_a_mask_tests_bits_of_a_field(const TestArguments *args) {
   if (!fixture_open(
         &fixture,
         "pkt P {\n"
-        "  id: 8 = 0x5A;\n"
+        "  id: 8 := 0x5A;\n"
         "  flags: 8;\n"
         "  [ @if: valof(flags) & 0x4 != 0; ]    bit2: 8;\n"
         "  [ @if: valof(flags) & 0xC == 0x8; ]  bits32: 8;\n"
@@ -210,7 +210,7 @@ static int us25_tc04_an_enum_field_is_compared_only_for_equality(const TestArgum
   };
   for (size_t i = 0; i < sizeof(accepted) / sizeof(*accepted); ++i) {
     snprintf(
-      source, sizeof(source), "%spkt P { id: 8 = 1; kind: Kind; n: 6; [ @if: %s; ] x: 8; };\n", KIND, accepted[i]
+      source, sizeof(source), "%spkt P { id: 8 := 1; kind: Kind; n: 6; [ @if: %s; ] x: 8; };\n", KIND, accepted[i]
     );
     EXPECT(loads(source));
   }
@@ -223,7 +223,7 @@ static int us25_tc04_an_enum_field_is_compared_only_for_equality(const TestArgum
   };
   for (size_t i = 0; i < sizeof(refused_here) / sizeof(*refused_here); ++i) {
     snprintf(
-      source, sizeof(source), "%spkt P { id: 8 = 1; kind: Kind; n: 6; [ @if: %s; ] x: 8; };\n", KIND, refused_here[i]
+      source, sizeof(source), "%spkt P { id: 8 := 1; kind: Kind; n: 6; [ @if: %s; ] x: 8; };\n", KIND, refused_here[i]
     );
     EXPECT(refused(source, 43, "'valof(kind) == IDLE || valof(kind) == HK'"));
   }
@@ -231,7 +231,7 @@ static int us25_tc04_an_enum_field_is_compared_only_for_equality(const TestArgum
   snprintf(
     source,
     sizeof(source),
-    "%sblock H { kind: Kind; n: 6; };\npkt P { id: 8 = 1; hdr: H; [ @if: valof(hdr.kind) > HK; ] x: 8; };\n",
+    "%sblock H { kind: Kind; n: 6; };\npkt P { id: 8 := 1; hdr: H; [ @if: valof(hdr.kind) > HK; ] x: 8; };\n",
     KIND
   );
   EXPECT(refused(source, 43, "'valof(hdr.kind) == IDLE"));
@@ -245,19 +245,19 @@ static int us25_tc05_numbers_fit_the_field_they_are_compared_with(const TestArgu
   (void)args;
   int failure = 0;
   EXPECT(
-    refused("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) & 0x10 == 0; ] x: 8; };\n", 8, "masking it with 0x10")
+    refused("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) & 0x10 == 0; ] x: 8; };\n", 8, "masking it with 0x10")
   );
-  EXPECT(refused("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) & 0x4 == 0x8; ] x: 8; };\n", 8, "never true"));
-  EXPECT(refused("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) & 0x4 != 0x8; ] x: 8; };\n", 8, "always true"));
-  EXPECT(refused("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) > 16; ] x: 8; };\n", 8, "can never be 0x10"));
-  EXPECT(refused("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) == 1 || valof(f) >= 99; ] x: 8; };\n", 8, NULL));
-  EXPECT(loads("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) & 0xC < 0x6; ] x: 8; };\n"));
+  EXPECT(refused("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) & 0x4 == 0x8; ] x: 8; };\n", 8, "never true"));
+  EXPECT(refused("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) & 0x4 != 0x8; ] x: 8; };\n", 8, "always true"));
+  EXPECT(refused("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) > 16; ] x: 8; };\n", 8, "can never be 0x10"));
+  EXPECT(refused("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) == 1 || valof(f) >= 99; ] x: 8; };\n", 8, NULL));
+  EXPECT(loads("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) & 0xC < 0x6; ] x: 8; };\n"));
   /* A mask is a number, not a name, and the operator after it is still a comparison. */
-  EXPECT(!loads("enum K: 4 { A; B; };\npkt P { id: 8 = 1; f: 4; k: K; [ @if: valof(f) & A == 0; ] x: 8; };\n"));
-  EXPECT(!loads("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) | 1 == 1; ] x: 8; };\n"));
-  EXPECT(!loads("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: valof(f) == 1 &&; ] x: 8; };\n"));
-  EXPECT(!loads("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: (valof(f) == 1; ] x: 8; };\n"));
-  EXPECT(!loads("pkt P { id: 8 = 1; f: 4; pad: 4; [ @if: !(valof(f) == 1); ] x: 8; };\n"));
+  EXPECT(!loads("enum K: 4 { A; B; };\npkt P { id: 8 := 1; f: 4; k: K; [ @if: valof(f) & A == 0; ] x: 8; };\n"));
+  EXPECT(!loads("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) | 1 == 1; ] x: 8; };\n"));
+  EXPECT(!loads("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: valof(f) == 1 &&; ] x: 8; };\n"));
+  EXPECT(!loads("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: (valof(f) == 1; ] x: 8; };\n"));
+  EXPECT(!loads("pkt P { id: 8 := 1; f: 4; pad: 4; [ @if: !(valof(f) == 1); ] x: 8; };\n"));
   return failure;
 }
 
@@ -267,7 +267,7 @@ static int us25_tc05_numbers_fit_the_field_they_are_compared_with(const TestArgu
 static int us25_tc06_conditions_are_compared_by_their_terms(const TestArguments *args) {
   (void)args;
   int failure = 0;
-  const char *const head = "pkt P { id: 8 = 1; f: 4; h: 4;\n";
+  const char *const head = "pkt P { id: 8 := 1; f: 4; h: 4;\n";
   char source[1024];
 
 #define WITH(body) (snprintf(source, sizeof(source), "%s%s};\n", head, body), source)
@@ -311,7 +311,7 @@ static int us25_tc06_conditions_are_compared_by_their_terms(const TestArguments 
 static const char *const TELEMETRY =
   "enum Kind: 2 { IDLE; HK; EVENT; DUMP; };\n"
   "pkt T {\n"
-  "  id:      8 = 0x7E;\n"
+  "  id:      8 := 0x7E;\n"
   "  version: 4;\n"
   "  flags:   4;\n"
   "  kind:    Kind;\n"
@@ -448,7 +448,9 @@ static int us25_tc08_the_tools_show_combined_conditions(const TestArguments *arg
   /* The formatter spaces every operator and keeps the parentheses written, redundant or not. */
   char *out = NULL;
   EXPECT(
-    framedsl_format("pkt P { id: 8 = 1; f: 8;\n[ @if: (valof(f)&0x4!=0||valof(f)<=3)&&(valof(f)>1); ] x: 8; };\n", &out)
+    framedsl_format(
+      "pkt P { id: 8 := 1; f: 8;\n[ @if: (valof(f)&0x4!=0||valof(f)<=3)&&(valof(f)>1); ] x: 8; };\n", &out
+    )
     == FRAMEDSL_OK
   );
   EXPECT(out != NULL && strstr(out, "[ @if: (valof(f) & 0x4 != 0 || valof(f) <= 3) && (valof(f) > 1); ]") != NULL);

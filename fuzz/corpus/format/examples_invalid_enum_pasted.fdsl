@@ -9,6 +9,6 @@ enum PowerState: 1 {
 };
 
 pkt TM_POWER {
-  id: 7 = 0x21;
+  id: 7 := 0x21;
   PowerState;
 };

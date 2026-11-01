@@ -21,13 +21,13 @@
 @byte_order: big_endian;
 
 pkt TM_SPACE_PACKET {
-  version:          3 = 0b000;  # fixed: the only version the standard defines
-  type:             1 = 0b0;    # fixed: 0 is telemetry, 1 is telecommand
-  sec_hdr_flag:     1;          # whether a secondary header follows this one
-  apid:             11;         # application process identifier
-  seq_flags:        2;          # standalone, first, continuation or last segment
-  seq_count:        14;         # sequence count, or a name when seq_flags says so
-  data_length:      16;         # octets in the data field, minus one
+  version:          3 := 0b000;  # fixed: the only version the standard defines
+  type:             1 := 0b0;    # fixed: 0 is telemetry, 1 is telecommand
+  sec_hdr_flag:     1;           # whether a secondary header follows this one
+  apid:             11;          # application process identifier
+  seq_flags:        2;           # standalone, first, continuation or last segment
+  seq_count:        14;          # sequence count, or a name when seq_flags says so
+  data_length:      16;          # octets in the data field, minus one
 
   user_data[65536]: (valof(data_length) + 1) * 8;
 };

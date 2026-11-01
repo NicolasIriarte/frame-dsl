@@ -11,7 +11,7 @@ enum Kind: 2 {
 };
 
 pkt TM_KIND {
-  id:   8 = 0x64;
+  id:   8 := 0x64;
   kind: Kind;
   pad:  6;
   [ @if: valof(kind) >= EVENT; ]

@@ -7,7 +7,7 @@
 @byte_order: big_endian;
 
 pkt BIT_ORDER {
-  h: 8 = 0xAA;
+  h: 8 := 0xAA;
   a: 8;
 
   [ @bit_order: lsb_first; ]

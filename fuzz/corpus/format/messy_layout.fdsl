@@ -10,7 +10,7 @@
 cal  f( x )=-x*2+( 3-x )/4 inverse(y)=y ;
 [@byte_order:big_endian;]
 pkt	TM_A{
-	id:8=0xAA;   # the id
+	id:8:=0xAA;   # the id
   # standalone inside
 
 
@@ -21,7 +21,7 @@ pkt	TM_A{
   block {
       x:8;
   };
-  h : l . Header {id=1;flags=0x3 ;};
+  h : l . Header {id:=1;flags:=0x3 ;};
 
 
 };

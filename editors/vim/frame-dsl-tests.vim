@@ -88,7 +88,7 @@ endfunction
 " A block pasted in without an instance name is a block, whether or not it has overrides; the `block {'
 " of an attribute scope, the same shape, is still a keyword.
 function! s:TestPastedSyntax() abort
-  call s:Open(['pkt TM {', '  Header { id = 1; };', '  ns.Stamp;', '  block {', '    x: 8;', '  };', '};'])
+  call s:Open(['pkt TM {', '  Header { id := 1; };', '  ns.Stamp;', '  block {', '    x: 8;', '  };', '};'])
   call assert_equal('fdslTypeName', s:GroupAt(2, 3), 'a pasted block')
   call assert_equal('fdslTypeName', s:GroupAt(3, 6), 'a pasted block through a namespace')
   call assert_equal('fdslKeyword', s:GroupAt(4, 3), 'an attribute scope')
@@ -98,7 +98,7 @@ endfunction
 " An enum's name is a type where it is declared and where a field is typed by it, with a value or
 " without; `enum' is a word only where it declares one, so a field may still be called that.
 function! s:TestEnumSyntax() abort
-  call s:Open(['enum TxLevel: 3 {', '  MAX = 7;', '};', 'pkt TM {', '  level: TxLevel = MAX;', '  enum: 8;', '};'])
+  call s:Open(['enum TxLevel: 3 {', '  MAX = 7;', '};', 'pkt TM {', '  level: TxLevel := MAX;', '  enum: 8;', '};'])
   call assert_equal('fdslContextual', s:GroupAt(1, 1), 'enum')
   call assert_equal('fdslPacketName', s:GroupAt(1, 6), 'the enum name')
   call assert_equal('fdslTypeName', s:GroupAt(5, 10), 'an enum used as a type, with a value')
@@ -177,7 +177,7 @@ function! s:TestNeovimLsp() abort
   " after it, and the server checks it standalone rather than refusing it outright -- see
   " manual/editors.md -- but there is then no file for the diagnostic below to be about.
   execute 'edit!' fnameescape(tempname() . '.fdsl')
-  call setline(1, ['pkt A {', '  valof: 8 = 1;', '};'])
+  call setline(1, ['pkt A {', '  valof: 8 := 1;', '};'])
   set filetype=fdsl
   let l:config = luaeval("dofile(vim.fn.getcwd() .. '/editors/vim/lsp/frame_dsl.lua')")
   let l:client = luaeval('vim.lsp.start(_A, {bufnr = 0})', l:config)
