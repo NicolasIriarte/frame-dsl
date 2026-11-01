@@ -87,8 +87,15 @@ and when it is reset, a repetition's fixed members included. A program cannot wr
 holds that value until a decode replaces it with what arrived. It costs a walk over the definition
 where a reset was already walking every slot, and nothing per frame.
 
+**A field with a default starts with it** (#144), the same way and at the same cost. It differs from a
+fixed value only in what happens next: a program may write the slot, and nothing stamps a default on
+encode. `stamp_fixed()` runs on every encode, so that a fixed value holds whatever the storage says; a
+default stamped there would overwrite what a program set, so defaults are written only where a frame
+starts out. From then on a default is in the arena, like any other value, which is why nothing past
+seeding has to know about one.
+
 **There is no "unset".** The arena starts zeroed and a slot keeps whatever was last written to it, so
-a field nobody touched encodes as zero. Tracking which fields a caller had set would cost a bit per
+a field nobody touched encodes as zero, or as its default. Tracking which fields a caller had set would cost a bit per
 field, a rule about what a reset does to it, and an encode that refuses a field somebody quite
 reasonably meant to leave at zero.
 
@@ -179,10 +186,10 @@ alternative is finding out on a live link.
 
 **Values**
 
-8. A fixed value must fit in its field's declared width, and the field must be a scalar -- a bit
-   string is bytes the caller handed over, not a number to hold one against. The same goes for the value
-   a condition compares a field with: one it cannot hold would make the field it decides dead.
-9. A field may not have both `= <value>` and a variable width -- a width unknown until decode time
+8. A fixed value or a default must fit in its field's declared width, and the field must be a scalar --
+   a bit string is bytes the caller handed over, not a number to hold one against. The same goes for the
+   value a condition compares a field with: one it cannot hold would make the field it decides dead.
+9. A field may not have both `:= <value>` and a variable width -- a width unknown until decode time
    cannot also be a discriminator.
 
 **Settings**

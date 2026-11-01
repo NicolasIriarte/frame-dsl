@@ -35,10 +35,10 @@ packet must declare at least one field.
 
 ## Fields
 
-A field is a name, a width **in bits**, and an optional fixed value:
+A field is a name, a width **in bits**, and an optional value, fixed or a default:
 
 ```
-name[<reservation>]: <width> [:= <value>];
+name[<reservation>]: <width> [:= <value> | ?= <value>];
 ```
 
 Widths are always bits. The bracketed reservation is the one number in the language that is not --
@@ -118,7 +118,7 @@ The rule is the width alone. Nothing else has to be declared.
 
 ## Fixed values, and how packets are told apart
 
-A field with `= <value>` goes out with that value, and the decoder uses it to recognise the packet
+A field with `:= <value>` goes out with that value, and the decoder uses it to recognise the packet
 wherever it can look for it. Further on -- after a `valof()`-sized or a conditional field -- it
 identifies nothing and nothing checks it: a decoded frame's field reads what arrived.
 
@@ -148,6 +148,47 @@ pkt F { hdr: 8 := 0xAA; m: 32; };           # REJECTED: nothing separates them
 
 A fixed value must fit in its field's width: `x: 4 := 0xFF;` is an error. On a field typed by an enum,
 a fixed value is one of the enum's names -- see [Enumerations](#enumerations).
+
+`=` is not how a field gets a value: it names something, as `MAX = 7;` does in an enum and `cal volts(raw)
+= ...;` does for a curve. On a field or in an override it is an error, and the error comes with a fix
+that writes `:=`.
+
+## Default values
+
+A field with `?= <value>` holds that value until something replaces it, the way `?=` reads in Make: this,
+unless somebody set it.
+
+```
+enum Health: 8 { FAULT; OK; };
+
+pkt TM_HK {
+  id:    8      := 0x40;
+  spare: 8      ?= 0;
+  power: Health ?= OK;
+  temp:  Health ?= OK;
+};
+```
+
+A frame starts with `40 00 01 01`. A program can set `temp` to `FAULT` like any other field, and a reset
+brings `OK` back. Between a default and a fixed value, the difference is what they say about a frame:
+
+- **A default identifies nothing.** It takes no part in telling packets apart, so a packet with nothing
+  but defaults has no discriminator (check 11), and two packets told apart only by a default are refused
+  (check 12). A frame carrying another value decodes, and reads what arrived.
+- **A default can be replaced.** Setting a fixed field is `FRAMEDSL_ERROR_FIXED`. Setting a field with a
+  default is what it is for.
+
+It is an ordinary value to everything else. On a conditional field it is written when the condition holds,
+and goes back to its default when a decode did not carry the field. A width, a count or a condition reads
+it: with `count: 8 ?= 4;`, an untouched frame has four elements. A length field whose default disagrees with
+its data stays `FRAMEDSL_ERROR_RANGE` on encode.
+
+**It is a raw value**, as a fixed value is, and goes through no curve. It must fit its field (check 8), the
+field must be a scalar, and on a field typed by an enum it is one of the enum's names (check 39). A field has
+one value: `:=` and `?=` together do not parse.
+
+**A repeated block's default is every element's**, and one element differs from the others only from code.
+A use replaces a default with the same words as anything else, as the next section shows.
 
 ## Fields whose length comes from another field
 
@@ -384,8 +425,10 @@ and then its fields are that block's own fields wherever it is used.
 
 **Overrides.** `{ id := 0x02; }` fixes a field for this use only -- which is how one shared header
 becomes each packet's discriminator. It may replace a value the block fixed, and reaches into a
-nested instance by its path, `{ inner.id := 3; }`. An override fixes a value and nothing else: a
-block's widths and field order are the same in every packet that uses it.
+nested instance by its path, `{ inner.id := 3; }`. `{ state ?= FAULT; }` gives a default in the same way,
+and may replace a value the block fixed: what the use writes is what the field becomes. An override
+sets a value and nothing else: a block's widths and field order are the same in every packet that
+uses it.
 
 **Layout is decided where the block is declared.** Its attributes -- bit order, byte order, `@cal` on
 its fields -- come from the file default and from what is written inside it, not from the packet it
@@ -861,11 +904,23 @@ pkt TM_STATUS {
   for every field of a *run*: the fields directly inside one packet or block. Blank lines, comments
   and attribute groups do not end a run; a nested `block { }` does, so the fields after it align on
   their own. File settings align on their values the same way, and so do the settings of a group.
+- **Values form a column.** In a run, `:=` or `?=` starts in one column on every line with a value, past
+  the widest width among those lines. A line with no value neither sets that column nor follows it, and
+  a use's overrides stay on its line and take no part:
+
+  ```
+  pkt TM_HK {
+    id:       8      := 0x40;
+    power:    Health ?= OK;
+    channels: Channel[4];
+  };
+  ```
+
 - **Trailing comments align too**, two spaces past the longest line of the run that has one.
 - **One setting in a group stays on one line**, `[ @byte_order: big_endian; ]`; more than one is one
   setting per line. A condition is spaced as a width is, with a space around every operator and the
   parentheses kept as written, `[ @if: (valof(a) & 0x4 != 0 || valof(b) >= 2) && valof(c) == 1; ]`.
-- **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
+- **Spacing**: one space either side of `=`, `:=`, `?=` and of every arithmetic operator, none inside
   parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
   on its line: `hdr: Header { id := 0x02; flags := 0x3; };`. A calibration is one line.
 - **An enum** has one name to a line, a level in, like a block's fields; the names with a value align on

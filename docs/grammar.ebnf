@@ -99,8 +99,13 @@ named_block        = [ attribute_group ] , "block" , identifier , "{" ,
                      "}" , ";" ;
 
 use                = [ identifier , [ reservation ] , ":" ] , dotted_name , [ repeat ] ,
-                     [ "{" , { override } , "}" ] , [ "=" , value ] , ";" ;
-override           = identifier , { "." , identifier } , "=" , value , ";" ;
+                     [ "{" , { override } , "}" ] , [ value_op , value ] , ";" ;
+override           = identifier , { "." , identifier } , value_op , value , ";" ;
+
+(* `:=` fixes a value and `?=` gives a default (#144). `=` names something, an enum's value or a curve,
+ * and on a field or in an override it is an error that names `:=`. In a use, what the override writes is
+ * what the field becomes, whatever the block said. *)
+value_op           = ":=" | "?=" ;
 
 (* A value is a number, or -- on a field typed by an enum -- one of that enum's names, written bare
  * (#11). Which a name is is settled by composition, not the grammar: the same `name: Name` is a block's
@@ -117,10 +122,11 @@ repeat             = "[" , expression , "]" ;
 (* --- Fields ---------------------------------------------------------------------------------
  * Width is an expression in BITS, always. The bracketed reservation is the one number in the
  * language written in BYTES: it sizes the field's arena slot, which is storage rather than layout,
- * and a width that depends on another field has no size until a frame arrives. `=` fixes the
- * field's value and is what lets the decoder tell packets apart.
+ * and a width that depends on another field has no size until a frame arrives. `:=` fixes the
+ * field's value and is what lets the decoder tell packets apart; `?=` gives it a default, which
+ * identifies nothing.
  *
- * The grammar permits a reservation anywhere, and permits it together with `=`; the semantic pass
+ * The grammar permits a reservation anywhere, and permits it together with a value; the semantic pass
  * rejects both. A constant-width field's slot is already known (check 14), and a field whose width
  * is not known until decode time cannot also be a discriminator (check 9).
  *
@@ -129,7 +135,7 @@ repeat             = "[" , expression , "]" ;
  *)
 
 field              = identifier , [ reservation ] , ":" , width ,
-                     [ "=" , value ] , ";" ;
+                     [ value_op , value ] , ";" ;
 
 reservation        = "[" , expression , "]" ;
 
