@@ -513,6 +513,36 @@ matches the incoming bytes against the bits each packet pins, and at most one ca
 The name it returns points into the definition and lives as long as it does. It is the symmetric
 counterpart of the name `framedsl_encode()` takes.
 
+### A packet the caller names
+
+```c
+FramedslStatus framedsl_decode_as(FramedslFrame *frame, const char *packet, const uint8_t *buffer,
+                                  size_t length, size_t *consumed);
+bool framedsl_packet_manual(const FramedslDefinition *definition, size_t index);
+```
+
+A link can carry identity outside the bytes, as a CAN ID does. A `@decode: manual` packet is decoded by name,
+and `framedsl_decode()` never returns one:
+
+```c
+void on_can_frame(uint32_t can_id, const uint8_t *data, size_t length) {
+  const char *packet = can_id == 0x100 ? "ENGINE" : "BATTERY";
+  size_t consumed;
+  FramedslStatus status = framedsl_decode_as(frame, packet, data, length, &consumed);
+  if (status != FRAMEDSL_OK) {
+    return;
+  }
+  /* The fields read as usual. */
+}
+```
+
+The caller has the name, so it returns a status, as `framedsl_encode_into()` does. `consumed` may be `NULL`, and
+bytes past the packet are left for the caller. A name the definition lacks, or an `auto` packet, is
+`FRAMEDSL_ERROR_FIELD`. Only size denies the decode: `FRAMEDSL_ERROR_TRUNCATED` when the bytes run out, and
+`FRAMEDSL_ERROR_RANGE` when a length passes its reservation or goes below zero. A fixed value that differs reads
+as what arrived, and a decode that fails changes nothing. Encoding a `manual` packet by name gives the bare
+payload.
+
 ### `consumed`, and reading a stream
 
 `consumed` receives how many bytes the frame occupied. Bytes after it are left alone, so a buffer

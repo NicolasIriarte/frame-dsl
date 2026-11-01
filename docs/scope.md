@@ -51,7 +51,8 @@ That splits the project's use into two, and a feature request is worth checking 
 
 - **As a library, while the communication is being written.** Fields set and read by name, packets
   encoded and decoded, the software asserting on what came back. The receiving side finds out which
-  packet arrived from the bytes, unless the link carries that somewhere else, as a CAN ID does.
+  packet arrived from the bytes, unless the link carries that somewhere else, as a CAN ID does, and a
+  `@decode: manual` packet is decoded by name.
 - **As a tool, while the communication is being debugged.** A definition file and a run of raw bytes,
   with no program in between: what is this frame, and which field is wrong. This is why the CLI is
   shipped rather than kept as a test harness, and why its diagnostics distinguish "nothing matches"

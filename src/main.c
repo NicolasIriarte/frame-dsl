@@ -293,11 +293,12 @@ static void describe(const FramedslDefinition *definition) {
     size_t fields = framedsl_field_count(definition, p);
 
     printf(
-      "pkt %s: %zu field%s, %llu bits reserved\n",
+      "pkt %s: %zu field%s, %llu bits reserved%s\n",
       framedsl_packet_name(definition, p),
       fields,
       fields == 1 ? "" : "s",
-      (unsigned long long)framedsl_packet_reserved_bits(definition, p)
+      (unsigned long long)framedsl_packet_reserved_bits(definition, p),
+      framedsl_packet_manual(definition, p) ? ", @decode: manual" : ""
     );
 
     for (size_t f = 0; f < fields; ++f) {
@@ -648,7 +649,23 @@ static const char *decode_problem(FramedslStatus status) {
 
 /* Walks the capture frame by frame, which is what `consumed` is for: a packet with a valof() field
  * has no length until it has been decoded, so a caller cannot find the next one without this. */
-static int decode_capture(const FramedslDefinition *definition, const uint8_t *bytes, size_t length) {
+static int decode_capture(
+  const FramedslDefinition *definition,
+  const char *packet,
+  const uint8_t *bytes,
+  size_t length
+) {
+  /* A name that cannot decode anything is a mistake in the command, whatever the bytes are. */
+  size_t index = 0;
+  if (packet != NULL && !framedsl_find_packet(definition, packet, &index)) {
+    fail("--packet: no packet called '%s'", packet);
+    return 2;
+  }
+  if (packet != NULL && !framedsl_packet_manual(definition, index)) {
+    fail("--packet: '%s' is '@decode: auto', so its bytes say which packet it is; leave --packet out", packet);
+    return 2;
+  }
+
   FramedslFrame *frame = framedsl_frame_new(definition);
   if (frame == NULL) {
     fail("out of memory");
@@ -662,7 +679,13 @@ static int decode_capture(const FramedslDefinition *definition, const uint8_t *b
   while (offset < length) {
     size_t consumed = 0;
     FramedslStatus why = FRAMEDSL_OK;
-    const char *name = framedsl_decode(frame, bytes + offset, length - offset, &consumed, &why);
+    const char *name = NULL;
+    if (packet == NULL) {
+      name = framedsl_decode(frame, bytes + offset, length - offset, &consumed, &why);
+    } else {
+      why = framedsl_decode_as(frame, packet, bytes + offset, length - offset, &consumed);
+      name = why == FRAMEDSL_OK ? packet : NULL;
+    }
 
     if (name == NULL) {
       /* The offset is in the message because a capture holding several frames fails somewhere, and
@@ -709,6 +732,7 @@ static int emit_c(const FramedslDefinition *definition) {
 
 typedef enum {
   OPTION_DECODE,
+  OPTION_PACKET,
   OPTION_EMIT_C,
   OPTION_CHECK,
   OPTION_WERROR,
@@ -733,6 +757,7 @@ typedef struct {
  * completion, a test) can read the flags back out of --help and trust the list is whole. */
 static const Option OPTIONS[] = {
   { OPTION_DECODE,       "-d", "--decode",       "<hex>",  "decode bytes into packets and their fields"         },
+  { OPTION_PACKET,       NULL, "--packet",       "<name>", "with -d: decode as this '@decode: manual' packet"   },
   { OPTION_EMIT_C,       NULL, "--emit-c",       NULL,     "write the calibrations and enums to stdout as C"    },
   { OPTION_CHECK,        NULL, "--check",        NULL,     "only report problems; with --format, write nothing" },
   { OPTION_WERROR,       NULL, "--werror",       NULL,     "with --check: fail on a warning too"                },
@@ -832,6 +857,7 @@ int main(int argc, char **argv) {
   bool werror = false;
   const char *stdin_name = NULL;
   const char *hex = NULL;
+  const char *packet = NULL;
   bool emit = false;
   bool list_packets = false;
 
@@ -892,6 +918,9 @@ int main(int argc, char **argv) {
     case OPTION_DECODE:
       hex = value;
       break;
+    case OPTION_PACKET:
+      packet = value;
+      break;
     case OPTION_EMIT_C:
       emit = true;
       break;
@@ -948,6 +977,8 @@ int main(int argc, char **argv) {
     conflict = "standard input can be read once; name '-' once";
   } else if (stdin_name != NULL && from_stdin == 0) {
     conflict = "--stdin-name names what '-' reads, and means nothing without it";
+  } else if (packet != NULL && hex == NULL) {
+    conflict = "--packet names what -d decodes, and means nothing without it";
   }
   if (conflict != NULL) {
     free(paths);
@@ -1019,7 +1050,7 @@ int main(int argc, char **argv) {
         status = 2;
         break;
       }
-      status = decode_capture(definition, capture, length);
+      status = decode_capture(definition, packet, capture, length);
       break;
     }
 

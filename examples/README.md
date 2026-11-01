@@ -59,6 +59,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`radio_status.fdsl`](radio_status.fdsl) | enums: fields typed by them, a discriminator fixed by name, and a little-endian one |
 | [`default_values.fdsl`](default_values.fdsl) | defaults: `?=` beside `:=`, on a repetition, and replaced by a use |
 | [`signed_and_float.fdsl`](signed_and_float.fdsl) | typed fields: signed and float values, with a curve, a condition and a default |
+| [`can_bus.fdsl`](can_bus.fdsl) | `@decode: manual`: packets a program names, for a link that carries identity elsewhere |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 | [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
@@ -67,6 +68,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | File | Check |
 | --- | --- |
 | [`invalid/no_discriminator.fdsl`](invalid/no_discriminator.fdsl) | 11 -- packet has no fixed-value field |
+| [`invalid/auto_without_a_discriminator.fdsl`](invalid/auto_without_a_discriminator.fdsl) | 11 -- an `auto` packet in a `manual` file still needs a fixed field |
 | [`invalid/ambiguous_packets.fdsl`](invalid/ambiguous_packets.fdsl) | 12 -- two packets cannot be told apart |
 | [`invalid/unbounded_valof.fdsl`](invalid/unbounded_valof.fdsl) | 5 -- `valof()` width with no reservation |
 | [`invalid/forward_valof.fdsl`](invalid/forward_valof.fdsl) | 7 -- `valof()` names a later field |

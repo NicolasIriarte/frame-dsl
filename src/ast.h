@@ -384,6 +384,8 @@ typedef struct {
 } AstField;
 
 typedef struct AstPacket {
+  /** @brief `@decode: manual`: the program says which packet arrived, so nothing here has to (#146). */
+  bool manual;
   const char *name;
   int line;
   int column;

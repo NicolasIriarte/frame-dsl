@@ -215,7 +215,7 @@ alternative is finding out on a live link.
 
 **Identification**
 
-11. Every packet has at least one fixed-value field **at a known offset, in a field every frame
+11. Every `auto` packet has at least one fixed-value field **at a known offset, in a field every frame
     carries**: before any `valof()`-sized or conditional field, and not conditional itself. A fixed value
     anywhere else is written by the encoder but cannot identify anything, since a decoder would not know
     where to look for it.

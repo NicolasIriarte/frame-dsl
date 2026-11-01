@@ -111,58 +111,24 @@ __attribute__((noinline)) static bool find_keyed(
   return false;
 }
 
-const char *framedsl_decode(
+/* Reads one frame of packet `index` out of `buffer`, once something has said which packet it is. Inlined
+ * into each entry, so that the one every frame goes through pays no call for the other (#146). A walk
+ * that gives up leaves `status` saying why, and the frame as it was. */
+__attribute__((always_inline)) static inline bool decode_packet(
   FramedslFrame *frame,
+  size_t index,
   const uint8_t *buffer,
   size_t length,
   size_t *consumed,
   FramedslStatus *status
 ) {
-  FramedslStatus ignored = FRAMEDSL_OK;
-  if (status == NULL) {
-    status = &ignored;
-  }
-  *status = FRAMEDSL_OK;
-
-  if (frame == NULL || buffer == NULL) {
-    *status = FRAMEDSL_ERROR_MEMORY;
-    return NULL;
-  }
-
   const FramedslDefinition *definition = frame->definition;
-  const Layout *layout = definition->layout;
-
-  /* Check 12 guarantees at most one packet can match, so the first hit is the answer and there is
-   * nothing to disambiguate. A definition of a few packets, or of packets sharing no fixed bit, tries
-   * each in turn; any other goes through the index (#107). */
-  size_t index = 0;
-  bool found = false;
-  if (!definition->index->keyed) {
-    for (size_t p = 0; p < layout->packet_count; ++p) {
-      if (matches(&layout->packets[p], buffer, length)) {
-        index = p;
-        found = true;
-        break;
-      }
-    }
-  } else {
-    found = find_keyed(definition, buffer, length, &index);
-  }
-
-  if (!found) {
-    /* Nothing on this link looks like anything this definition describes: noise, or a sender running
-     * a newer file. Deliberately distinct from a frame that matched and then went wrong, which is a
-     * framing bug in the caller's transport and needs a different fix. */
-    *status = FRAMEDSL_ERROR_UNRECOGNISED;
-    return NULL;
-  }
-
   const PacketProgram *program = &definition->program->packets[index];
   const size_t base = frame->packet_base[index];
 
   if (program->field_count > FRAMEDSL_MAX_FIELDS_PER_PACKET) {
     *status = FRAMEDSL_ERROR_RANGE;
-    return NULL;
+    return false;
   }
 
   /* The known prefix (#106) fits the frame or it does not, and that is one comparison: past it, each
@@ -222,7 +188,7 @@ const char *framedsl_decode(
     if (consumed != NULL) {
       *consumed = (size_t)(offset / 8);
     }
-    return framedsl_packet_name(definition, index);
+    return true;
   }
 
   for (size_t f = first; f < program->field_count; ++f) {
@@ -247,7 +213,7 @@ const char *framedsl_decode(
       if (!width_program_eval(&instruction->width, slots, &width)) {
         *status = FRAMEDSL_ERROR_RANGE;
         frame_restore_packet(frame, index);
-        return NULL;
+        return false;
       }
       if (width > instruction->max_bits) {
         /* The frame claims more than the field reserved. This is what the mandatory reservation buys:
@@ -255,7 +221,7 @@ const char *framedsl_decode(
          * library growing a buffer to fit a number a corrupt frame supplied. */
         *status = FRAMEDSL_ERROR_RANGE;
         frame_restore_packet(frame, index);
-        return NULL;
+        return false;
       }
     }
 
@@ -264,7 +230,7 @@ const char *framedsl_decode(
     if (offset + width > (uint64_t)length * 8) {
       *status = FRAMEDSL_ERROR_TRUNCATED;
       frame_restore_packet(frame, index);
-      return NULL;
+      return false;
     }
 
     if (instruction->is_scalar) {
@@ -292,5 +258,74 @@ const char *framedsl_decode(
   if (consumed != NULL) {
     *consumed = (size_t)(offset / 8);
   }
-  return framedsl_packet_name(definition, index);
+  return true;
+}
+
+const char *framedsl_decode(
+  FramedslFrame *frame,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *consumed,
+  FramedslStatus *status
+) {
+  FramedslStatus ignored = FRAMEDSL_OK;
+  if (status == NULL) {
+    status = &ignored;
+  }
+  *status = FRAMEDSL_OK;
+
+  if (frame == NULL || buffer == NULL) {
+    *status = FRAMEDSL_ERROR_MEMORY;
+    return NULL;
+  }
+
+  const FramedslDefinition *definition = frame->definition;
+  const Layout *layout = definition->layout;
+
+  /* Check 12 guarantees at most one packet can match, so the first hit is the answer and there is
+   * nothing to disambiguate. A definition of a few packets, or of packets sharing no fixed bit, tries
+   * each in turn; any other goes through the index (#107). */
+  size_t index = 0;
+  bool found = false;
+  if (!definition->index->keyed) {
+    for (size_t p = 0; p < layout->packet_count; ++p) {
+      if (matches(&layout->packets[p], buffer, length)) {
+        index = p;
+        found = true;
+        break;
+      }
+    }
+  } else {
+    found = find_keyed(definition, buffer, length, &index);
+  }
+
+  if (!found) {
+    /* Nothing on this link looks like anything this definition describes: noise, or a sender running
+     * a newer file. Deliberately distinct from a frame that matched and then went wrong, which is a
+     * framing bug in the caller's transport and needs a different fix. */
+    *status = FRAMEDSL_ERROR_UNRECOGNISED;
+    return NULL;
+  }
+
+  return decode_packet(frame, index, buffer, length, consumed, status) ? framedsl_packet_name(definition, index) : NULL;
+}
+
+FramedslStatus framedsl_decode_as(
+  FramedslFrame *frame,
+  const char *packet,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *consumed
+) {
+  if (frame == NULL || buffer == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  size_t index = 0;
+  if (packet == NULL || !framedsl_find_packet(frame->definition, packet, &index)
+      || !frame->definition->program->packets[index].manual) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  FramedslStatus status = FRAMEDSL_OK;
+  decode_packet(frame, index, buffer, length, consumed, &status);
+  return status;
 }

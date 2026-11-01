@@ -437,7 +437,7 @@ static int us24_tc09_if_goes_in_front_of_what_may_be_absent(const TestArguments 
   /* In front of an enum's declaration, as any group is. */
   EXPECT(!loads("[ @if: valof(f) == 1; ] enum K: 8 { A; };\npkt T { id: 8 := 1; };\n"));
   /* The unknown-attribute message lists it. */
-  EXPECT(refused_once("pkt T { id: 8 := 1; [ @iff: valof(id) == 1; ] e: 8; };\n", "'cal' and 'if'"));
+  EXPECT(refused_once("pkt T { id: 8 := 1; [ @iff: valof(id) == 1; ] e: 8; };\n", "'decode' and 'if'"));
   return failure;
 }
 

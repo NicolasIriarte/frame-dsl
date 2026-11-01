@@ -298,6 +298,8 @@ typedef struct {
    */
   size_t prefix_count;
   uint64_t prefix_bits;
+  /** @brief `@decode: manual`: only framedsl_decode_as() decodes it (#146). */
+  bool manual;
   /** @brief The most bytes a frame of this packet can take, every field at its reservation: what an
    * encode clears before it starts. */
   size_t max_bytes;

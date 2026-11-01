@@ -463,18 +463,28 @@ class Frame:
             _raise(status.value, f"encoding {packet}")
         return ctypes.string_at(data, length.value)
 
-    def decode(self, data):
+    def decode(self, data, packet=None):
         """Read one frame from the start of `data` and return its packet's name.
 
         Bytes past the end of the frame are ignored, as in C; decode_prefix() says how many were used.
-        A failed decode raises and leaves every field as it was.
+        A failed decode raises and leaves every field as it was. `packet` names a `@decode: manual`
+        packet, for a link that carries identity outside the bytes.
         """
-        return self.decode_prefix(data)[0]
+        return self.decode_prefix(data, packet)[0]
 
-    def decode_prefix(self, data):
+    def decode_prefix(self, data, packet=None):
         """Read one frame from the start of `data`: (packet name, bytes it took). For walking a stream."""
         data = bytes(data)
         consumed = ctypes.c_size_t()
+        if packet is not None:
+            what = f"decoding {len(data)} bytes as {packet}"
+            _check(
+                _native.framedsl_decode_as(
+                    self._handle, packet.encode("utf-8"), data, len(data), ctypes.byref(consumed)
+                ),
+                what,
+            )
+            return packet, consumed.value
         status = ctypes.c_int(_native.OK)
         name = _native.framedsl_decode(self._handle, data, len(data), ctypes.byref(consumed), ctypes.byref(status))
         if name is None:

@@ -404,6 +404,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
 
     packets[p].fields = &fields[next_field];
     packets[p].field_count = packet->field_count;
+    packets[p].manual = packet->manual;
     bool in_prefix = true;
     uint64_t max_bits = 0;
     for (size_t f = 0; f < packet->field_count; ++f) {
