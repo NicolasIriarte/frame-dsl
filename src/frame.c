@@ -624,12 +624,17 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
  *
  * The arena holds raw values only; a curve runs on the way out of a get and on the way into a set. */
 
-static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id) {
+static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id, FieldKind *kind, uint64_t *width) {
   const FieldInstruction *instruction = &frame->definition->program->packets[id.packet].fields[id.field];
   int32_t cal = instruction->cal;
+  *kind = instruction->kind;
+  *width = instruction->width_bits;
   if (id.member != 0) {
     MemberView view;
-    cal = member_view(frame, id, &view) ? view.member->cal : -1;
+    const bool found = member_view(frame, id, &view);
+    cal = found ? view.member->cal : -1;
+    *kind = found ? view.member->kind : FIELD_KIND_UNSIGNED;
+    *width = found ? view.member->width_bits : 0;
   }
   return cal < 0 ? NULL : &frame->definition->cals->cals[cal];
 }
@@ -759,10 +764,10 @@ FramedslStatus framedsl_get_eng(const FramedslFrame *frame, FramedslFieldId id, 
   if (status != FRAMEDSL_OK) {
     return status;
   }
-  const CalCompiled *cal = field_cal(frame, id);
   FieldKind kind = FIELD_KIND_UNSIGNED;
   uint64_t width = 0;
-  if (cal == NULL || !field_shape(frame, id, &kind, &width)) {
+  const CalCompiled *cal = field_cal(frame, id, &kind, &width);
+  if (cal == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
   return cal_forward(cal, pattern_value(kind, width, raw), out) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
@@ -807,7 +812,9 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
   if (slot == NULL || (id.member == 0 && !slot->is_scalar)) {
     return FRAMEDSL_ERROR_FIELD;
   }
-  const CalCompiled *cal = field_cal(frame, id);
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  const CalCompiled *cal = field_cal(frame, id, &kind, &width);
   if (cal == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -821,11 +828,6 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
   double raw = 0;
   if (!cal_backward(cal, value, &raw)) {
     return FRAMEDSL_ERROR_RANGE;
-  }
-  FieldKind kind = FIELD_KIND_UNSIGNED;
-  uint64_t width = 0;
-  if (!field_shape(frame, id, &kind, &width)) {
-    return FRAMEDSL_ERROR_FIELD;
   }
   /* A float takes the inverse as it is. A signed field rounds as an unsigned one does, to what fits. */
   if (kind == FIELD_KIND_FLOAT) {
