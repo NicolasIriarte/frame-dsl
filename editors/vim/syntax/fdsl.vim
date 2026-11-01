@@ -40,7 +40,7 @@ syntax region fdslAttribute start="@" end=";" keepend
       \ fdslKeyword,fdslValofTarget,fdslNumber,fdslOperator
 
 " The name a calibration is given, and the name a use refers to: `@cal: volts;', `hdr: Header;' and
-" `level: TxLevel = HIGH;'.
+" `level: TxLevel := HIGH;'.
 " Look-behind rather than \zs: a match may not start where a keyword has already matched, and every
 " one of these follows a keyword.
 syntax match fdslCalName "\%(valof\>\)\@!\a\w*\%(\.\w\+\)*" contained
@@ -48,7 +48,7 @@ syntax match fdslCalDecl "\%(^\s*cal\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(\<\%(pkt\|block\)\>\s\+\)\@<=\a\w*"
 syntax match fdslPacketName "\%(^\s*enum\s\+\)\@<=\a\w*"
 syntax match fdslFieldName "^\s*\zs\w\+\ze\s*\%(\[[^]]*\]\)\?\s*:"
-syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*[;{=]"
+syntax match fdslTypeName "\%(:\s*\)\@<=\a\w*\%(\.\w\+\)*\ze\s*\%([;{=]\|[:?]=\)"
 " A block pasted in without an instance name, `Header { ... };` or `Header;`, alone on its line. The
 " `block {' of an attribute scope has the same shape, and stays a keyword: a keyword always wins.
 syntax match fdslTypeName "^\s*\zs\a\w*\%(\.\w\+\)*\ze\s*[;{]"
@@ -59,7 +59,7 @@ syntax match fdslNumber "\<0[xX]\x\+\>"
 syntax match fdslNumber "\<0[bB][01]\+\>"
 syntax match fdslNumber "\<\d\+\%(\.\d*\)\?\%([eE][-+]\?\d\+\)\?\>"
 " The two-character ones first: alternatives are tried in order, not for the longest.
-syntax match fdslOperator "[!=<>]=\|&&\|||\|[-+*/=<>&]"
+syntax match fdslOperator "[:?!=<>]=\|&&\|||\|[-+*/=<>&]"
 syntax region fdslString start=+"+ end=+"+ oneline
 syntax match fdslComment "#.*$" contains=@Spell
 
