@@ -826,8 +826,8 @@ static void describe_attribute(Buffer *buffer, const Token *name) {
   } else if (spells(name, "byte_order")) {
     put(
       buffer,
-      "**@byte_order**: `big_endian` (the default) or `little_endian` -- the order of the bytes of a "
-      "byte-aligned field a whole number of bytes wide.\n"
+      "**@byte_order**: `big_endian` (the default) or `little_endian` -- which end of each byte fields fill "
+      "from, and the order a value's bytes appear. Fields sharing a byte must agree.\n"
     );
   } else if (spells(name, "decode")) {
     put(

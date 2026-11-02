@@ -33,10 +33,13 @@ static void write_scalar(
   BitOrder bit_order,
   ByteOrder byte_order
 ) {
-  /* byte_order reorders the bytes of a value, so it only means anything when there are whole bytes
-   * sitting on byte boundaries. Check 10 rejects anyone writing it where that is untrue; inherited,
-   * it simply does not apply here. */
-  if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
+  /* little_endian fills each byte from its low bit (#147). Whole bytes on a byte boundary are the same
+   * thing as those bytes swapped, which is quicker and is what a field usually is. */
+  if (byte_order == BYTE_ORDER_LITTLE_ENDIAN) {
+    if (width % 8 != 0 || offset % 8 != 0) {
+      bits_or_le(out, offset, width, bit_order == BIT_ORDER_LSB_FIRST ? bits_reverse(value, width) : value);
+      return;
+    }
     value = bits_swap(value, width);
   }
 

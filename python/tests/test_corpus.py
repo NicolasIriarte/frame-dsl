@@ -61,6 +61,19 @@ ROWS = [
         bytes([0xBB, 0x11, 0x22, 0x33, 0x44, 0x44, 0x33, 0x22, 0x11, 0xBB]),
     ),
     (
+        "little_endian fields inside a word",
+        "little_endian.fdsl",
+        "LITTLE_ENDIAN",
+        [
+            scalar("LITTLE_ENDIAN.value", 0x123),
+            scalar("LITTLE_ENDIAN.flags", 0xA),
+            scalar("LITTLE_ENDIAN.low", 0x5),
+            scalar("LITTLE_ENDIAN.wide", 0x12345),
+            scalar("LITTLE_ENDIAN.big", 0xBEEF),
+        ],
+        bytes([0x5A, 0x23, 0xA1, 0x2D, 0x1A, 0x09, 0xBE, 0xEF]),
+    ),
+    (
         "a discriminator nobody sets",
         "fixed_over.fdsl",
         "FIXED_OVER",

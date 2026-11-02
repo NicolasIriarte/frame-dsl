@@ -596,6 +596,21 @@ static void bits_set(uint8_t *bits, size_t index) {
 static void project(const AstField *field, uint64_t offset, uint64_t width, uint8_t *mask, uint8_t *value) {
   uint64_t wire = field->fixed;
 
+  /* A little_endian field fills each byte from its low bit (#147), so it is the bits of each byte that
+   * are the other way round from this numbering. */
+  if (field->byte_order == BYTE_ORDER_LITTLE_ENDIAN && (width % 8 != 0 || offset % 8 != 0)) {
+    for (uint64_t j = 0; j < width; ++j) {
+      const uint64_t position = offset + j;
+      const size_t stream = (size_t)(position / 8 * 8 + 7 - position % 8);
+      const uint64_t bit = field->bit_order == BIT_ORDER_MSB_FIRST ? (wire >> j) & 1 : (wire >> (width - 1 - j)) & 1;
+      bits_set(mask, stream);
+      if (bit != 0) {
+        bits_set(value, stream);
+      }
+    }
+    return;
+  }
+
   if (field->byte_order == BYTE_ORDER_LITTLE_ENDIAN && width % 8 == 0 && offset % 8 == 0) {
     uint64_t swapped = 0;
     for (uint64_t byte = 0; byte < width / 8; ++byte) {
@@ -614,6 +629,33 @@ static void project(const AstField *field, uint64_t offset, uint64_t width, uint
 }
 
 /* ---- Per-packet checks ---------------------------------------------------------------------- */
+
+/* What check 10 calls an order. */
+static const char *byte_order_word(ByteOrder order) {
+  return order == BYTE_ORDER_LITTLE_ENDIAN ? "little-endian" : "big-endian";
+}
+
+/* Whether a repetition's element has a little-endian member that is not whole bytes on a byte boundary.
+ * A repetition goes out as bytes, shifted if it has to be, and such a member's bits are only where it
+ * says on a boundary: the other way round in each byte. */
+static bool has_packed_member(const AstField *field) {
+  if (field->element == NULL) {
+    return false;
+  }
+  uint64_t position = 0;
+  for (size_t m = 0; m < field->element->field_count; ++m) {
+    const AstField *member = &field->element->fields[m];
+    uint64_t residue = 0;
+    if (!residue_mod8(member->width, &residue)) {
+      return false; /* check 32's to refuse */
+    }
+    if (member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && (residue != 0 || position != 0)) {
+      return true;
+    }
+    position = (position + residue) % 8;
+  }
+  return false;
+}
 
 /* Check 8, for one value written on a field of `width` bits, `kind` saying which sort of value it is. */
 static void check_value(
@@ -693,6 +735,12 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
    * field has no width until a frame arrives but can still be known to be a whole number of bytes. */
   uint64_t byte_residue = 0;
   bool byte_residue_known = true;
+  /* Check 10 asks where in a byte each field starts. A conditional part is whole bytes (check 13), so
+   * unlike the total above this counts every field, and is right with the part or without it. */
+  uint64_t position_residue = 0;
+  bool position_known = true;
+  const AstField *shared = NULL;
+  ByteOrder shared_order = BYTE_ORDER_BIG_ENDIAN;
   /* Each field's width mod 8, or 0xFF when unknown: check 13 for a conditional part (#12) sums them. */
   uint8_t *residues = malloc(packet->field_count == 0 ? 1 : packet->field_count);
   if (residues != NULL) {
@@ -782,11 +830,15 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
      * packet's own length depend on the frame it is carrying, which is exactly what the packet-wide
      * half of this check is there to prevent. Reported here, against the field responsible, rather
      * than as a packet that mysteriously does not add up. */
+    const uint64_t start_residue = position_residue;
+    const bool start_known = position_known;
     if (!width_ok) {
       byte_residue_known = false;
+      position_known = false;
     } else {
       uint64_t residue = 0;
       if (!residue_mod8(field->width, &residue)) {
+        position_known = false;
         fail(
           checker,
           field->line,
@@ -806,6 +858,7 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
         if (field->condition == NULL) {
           byte_residue = (byte_residue + residue) % 8;
         }
+        position_residue = (position_residue + residue) % 8;
         if (residues != NULL) {
           residues[i] = (uint8_t)residue;
         }
@@ -951,34 +1004,41 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
       );
     }
 
-    /* Check 10. Only a byte_order *written here* is an error: one inherited from packet or file
-     * scope covers every field below it, and most real frames mix byte-wide fields with sub-byte
-     * ones. What is worth rejecting is somebody writing a setting that cannot do anything. */
-    if (field->byte_order_written && slot->is_scalar && slot->width_bits > 0) {
-      if (slot->width_bits % 8 != 0) {
+    /* Check 10. Big-endian fields fill a byte from the top and little-endian ones from the bottom, so two
+     * sharing a byte would overlap (#147). A bit string and a repetition go out as bytes, so they count as
+     * big-endian. What cannot be shown to be a byte boundary is refused, as it is in check 13. */
+    const ByteOrder order = slot->is_scalar ? field->byte_order : BYTE_ORDER_BIG_ENDIAN;
+    const bool on_boundary = start_known && start_residue == 0;
+    if (slot->width_bits > 0 || variable) {
+      if (shared != NULL && order != shared_order && !on_boundary) {
         fail(
           checker,
-          field->byte_order_line,
-          field->byte_order_column,
+          field->byte_order_written ? field->byte_order_line : field->line,
+          field->byte_order_written ? field->byte_order_column : field->column,
           10,
-          "'%s.%s' is %llu bits, so it has no bytes to reorder and 'byte_order' cannot apply",
+          "'%s.%s' is %s and %s a byte with '%s', which is %s; a byte fills from one end or the other, so "
+          "fields sharing one must agree on @byte_order",
           packet->name,
           field->name,
-          (unsigned long long)slot->width_bits
+          !slot->is_scalar ? "bytes, which go out big-endian" : byte_order_word(order),
+          start_known ? "shares" : "may share",
+          shared->name,
+          byte_order_word(shared_order)
         );
-      } else if (offset_known && offset % 8 != 0) {
+      } else if (!on_boundary && has_packed_member(field)) {
         fail(
           checker,
-          field->byte_order_line,
-          field->byte_order_column,
+          field->line,
+          field->column,
           10,
-          "'%s.%s' starts at bit %llu, which is not a byte boundary, so 'byte_order' cannot "
-          "apply",
+          "'%s.%s' has little-endian fields smaller than a byte, so it must start on a byte boundary, which "
+          "this cannot be shown to",
           packet->name,
-          field->name,
-          (unsigned long long)offset
+          field->name
         );
       }
+      shared = field;
+      shared_order = order;
     }
 
     /* A conditional field (#12) is 0 bits wide in some frames and its width in others, so like a

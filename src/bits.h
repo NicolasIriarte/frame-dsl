@@ -50,6 +50,59 @@ static inline double bits_to_double(uint64_t pattern, uint64_t width) {
   return value;
 }
 
+/**
+ * @brief `width` bits of a little-endian run at position `offset`, for a width from 1 to 64 (#147).
+ *
+ * Position i here is bit i % 8 of byte i / 8, counting from each byte's least significant bit, and bit j
+ * of the value sits at position offset + j. So fields fill a byte from the bottom and run on into the
+ * next, which is what a packed C struct does on a little-endian processor, and what a CAN signal in Intel
+ * format is. On whole bytes it is what swapping them gives. A field can touch nine bytes, and reads no
+ * more than it touches.
+ */
+static inline uint64_t bits_get_le(const uint8_t *bytes, uint64_t offset, uint64_t width) {
+  const uint8_t *at = bytes + offset / 8;
+  const unsigned shift = (unsigned)(offset % 8);
+  const unsigned count = (unsigned)((shift + width + 7) / 8);
+  uint64_t value = 0;
+  for (unsigned i = 0; i < count && i < 8; ++i) {
+    value |= (uint64_t)at[i] << (i * 8);
+  }
+  value >>= shift;
+  if (count == 9) {
+    value |= (uint64_t)at[8] << (64 - shift);
+  }
+  return bits_low(value, width);
+}
+
+/** @brief ORs `value`, which fits `width` bits, in where bits_get_le() reads it: for an encode, whose
+ * output starts zeroed and whose fields do not overlap, as bits_or() is. */
+static inline void bits_or_le(uint8_t *out, uint64_t offset, uint64_t width, uint64_t value) {
+  uint8_t *at = out + offset / 8;
+  const unsigned shift = (unsigned)(offset % 8);
+  const unsigned count = (unsigned)((shift + width + 7) / 8);
+  const uint64_t word = value << shift;
+  for (unsigned i = 0; i < count && i < 8; ++i) {
+    at[i] |= (uint8_t)(word >> (i * 8));
+  }
+  if (count == 9) {
+    at[8] |= (uint8_t)(value >> (64 - shift));
+  }
+}
+
+/** @brief Writes `width` bits of `value` as bits_get_le() reads them, leaving the bits around them. */
+static inline void bits_put_le(uint8_t *out, uint64_t offset, uint64_t width, uint64_t value) {
+  uint8_t *at = out + offset / 8;
+  unsigned shift = (unsigned)(offset % 8);
+  for (uint64_t remaining = width; remaining > 0; ++at, shift = 0) {
+    const unsigned room = 8 - shift;
+    const unsigned take = remaining < room ? (unsigned)remaining : room;
+    const uint8_t mask = (uint8_t)(((1u << take) - 1) << shift);
+    *at = (uint8_t)((*at & ~mask) | ((value << shift) & mask));
+    value = take < 64 ? value >> take : 0;
+    remaining -= take;
+  }
+}
+
 /** @brief Eight bytes as the big-endian number they spell, wherever they are in memory. */
 static inline uint64_t bits_load_be64(const uint8_t *bytes) {
   uint64_t value;

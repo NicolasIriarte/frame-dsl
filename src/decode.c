@@ -23,6 +23,12 @@ static uint64_t read_scalar(
   BitOrder bit_order,
   ByteOrder byte_order
 ) {
+  /* little_endian fills each byte from its low bit (#147), the mirror of write_scalar() in encode.c. */
+  if (byte_order == BYTE_ORDER_LITTLE_ENDIAN && (width % 8 != 0 || offset % 8 != 0) && width > 0) {
+    const uint64_t packed = bits_get_le(buffer, offset, width);
+    return bit_order == BIT_ORDER_LSB_FIRST ? bits_reverse(packed, width) : packed;
+  }
+
   /* The stream holds the value's bits in order, so they come in runs: what is left of the current
    * byte, at most eight at a time -- the mirror of write_scalar() in encode.c. lsb_first is the same
    * runs, reversed afterwards (#108). */

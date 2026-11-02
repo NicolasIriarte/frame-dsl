@@ -21,7 +21,7 @@ pkt TM_MIXED {
   value:  32;                   # little_endian again
 
   [ @bit_order: lsb_first; ]    # bit order is independent of byte order
-  flags:  4;
+  flags:  4;                    # the low half of its byte, since little_endian fills from the bottom
 
   rest:   4;
 

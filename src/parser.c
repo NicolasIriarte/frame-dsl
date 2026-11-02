@@ -260,8 +260,8 @@ static Expr *parse_expression(Parser *parser) {
  * reported by name instead of as a parse failure two tokens further on, and that adding one later --
  * an enum, a calibration curve -- costs a row in this file and nothing in the grammar.
  *
- * The `written` flags are not bookkeeping: check 10 turns on the difference between a byte_order
- * written on a field and one the field inherited from a block, packet or file. */
+ * The `written` flags are not bookkeeping: check 15 turns on the difference between an order written on
+ * a field and one the field inherited from a block, packet or file. */
 typedef struct {
   BitOrder bit_order;
   ByteOrder byte_order;

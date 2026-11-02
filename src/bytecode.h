@@ -135,9 +135,15 @@ typedef struct {
   uint8_t *fixed_value;
 } ElementProgram;
 
-/** @brief Whether a member's byte order applies: whole bytes, on a byte boundary within its element. */
+/** @brief Whether a member is `little_endian` as whole bytes on a byte boundary within its element, which
+ * is those bytes swapped. */
 static inline bool member_swapped(const MemberInstruction *member) {
   return member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && member->width_bits % 8 == 0 && member->offset_bits % 8 == 0;
+}
+
+/** @brief Whether a member is `little_endian` and anything else, filling bytes from the low bit (#147). */
+static inline bool member_packed(const MemberInstruction *member) {
+  return member->byte_order == BYTE_ORDER_LITTLE_ENDIAN && !member_swapped(member) && member->width_bits > 0;
 }
 
 /**
@@ -145,7 +151,8 @@ static inline bool member_swapped(const MemberInstruction *member) {
  * decode.c reads it back: reversed for lsb_first, swapped for little_endian (#101).
  */
 static inline uint64_t member_get(const uint8_t *bytes, uint64_t offset, const MemberInstruction *member) {
-  uint64_t value = bits_get(bytes, offset, member->width_bits);
+  uint64_t value = member_packed(member) ? bits_get_le(bytes, offset, member->width_bits)
+                                         : bits_get(bytes, offset, member->width_bits);
   if (member->bit_order == BIT_ORDER_LSB_FIRST && member->width_bits > 0) {
     value = bits_reverse(value, member->width_bits);
   }
@@ -159,6 +166,10 @@ static inline void member_put(uint8_t *bytes, uint64_t offset, const MemberInstr
   }
   if (member->bit_order == BIT_ORDER_LSB_FIRST && member->width_bits > 0) {
     value = bits_reverse(value, member->width_bits);
+  }
+  if (member_packed(member)) {
+    bits_put_le(bytes, offset, member->width_bits, value);
+    return;
   }
   bits_put(bytes, offset, member->width_bits, value);
 }

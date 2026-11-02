@@ -1,18 +1,16 @@
-# REJECTED: check 10 -- byte_order only applies to a field that is byte-aligned and a whole number
-# of bytes wide.
+# REJECTED: check 10 -- fields that share a byte must agree on @byte_order.
 #
-# `seq` is 15 bits and starts at bit 8: it has no bytes to reorder. Accepting the line and ignoring
-# it would leave the author believing they had specified something.
+# `seq` is little-endian and `tail` is not. Big-endian fields fill a byte from the top and little-endian
+# ones from the bottom, so the two would overlap in the byte they share. Writing the order on `tail` as
+# well, or on a block around both, is what this most likely meant.
 #
-# Only a byte_order *written on the field* is an error. The same attribute in a group on a packet or
-# a block covers every field below it, most real frames mix byte-wide fields with sub-byte ones, and
-# a setting that is irrelevant here and meaningful two fields later is not a mistake.
+# A change of order on a byte boundary is not a mistake: `hdr` and `seq` here are fine.
 
 pkt TM_ODD {
-  hdr: 8 := 0xAA;
+  hdr:  8 := 0xAA;
 
   [ @byte_order: little_endian; ]
-  seq: 15;
+  seq:  15;
 
   tail: 1;
 };

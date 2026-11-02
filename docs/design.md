@@ -131,14 +131,21 @@ Two attributes, resolved per field as **field > block > packet > file**:
 most-significant bit of the value into the earliest bit position the field occupies; `lsb_first`
 writes the least-significant bit first.
 
-**`@byte_order`** -- how the bytes of a multi-byte value are arranged. `big_endian` is the default,
-matching network order.
+**`@byte_order`** -- which end of each byte fields fill from. `big_endian` is the default, matching network
+order: bit zero of the stream is a byte's most significant bit, and a value's most significant bit comes
+first. `little_endian` covers a field of any width (#147): bit `j` of a field at offset `n` is bit
+`(n + j) % 8` of byte `(n + j) / 8`, counting from the least significant bit.
 
-These are independent, which is why they are two settings rather than one. `byte_order` is only
-meaningful for a field that is **byte-aligned and a whole number of bytes wide**; applying it
-anywhere else is a load-time error rather than a line that quietly does nothing. That restriction is
-deliberate: a 15-bit field has no bytes to reorder, and pretending otherwise would invent semantics
-nobody could predict.
+The one rule was chosen because it is the only extension of what `little_endian` already meant: on whole bytes
+on a byte boundary it is the bytes swapped, under either `@bit_order`, so those fields did not move. It is what
+a packed C struct is on a little-endian processor, and a CAN signal in Intel format. Kaitai Struct and deku keep
+this as a setting of its own, because they mix the two in a run. Here a field or a block can already say which
+order it uses, and a second setting would leave `[ @byte_order: little_endian; ] value: 12;` loading and reading
+wrong values, with two spellings for "little-endian" that agree on whole bytes. No word has to be declared
+either: the bytes do not depend on its size.
+
+`@bit_order` stays independent of this, which is why they are two settings rather than one: `lsb_first` reverses
+a value before it is laid down, in either order. The price of the rule is check 10.
 
 ### Why the attributes reach field scope
 
@@ -156,9 +163,8 @@ more flexible":
   commonest real case by some distance.
 - **Ethernet.** Frame bits go out LSB-first per octet, and the FCS MSB-first.
 
-The cost is visible in this document: check 10, and the distinction between a setting written on a
-field and one inherited, exist only because field scope does. That is judged worth paying, because
-without it the language cannot describe frames it is specifically meant to describe.
+The cost is visible in this document: check 10 exists only because field scope does. That is judged worth
+paying, because without it the language cannot describe frames it is specifically meant to describe.
 
 The second case is usually a *run* of consecutive fields rather than one, which is what `block` is
 for: a declaration that exists only to be something a `[ ... ]` group can attach to. A block is
@@ -203,13 +209,11 @@ alternative is finding out on a live link.
 
 **Settings**
 
-10. A `@byte_order` written **on a field** may only appear on a field that is byte-aligned and a
-    whole number of bytes wide. A `@byte_order` *inherited* from block, packet or file scope is not an error
-    on such a field -- it simply does not apply to a field with no bytes to reorder. The distinction
-    matters: a file-level `@byte_order` covers every field in the file, and most real frames contain
-    sub-byte fields, so checking the effective setting rather than the written one would make the
-    file-level form unusable. What is worth rejecting is an author writing a setting that cannot do
-    anything, not a setting that is irrelevant here and meaningful two fields later.
+10. Fields that share a byte agree on `@byte_order`, written or inherited. A big-endian field fills a byte from
+    the top and a little-endian one from the bottom, so they would overlap. What cannot be shown to be a byte
+    boundary is refused if the orders differ, as check 13 refuses what cannot be shown to be whole bytes. A bit
+    string and a repetition go out as bytes, so they count as big-endian, and a repetition whose element has a
+    little-endian member smaller than a byte must start on a boundary.
 
 44. A type is `i1` to `i64`, `f32` or `f64`. Any other name of that shape in a width's place is refused.
 

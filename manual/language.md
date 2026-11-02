@@ -231,7 +231,7 @@ A type goes where a width goes. `i1` to `i64` are two's complement, and `f32` an
 cal celsius(raw) = raw * 0.0625;
 
 pkt TM_THERMAL {
-  id:   8   := 0x30;
+  id:   8 := 0x30;
   [ @cal: celsius; ]
   temp: i16;
   gain: f32;
@@ -328,7 +328,7 @@ Anything that modifies a declaration rather than describing it is an attribute, 
 | --- | --- | --- | --- |
 | `@decode` | `auto`, `manual` | `auto` | who decides which packet arrived: see [Packets a program names](#packets-a-program-names) |
 | `@bit_order` | `msb_first`, `lsb_first` | `msb_first` | the order a field's bits enter the stream |
-| `@byte_order` | `big_endian`, `little_endian` | `big_endian` | the order the bytes of a multi-byte value appear |
+| `@byte_order` | `big_endian`, `little_endian` | `big_endian` | which end of each byte fields fill from, and the order the bytes of a value appear: see [Little-endian fields](#little-endian-fields-of-any-width) |
 | `@cal` | the name of a `cal` | none | the curve between a field's raw and engineering value -- see [Calibrations](#calibrations) |
 | `@if` | a condition: `valof(name) == value`, other comparisons, `&`, `&&`, `\|\|` | none | whether what follows is in a frame at all -- see [Conditional fields](#conditional-fields) |
 
@@ -417,26 +417,48 @@ value: 16;                           # big_endian, through volts: the later of e
 The later one wins, as it always has, so the file means what it did before the warning existed; but
 one of the two is a mistake, and which one the author meant is exactly what the file no longer says.
 
-### Where `byte_order` does not apply
+### Little-endian fields of any width
 
-`byte_order` only means something for a field that is byte-aligned and a whole number of bytes wide.
-Writing it on one that is not is an error rather than a silently ignored line:
+`little_endian` covers a field of any width, at any offset. Bit `j` of a field at offset `n` is bit
+`(n + j) % 8` of byte `(n + j) / 8`, counting from each byte's least significant bit. Fields fill a byte from
+the bottom and run on into the next, which is how a packed C struct is laid out on a little-endian
+processor, and a CAN signal in Intel format:
+
+```
+[ @byte_order: little_endian; ]
+pkt TM_WORD {
+  id:    8 := 0x50;
+  value: 12;
+  flags: 4;
+};
+```
+
+`value` at `0x123` and `flags` at `0xA` go out as `50 23 A1`. Fields are listed lowest first, as a C struct's
+are, so a specification's "bits 3-0" comes before its "bits 7-4". On whole bytes on a byte boundary this is the
+bytes swapped, which is what the name suggests.
+
+`@bit_order` stays independent: `lsb_first` reverses a field's value before it is laid down, in either order.
+
+### Fields sharing a byte
+
+A big-endian field fills a byte from the top and a little-endian one from the bottom, so two that share a byte
+would overlap. They must agree on `@byte_order`, whether it was written on them or inherited (check 10):
 
 ```
 pkt TM_ODD {
   hdr:  8 := 0xAA;
 
-  [ @byte_order: little_endian; ]  # REJECTED: 15 bits, starting at bit 8
+  [ @byte_order: little_endian; ]
   seq:  15;
 
-  tail: 1;
+  tail: 1;  # REJECTED: shares a byte with 'seq', and is big-endian
 };
 ```
 
-Inheriting it is different, and is not an error. A file, packet or block `byte_order` covers every
-field below it, and most real frames mix byte-wide fields with sub-byte ones; it simply does not
-apply to the ones with no bytes to reorder. Only an attribute *written on the field itself* is
-rejected, because only that means someone believed they had specified something.
+A change of order on a byte boundary is fine, and `hdr` and `seq` here are. A boundary has to be one the
+definition can show: after a variable or conditional field, a change of order is refused unless the widths
+before it are known to come to whole bytes. A bit string and a repetition go out as bytes, so they count as
+big-endian, and a repetition with little-endian members smaller than a byte has to start on a boundary.
 
 ## Reusing a group of fields
 

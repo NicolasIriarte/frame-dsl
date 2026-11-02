@@ -147,6 +147,12 @@ static const uint8_t bytes_fixed_over[] = { 0xAA, 0x01 };
 static const uint8_t bytes_bit_string[] = { 0xAA, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 static const uint8_t bytes_bit_string_offset[] = { 0xA1, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x15 };
 static const uint8_t bytes_variable_empty[] = { 0xAA, 0x00, 0xC7 };
+static const Field little_endian[] = {
+  SCALAR("LITTLE_ENDIAN.value", 0x123),  SCALAR("LITTLE_ENDIAN.flags", 0xA),  SCALAR("LITTLE_ENDIAN.low", 0x5),
+  SCALAR("LITTLE_ENDIAN.wide", 0x12345), SCALAR("LITTLE_ENDIAN.big", 0xBEEF),
+};
+
+static const uint8_t bytes_little_endian[] = { 0x5A, 0x23, 0xA1, 0x2D, 0x1A, 0x09, 0xBE, 0xEF };
 static const uint8_t bytes_variable_middling[] = { 0xAA, 0x03, 1, 2, 3, 0xC7 };
 static const uint8_t bytes_variable_full[] = { 0xAA, 0x08, 1, 2, 3, 4, 5, 6, 7, 8, 0xC7 };
 static const uint8_t bytes_family_ping[] = { 0x01, 0x00, 0x09 };
@@ -161,6 +167,7 @@ static const Row ROWS[] = {
   ROW("sub-byte fields packing and straddling", "sub_byte.fdsl", "SUB_BYTE", sub_byte, bytes_sub_byte),
   ROW("lsb_first beside msb_first", "bit_order.fdsl", "BIT_ORDER", bit_order, bytes_bit_order),
   ROW("little_endian swapping only its own field", "byte_order.fdsl", "BYTE_ORDER", byte_order, bytes_byte_order),
+  ROW("little_endian fields inside a word", "little_endian.fdsl", "LITTLE_ENDIAN", little_endian, bytes_little_endian),
   ROW("a discriminator nobody sets", "fixed_over.fdsl", "FIXED_OVER", fixed_over, bytes_fixed_over),
   ROW("a bit string wider than a scalar", "bit_string.fdsl", "BIT_STRING", bit_string, bytes_bit_string),
   ROW(

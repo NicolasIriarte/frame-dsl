@@ -1,0 +1,29 @@
+# Fields inside a little-endian word: a NAME, from J1939 Address Claimed (PGN 60928).
+#
+# `little_endian` covers a field of any width. Bit j of a field at offset n is bit (n + j) % 8 of byte
+# (n + j) / 8, counting from each byte's least significant bit. So fields fill a byte from the bottom and
+# run on into the next, and are listed lowest first, as a packed C struct's are on a little-endian
+# processor and a CAN signal in Intel format is. On whole bytes that is the bytes swapped, as it always was.
+#
+# A NAME with identity 0x12345 and manufacturer 0x2AB goes out as 45 23 61 55 8D 81 46 A9:
+#
+#   frame-dsl little_endian_bitfields.fdsl -d "45 23 61 55 8D 81 46 A9" --packet ADDRESS_CLAIMED
+#
+# A big-endian field fills a byte from the top, so two fields of different orders cannot share one
+# (check 10). Changing order on a byte boundary is fine.
+
+@decode:     manual;
+@byte_order: little_endian;
+
+pkt ADDRESS_CLAIMED {
+  identity:          21;
+  manufacturer:      11;
+  ecu_instance:      3;
+  function_instance: 5;
+  function:          8;
+  reserved:          1;
+  vehicle_system:    7;
+  system_instance:   4;
+  industry_group:    3;
+  arbitrary:         1;
+};

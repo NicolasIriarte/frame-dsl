@@ -1,0 +1,16 @@
+# little_endian fills each byte from its low bit, and a field runs on into the next byte.
+#
+# `value` is 12 bits and `flags` the 4 above them, so 0x123 and 0xA are 23 A1, and `wide` crosses from there
+# into three more bytes. A big-endian byte follows on its boundary, to catch a change of order leaking.
+
+@byte_order: little_endian;
+
+pkt LITTLE_ENDIAN {
+  id:    8 := 0x5A;
+  value: 12;
+  flags: 4;
+  low:   3;
+  wide:  21;
+  [ @byte_order: big_endian; ]
+  big:   16;
+};

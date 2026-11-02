@@ -210,7 +210,11 @@ static bool element_fixed_image(ElementProgram *element) {
   for (size_t m = 0; ok && m < element->member_count; ++m) {
     const MemberInstruction *member = &element->members[m];
     if (member->has_fixed) {
-      bits_put(mask, member->offset_bits, member->width_bits, UINT64_MAX);
+      if (member_packed(member)) {
+        bits_put_le(mask, member->offset_bits, member->width_bits, UINT64_MAX);
+      } else {
+        bits_put(mask, member->offset_bits, member->width_bits, UINT64_MAX);
+      }
       member_put(value, member->offset_bits, member, member->fixed);
     }
   }

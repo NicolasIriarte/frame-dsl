@@ -60,6 +60,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`default_values.fdsl`](default_values.fdsl) | defaults: `?=` beside `:=`, on a repetition, and replaced by a use |
 | [`signed_and_float.fdsl`](signed_and_float.fdsl) | typed fields: signed and float values, with a curve, a condition and a default |
 | [`can_bus.fdsl`](can_bus.fdsl) | `@decode: manual`: packets a program names, for a link that carries identity elsewhere |
+| [`little_endian_bitfields.fdsl`](little_endian_bitfields.fdsl) | a J1939 NAME: fields inside a little-endian word, crossing bytes |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 | [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
@@ -80,7 +81,7 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`invalid/default_too_wide.fdsl`](invalid/default_too_wide.fdsl) | 8 -- a default does not fit its width |
 | [`invalid/default_on_a_bit_string.fdsl`](invalid/default_on_a_bit_string.fdsl) | 8 -- a default needs a scalar |
 | [`invalid/default_does_not_identify.fdsl`](invalid/default_does_not_identify.fdsl) | 11 -- a default identifies nothing |
-| [`invalid/byte_order_unaligned.fdsl`](invalid/byte_order_unaligned.fdsl) | 10 -- `@byte_order` on a field with no bytes |
+| [`invalid/byte_order_unaligned.fdsl`](invalid/byte_order_unaligned.fdsl) | 10 -- two fields sharing a byte disagree on `@byte_order` |
 | [`invalid/odd_packet.fdsl`](invalid/odd_packet.fdsl) | 13 -- packet is not a whole number of bytes |
 | [`invalid/odd_valof_width.fdsl`](invalid/odd_valof_width.fdsl) | 13 -- variable width not provably a byte multiple |
 | [`invalid/reservation_on_fixed_width.fdsl`](invalid/reservation_on_fixed_width.fdsl) | 14 -- a reservation on a constant-width field |

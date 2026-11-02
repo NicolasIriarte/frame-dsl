@@ -439,7 +439,7 @@ static int us21_tc10_orders_come_from_where_the_field_is_used(const TestArgument
   }
   fixture_close(&fixture);
 
-  /* Check 10 holds as for any field: a 4-bit field has no bytes to reorder. */
+  /* Check 10 holds as for any field: `id` fills the byte from the top, and `n` from the bottom. */
   if (failure == 0
       && !refused("enum Nib: 4 { A; };\npkt R { id: 4 := 1; [ @byte_order: little_endian; ] n: Nib; };\n", 10, NULL)) {
     failure = __LINE__;
