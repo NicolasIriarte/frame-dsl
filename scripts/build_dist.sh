@@ -13,7 +13,7 @@
 #   lib/libframedsl.a                                       the static archive, which install skips
 #   share/frame-dsl/editors/{emacs,vim,vscode}/             each editor's files and README, the .vsix
 #   share/frame-dsl/manual/                                 what those READMEs link to
-#   README.md CHANGELOG.md INSTALL.md
+#   README.md CHANGELOG.md LICENSE INSTALL.md
 #
 # Each editor's README stays where its links into the manual still resolve; links into the source tree
 # (its tests, the vendored client) do not, and are not what a reader of a release needs.
@@ -58,7 +58,7 @@ install -m 644 "$vsix" "${root}/editors/vscode/README.md" "${editors}/vscode/"
 
 mkdir -p "${stage}/share/frame-dsl/manual"
 install -m 644 "${root}"/manual/*.md "${stage}/share/frame-dsl/manual/"
-install -m 644 "${root}/README.md" "${root}/CHANGELOG.md" "$stage/"
+install -m 644 "${root}/README.md" "${root}/CHANGELOG.md" "${root}/LICENSE" "$stage/"
 install -m 644 "${root}/scripts/dist_install.md" "${stage}/INSTALL.md"
 
 # Owned by nobody in particular, and in a stable order, so the archive is the same each time it is

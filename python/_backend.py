@@ -4,7 +4,7 @@ pip installs a project's backend into an isolated environment before building it
 backend (setuptools, flit, hatchling) is a download. This builds the one wheel `pip install ./python`
 needs -- framedsl/*.py, plus the copy of libframedsl that `make python` puts next to them -- and an
 sdist, and nothing else: no editable installs, no extensions, no configuration beyond pyproject.toml's
-name and version.
+name, version and license.
 
 A wheel that carries the library is tagged for this platform, since it holds x86-64 Linux code; one
 without it is pure Python and finds the library at run time (FRAMEDSL_LIBRARY or the system loader).
@@ -23,7 +23,7 @@ PACKAGE = "framedsl"
 
 
 def _project():
-    """name and version from pyproject.toml, read by hand: tomllib is 3.11+, and this is two keys."""
+    """The keys used from pyproject.toml, read by hand: tomllib is 3.11+, and this is a handful."""
     values = {}
     section = None
     with open(os.path.join(HERE, "pyproject.toml")) as handle:
@@ -33,7 +33,7 @@ def _project():
                 section = line
             elif section == "[project]" and "=" in line:
                 key, value = (part.strip() for part in line.split("=", 1))
-                if key in ("name", "version", "requires-python", "description"):
+                if key in ("name", "version", "requires-python", "description", "license"):
                     values[key] = value.strip('"')
     return values
 
@@ -46,13 +46,28 @@ def _files():
             yield f"{PACKAGE}/{name}", os.path.join(directory, name)
 
 
+def _license():
+    """LICENSE on disk: beside this file in an sdist or after `make python`, else a checkout's root.
+
+    MIT's one condition is that the notice stays with copies of the code, so a package that would go
+    out without it is refused rather than built.
+    """
+    for directory in (HERE, os.path.dirname(HERE)):
+        path = os.path.join(directory, "LICENSE")
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError(f"no LICENSE in {HERE} or its parent -- run `make python`")
+
+
 def _metadata(project):
     return (
-        "Metadata-Version: 2.1\n"
+        "Metadata-Version: 2.4\n"
         f"Name: {project['name']}\n"
         f"Version: {project['version']}\n"
         f"Summary: {project.get('description', '')}\n"
         f"Requires-Python: {project.get('requires-python', '')}\n"
+        f"License-Expression: {project['license']}\n"
+        "License-File: LICENSE\n"
     )
 
 
@@ -71,6 +86,8 @@ def get_requires_for_build_sdist(config_settings=None):
 
 def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     project = _project()
+    with open(_license(), "rb") as handle:
+        license_text = handle.read()
     files = list(_files())
     carries_library = any(os.path.basename(path).startswith("libframedsl.so") for path, _ in files)
     if carries_library:
@@ -89,6 +106,7 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
             record += _record_line(archive_path, data)
         extra = {
             f"{dist_info}/METADATA": _metadata(project).encode(),
+            f"{dist_info}/licenses/LICENSE": license_text,
             f"{dist_info}/WHEEL": (
                 "Wheel-Version: 1.0\n"
                 "Generator: framedsl-backend\n"
@@ -110,6 +128,7 @@ def build_sdist(sdist_directory, config_settings=None):
     with tarfile.open(os.path.join(sdist_directory, name), "w:gz") as sdist:
         for path in ("pyproject.toml", "_backend.py"):
             sdist.add(os.path.join(HERE, path), f"{base}/{path}")
+        sdist.add(_license(), f"{base}/LICENSE")
         for archive_path, disk_path in _files():
             if archive_path.endswith(".py"):
                 sdist.add(disk_path, f"{base}/{archive_path}")

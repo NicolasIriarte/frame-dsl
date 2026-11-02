@@ -32,6 +32,8 @@ When a frame changes, the definition file changes. The program does not get rebu
 > name, encodes a frame, and decodes one back without being told which packet arrived. What the
 > project is for, and what it is not, is in [`docs/scope.md`](docs/scope.md). The C API may still change before 1.0.
 
+> AI was used heavily in the development of this project.
+
 ## The two ways this gets used
 
 Both of them are about a device that is not in front of you. The layouts here are the telemetry and
@@ -384,3 +386,18 @@ that gate who may act on an issue, and the rule against self-attribution anywher
 section. A change on its way in writes its entry as a file of its own under
 [`changelog.d/`](changelog.d/README.md), so two pull requests never edit the same lines; the entries are
 folded into `CHANGELOG.md` when a version is cut.
+
+## License
+
+Frame-DSL is free for personal and commercial use, at no charge, under the [MIT license](LICENSE).
+Its only condition is that the license notice stays with copies of the code.
+
+Definition files you write, and what `frame-dsl` generates from them, are yours: the license above
+does not apply to them.
+
+If you use Frame-DSL, a mention of it and of Nicolás Iriarte is appreciated. It is a request, not a
+requirement.
+
+AI was used heavily in the development of this project.
+
+Code under `third_party/clibs/` and `editors/vscode/vendor/` carries its own notice.

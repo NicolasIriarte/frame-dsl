@@ -13,4 +13,5 @@
 # `make python` copies the shared library next to the Python package, for `pip install ./python` to carry.
 # Build output that happens to live in the source tree.
 /python/framedsl/libframedsl.so*
+/python/LICENSE
 __pycache__/

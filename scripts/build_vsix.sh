@@ -43,6 +43,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "${tmp}/extension"
 cp "${src}/package.json" "${src}/language-configuration.json" "${src}/extension.js" "${tmp}/extension/"
+cp "${root}/LICENSE" "${tmp}/extension/"
 cp -r "${src}/syntaxes" "${tmp}/extension/syntaxes"
 cp -r "${src}/vendor" "${tmp}/extension/vendor"
 
@@ -80,10 +81,12 @@ rm -f "$out"
 (cd "$tmp" && zip -q -r "$out" '[Content_Types].xml' extension.vsixmanifest extension)
 
 # What makes it a .vsix rather than any zip: the manifest, and the four files that are this
-# extension. A missing one is a silent, un-installable archive otherwise.
+# extension. A missing one is a silent, un-installable archive otherwise. The license is not needed
+# to install it, but MIT's one condition is that it stays with every copy.
 listing="$(unzip -l "$out")"
 for entry in 'extension.vsixmanifest' 'extension/package.json' 'extension/extension.js' \
-	'extension/syntaxes/fdsl.tmLanguage.json' 'extension/vendor/vscode-languageclient.js'; do
+	'extension/syntaxes/fdsl.tmLanguage.json' 'extension/vendor/vscode-languageclient.js' \
+	'extension/LICENSE'; do
 	echo "$listing" | grep -qF "$entry" || log_halt "${out} is missing ${entry}"
 done
 

@@ -46,7 +46,7 @@ for file in bin/frame-dsl lib/libframedsl.a lib/libframedsl.so lib/libframedsl.s
 	share/frame-dsl/editors/vim/indent/fdsl.vim share/frame-dsl/editors/vim/compiler/fdsl.vim \
 	share/frame-dsl/editors/vim/lsp/frame_dsl.lua share/frame-dsl/editors/vscode/README.md \
 	share/frame-dsl/manual/language.md share/frame-dsl/manual/api.md share/frame-dsl/manual/editors.md \
-	README.md CHANGELOG.md INSTALL.md; do
+	share/doc/frame-dsl/LICENSE README.md CHANGELOG.md LICENSE INSTALL.md; do
 	expect "holds ${file}" test -e "${here}/${file}"
 done
 expect "holds the VS Code extension" compgen -G "${here}/share/frame-dsl/editors/vscode/frame-dsl-*.vsix"
@@ -70,6 +70,7 @@ if command -v vim >/dev/null 2>&1; then
 fi
 vsix="$(compgen -G "${here}/share/frame-dsl/editors/vscode/frame-dsl-*.vsix" | head -1)"
 expect "the VS Code extension is a whole archive" unzip -tq "$vsix"
+expect "the VS Code extension holds the license" unzip -p "$vsix" extension/LICENSE
 # A release's extension is that release: a tag cut without bumping editors/vscode/package.json would
 # otherwise ship last version's number inside this version's archive.
 if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

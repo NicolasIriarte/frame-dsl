@@ -254,9 +254,11 @@ lib: $(LIB_ARCHIVE) $(LIB_SHARED_LINKS)
 
 # A copy next to the package is the second place python/framedsl/_native.py looks, after
 # FRAMEDSL_LIBRARY, so `pip install ./python` after this carries the library into the installed package.
-# The copy is gitignored: it is build output that happens to live in the source tree.
+# The copy is gitignored: it is build output that happens to live in the source tree. LICENSE is
+# copied too, for a pip old enough to copy python/ away before building, out of reach of the root's.
 python: $(LIB_SHARED_LINKS)
 	cp $(BUILD)/$(LIB_SONAME) $(PYTHON_PACKAGE)/$(LIB_SONAME)
+	cp LICENSE python/LICENSE
 
 # The VS Code extension, packaged with zip alone -- see scripts/build_vsix.sh. The version comes
 # from editors/vscode/package.json, not this Makefile: there is exactly one place that number is
@@ -264,7 +266,7 @@ python: $(LIB_SHARED_LINKS)
 # and nothing else here does; scripts/vendor_vscode_languageclient.sh is run by hand instead.
 VSIX_VERSION = $(shell jq -r .version editors/vscode/package.json)
 VSIX := $(BUILD)/frame-dsl-$(VSIX_VERSION).vsix
-VSCODE_SRC := editors/vscode/package.json editors/vscode/language-configuration.json \
+VSCODE_SRC := LICENSE editors/vscode/package.json editors/vscode/language-configuration.json \
 	editors/vscode/extension.js editors/vscode/syntaxes/fdsl.tmLanguage.json \
 	editors/vscode/vendor/vscode-languageclient.js
 
@@ -289,12 +291,15 @@ install: $(TARGET) $(LIB_SHARED_LINKS)
 	install -d $(DESTDIR)$(BASH_COMPLETION_DIR) $(DESTDIR)$(ZSH_COMPLETION_DIR)
 	install -m 644 completions/frame-dsl.bash $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl
 	install -m 644 completions/_frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
+	install -d $(DESTDIR)$(PREFIX)/share/doc/frame-dsl
+	install -m 644 LICENSE $(DESTDIR)$(PREFIX)/share/doc/frame-dsl/LICENSE
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/frame-dsl
 	rm -f $(DESTDIR)$(PREFIX)/lib/libframedsl.so.$(SO_VERSION) $(DESTDIR)$(PREFIX)/lib/$(LIB_SONAME) \
 	  $(DESTDIR)$(PREFIX)/lib/libframedsl.so $(DESTDIR)$(PREFIX)/include/framedsl.h
 	rm -f $(DESTDIR)$(BASH_COMPLETION_DIR)/frame-dsl $(DESTDIR)$(ZSH_COMPLETION_DIR)/_frame-dsl
+	rm -f $(DESTDIR)$(PREFIX)/share/doc/frame-dsl/LICENSE
 
 # Not part of `test`, and nothing in it fails on a slow result: timing on a shared machine is too noisy
 # to fail a build on. BENCH_SECONDS is the minimum each measurement runs for.
@@ -409,7 +414,8 @@ DIST := $(BUILD)/frame-dsl-$(VERSION_STRING)-linux-$(DIST_ARCH).tar.gz
 dist: $(DIST)
 
 $(DIST): $(TARGET) $(LIB_ARCHIVE) $(LIB_SHARED_LINKS) $(VSIX) scripts/build_dist.sh scripts/dist_install.md \
-         CHANGELOG.md README.md $(wildcard manual/*.md editors/*/README.md editors/emacs/*.el) \
+         CHANGELOG.md LICENSE README.md \
+         $(wildcard manual/*.md editors/*/README.md editors/emacs/*.el) \
          $(shell find editors/vim -type f 2>/dev/null)
 	scripts/build_dist.sh $@ $(BUILD) $(VSIX)
 
