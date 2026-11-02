@@ -1,0 +1,9 @@
+# REJECTED: check 16 -- valof() needs a whole value.
+#
+# A float has none to size a field with, and nothing to compare exactly in a condition.
+
+pkt TM_RATIO {
+  id:      8 := 0x01;
+  ratio:   f32;
+  data[8]: valof(ratio) * 8;
+};

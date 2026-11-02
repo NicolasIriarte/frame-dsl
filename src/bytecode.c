@@ -71,6 +71,8 @@ static size_t measure(const Expr *expr) {
 typedef struct {
   WidthInstruction *code;
   size_t length;
+  /** @brief Whether the expression being emitted reads a signed field. */
+  bool has_signed;
 } Emitter;
 
 static void emit(Emitter *emitter, WidthOp op, uint64_t operand) {
@@ -95,7 +97,14 @@ static void compile_expr(Emitter *emitter, const AstPacket *packet, const Expr *
   }
 
   if (expr->kind == EXPR_VALOF) {
-    emit(emitter, OP_SLOT, slot_of(packet, expr->reference));
+    const uint64_t slot = slot_of(packet, expr->reference);
+    const AstField *field = &packet->fields[slot];
+    if (field->kind == FIELD_KIND_SIGNED) {
+      emitter->has_signed = true;
+      emit(emitter, OP_SLOT_SIGNED, slot | field->width->literal << 32);
+    } else {
+      emit(emitter, OP_SLOT, slot);
+    }
     return;
   }
 
@@ -124,7 +133,7 @@ static uint32_t stack_depth(const WidthInstruction *code, size_t length) {
   uint32_t depth = 0;
   uint32_t deepest = 0;
   for (size_t i = 0; i < length; ++i) {
-    if (code[i].op == OP_SLOT || code[i].op == OP_LIT) {
+    if (code[i].op == OP_SLOT || code[i].op == OP_SLOT_SIGNED || code[i].op == OP_LIT) {
       depth += 1;
       if (depth > deepest) {
         deepest = depth;
@@ -252,6 +261,7 @@ static bool compile_element(ElementProgram *element, const AstFile *file, const 
       .fixed = field->fixed,
       .has_default = field->has_default,
       .default_value = field->has_default ? field->default_value : 0,
+      .kind = field->kind,
       .cal = cal_index(file, field->cal),
       .enumeration = enum_index(file, field->enumeration),
       .bit_order = field->bit_order,
@@ -322,11 +332,15 @@ static uint32_t compile_condition(
     return compile_condition(compiler, condition->lhs, if_true, rhs);
   }
   uint32_t at = compiler->length++;
+  const uint64_t slot = slot_of(compiler->packet, condition->field->reference);
+  const AstField *field = &compiler->packet->fields[slot];
+  const bool sign = field->kind == FIELD_KIND_SIGNED && !condition->has_mask;
   compiler->code[at] = (ConditionInstruction){
-    .field = (uint32_t)slot_of(compiler->packet, condition->field->reference),
+    .field = (uint32_t)slot,
     .op = condition->op,
     .mask = condition->has_mask ? condition->mask : UINT64_MAX,
-    .value = condition->value,
+    .value = condition->value_form.negative ? (uint64_t)0 - condition->value : condition->value,
+    .sign_bits = sign ? (uint8_t)field->width->literal : 0,
     .if_true = if_true,
     .if_false = if_false,
   };
@@ -413,6 +427,7 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
         .fixed = field->has_fixed ? field->fixed : 0,
         .has_default = field->has_default,
         .default_value = field->has_default ? field->default_value : 0,
+        .kind = field->kind,
         .cal = cal_index(file, field->cal),
         .enumeration = enum_index(file, field->enumeration),
         .bit_order = field->bit_order,
@@ -467,10 +482,12 @@ Program *program_compile(const AstFile *file, const Layout *layout, DiagList *di
       }
 
       size_t start = emitter.length;
+      emitter.has_signed = false;
       compile_expr(&emitter, packet, field->width);
 
       instruction->width.code = &emitter.code[start];
       instruction->width.length = (uint32_t)(emitter.length - start);
+      instruction->width.has_signed = emitter.has_signed;
       instruction->width.stack_depth = stack_depth(instruction->width.code, instruction->width.length);
 
       if (instruction->width.stack_depth > WIDTH_STACK_MAX) {
@@ -507,9 +524,75 @@ void program_free(Program *program) {
   free(program);
 }
 
+/* The same machine over signed numbers, for a program reading a signed field (#10): `valof(t) + 10` is
+ * 7 with t at -3, which the unsigned one would refuse on the way there. Only the result has to be a
+ * width. Its own function, so that the common case keeps the unsigned one's branches. */
+static bool width_program_eval_signed(const WidthProgram *program, const uint64_t *slots, uint64_t *out) {
+  const int64_t ceiling = (int64_t)WIDTH_CEILING;
+  int64_t stack[WIDTH_STACK_MAX];
+  size_t depth = 0;
+
+  for (uint32_t i = 0; i < program->length; ++i) {
+    const WidthInstruction *instruction = &program->code[i];
+    switch (instruction->op) {
+    case OP_SLOT_SIGNED:
+      stack[depth++] = bits_sign_extend(slots[instruction->operand & UINT32_MAX], instruction->operand >> 32);
+      break;
+    case OP_SLOT:
+    case OP_LIT: {
+      const uint64_t value = instruction->op == OP_SLOT ? slots[instruction->operand] : instruction->operand;
+      if (value > WIDTH_CEILING) {
+        return false;
+      }
+      stack[depth++] = (int64_t)value;
+      break;
+    }
+    default: {
+      if (depth < 2) {
+        return false;
+      }
+      int64_t rhs = stack[--depth];
+      int64_t lhs = stack[depth - 1];
+      bool overflowed = false;
+      switch (instruction->op) {
+      case OP_ADD:
+        overflowed = __builtin_add_overflow(lhs, rhs, &lhs);
+        break;
+      case OP_SUB:
+        overflowed = __builtin_sub_overflow(lhs, rhs, &lhs);
+        break;
+      case OP_MUL:
+        overflowed = __builtin_mul_overflow(lhs, rhs, &lhs);
+        break;
+      default:
+        if (rhs == 0 || (rhs == -1 && lhs == INT64_MIN)) {
+          return false;
+        }
+        lhs /= rhs;
+        break;
+      }
+      if (overflowed || lhs > ceiling || lhs < -ceiling) {
+        return false;
+      }
+      stack[depth - 1] = lhs;
+      break;
+    }
+    }
+  }
+
+  if (depth != 1 || stack[0] < 0 || stack[0] > ceiling) {
+    return false;
+  }
+  *out = (uint64_t)stack[0];
+  return true;
+}
+
 bool width_program_eval(const WidthProgram *program, const uint64_t *slots, uint64_t *out) {
   if (program == NULL || program->code == NULL || slots == NULL || out == NULL) {
     return false;
+  }
+  if (program->has_signed) {
+    return width_program_eval_signed(program, slots, out);
   }
 
   uint64_t stack[WIDTH_STACK_MAX];

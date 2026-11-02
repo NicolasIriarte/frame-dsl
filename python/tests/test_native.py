@@ -67,6 +67,16 @@ class Structs(unittest.TestCase):
         self.assertIsNone(reading.enumeration)
         _native.framedsl_result_free(result)
 
+    def test_a_field_reports_its_kind(self):
+        result, definition = load("block B { m: i8; };\npkt P { id: 8 := 1; s: i16; f: f32; b: B[2]; };")
+        self.addCleanup(_native.framedsl_result_free, result)
+        field = _native.Field()
+        for index, kind in ((0, _native.KIND_UNSIGNED), (1, _native.KIND_SIGNED), (2, _native.KIND_FLOAT)):
+            self.assertTrue(_native.framedsl_field(definition, 0, index, ctypes.byref(field)))
+            self.assertEqual(field.kind, kind)
+        self.assertTrue(_native.framedsl_member(definition, 0, 3, 0, ctypes.byref(field)))
+        self.assertEqual(field.kind, _native.KIND_SIGNED)
+
     def test_a_field_reports_its_default(self):
         result, definition = load("block B { m: 8 ?= 3; };\npkt P { id: 8 := 1; d: 8 ?= 2; o: 8; b: B[2]; };")
         self.addCleanup(_native.framedsl_result_free, result)
@@ -219,6 +229,8 @@ class Finding(unittest.TestCase):
         child = self.run_python({"LD_LIBRARY_PATH": ""})
         if child.returncode == 0:
             self.skipTest("a libframedsl is installed on the system loader's path")
+        if "undefined symbol" in child.stderr:
+            self.skipTest("an older libframedsl is installed on the system loader's path")
         self.assertIn("FRAMEDSL_LIBRARY", child.stderr)
         self.assertIn("next to the package", child.stderr)
         self.assertIn("system loader", child.stderr)

@@ -35,6 +35,8 @@ typedef struct {
   bool variable;
   /** @brief The definition fixes this field's value, so no setter may write it (#140). */
   bool is_fixed;
+  /** @brief How the slot's pattern reads (#10). */
+  FieldKind kind;
 } Slot;
 
 struct FramedslFrame {

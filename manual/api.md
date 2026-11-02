@@ -160,6 +160,7 @@ a zeroed struct that looks like a real field.
 | `width_bits` | the width, when it is not variable (`0` when it is) |
 | `max_bits` | the reserved slot **in bits**, when it is (`0` when it is not). The definition writes it in bytes, as `data[128]:` |
 | `reserved_bits` | what the arena reserves: the width, or the bound |
+| `kind` | how its bits read: `FRAMEDSL_KIND_UNSIGNED`, `_SIGNED` or `_FLOAT`. `fixed` and `default_value` hold the pattern whatever this says, so -1 in an `i8` is `0xFF` |
 | `offset_known` | false for every field after a variable-width or a conditional one |
 | `offset_bits` | where it starts, when that is known |
 | `is_scalar` | 64 bits or fewer: read as an integer, not as bytes |
@@ -277,11 +278,26 @@ FramedslStatus framedsl_get_bytes_into(const FramedslFrame *frame, FramedslField
                                        uint8_t *out, size_t capacity, size_t *length);
 
 size_t framedsl_byte_length(const FramedslFrame *frame, FramedslFieldId id);
+
+FramedslStatus framedsl_set_i64(FramedslFrame *frame, FramedslFieldId id, int64_t value);
+FramedslStatus framedsl_get_i64(const FramedslFrame *frame, FramedslFieldId id, int64_t *out);
+FramedslStatus framedsl_set_f64(FramedslFrame *frame, FramedslFieldId id, double value);
+FramedslStatus framedsl_get_f64(const FramedslFrame *frame, FramedslFieldId id, double *out);
 ```
 
 **The width alone decides which pair applies.** 64 bits or fewer is a scalar and takes `u64`; anything
 wider -- including every `valof()`-sized field -- is a bit string and takes `bytes`. Using the wrong
 pair is `FRAMEDSL_ERROR_FIELD`, not a reinterpretation of the bytes.
+
+**`u64` is raw bits, on every scalar, and never refused for its type.** -160 in an `i16` reads `0xFF60` and
+1.5 in an `f32` reads `0x3FC00000`, so a loop copying fields keeps working, and a test can send any pattern, a
+NaN included. `i64` reads and writes a signed field, and `f64` a float, an `f32` included, since a double holds
+every float exactly. The suffix names the C type, as `u64` does.
+
+On any other field the typed accessors are `FRAMEDSL_ERROR_FIELD`, and on a fixed one `FRAMEDSL_ERROR_FIXED`. A
+value outside the type's range is `FRAMEDSL_ERROR_RANGE`, and the slot keeps what it had. `framedsl_set_f64()` on
+an `f32` rounds to the nearest float. A finite value too large for one is `FRAMEDSL_ERROR_RANGE`, and NaN and
+the infinities go through unjudged.
 
 There is one scalar setter rather than four. A `set_u8` would add no safety that the width check does
 not already give, and the compiler widens the argument at the call site for nothing.
@@ -559,8 +575,10 @@ framedsl_set_eng(frame, limit_id, 35.0);       /* engineering -> raw, rounded to
 `framedsl_set_eng()` needs the curve run backwards. A linear one is inverted automatically; any other
 needs an `inverse` in the definition, and without one is `FRAMEDSL_ERROR_FIELD`. `FramedslField`
 says which in advance: `cal` is the curve's name or `NULL`, and `cal_invertible` whether it can be
-set. A value whose raw counterpart is negative or too wide for the field is `FRAMEDSL_ERROR_RANGE`,
-and leaves the field alone. A reading the curve cannot turn into a finite number -- a division by a
+set. A value whose raw counterpart does not fit the field -- negative on an unsigned one, or past a
+signed type's range -- is `FRAMEDSL_ERROR_RANGE`, and leaves the field alone. On a typed field the curve
+sees the value, -160 or 1.5, rather than the pattern: `framedsl_set_eng()` rounds to the nearest integer
+on a signed field, and does not round on a float. A reading the curve cannot turn into a finite number -- a division by a
 value that happened to be zero -- is `FRAMEDSL_ERROR_RANGE` too, rather than an infinity.
 
 **What round-tripping costs.** Only the rounding: a value set and read back is within half a raw

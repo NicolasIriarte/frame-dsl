@@ -1,0 +1,8 @@
+# REJECTED: check 8 -- a value on a signed field is a number in its range.
+#
+# 0xFF is 255, which an `i8` cannot hold. The value that field holds in those bits is written -1.
+
+pkt TM_OFFSET {
+  id:     8  := 0x01;
+  offset: i8 := 0xFF;
+};

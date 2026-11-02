@@ -14,9 +14,10 @@
 Everything runs in the C library, through ctypes (framedsl/_native.py), so a frame built here is the
 frame a C program builds: there is no second parser or runtime to keep agreeing with the first.
 
-A field's value is an int when the field is a scalar (64 bits or fewer) and bytes otherwise -- which
-one is decided by the field, as it is in C. `frame.eng[...]` reads and writes a calibrated field in
-engineering units, and `frame.names[...]` a field typed by an enum by its names. Every error the C API
+A field's value is an int when the field is a scalar (64 bits or fewer), a float when it is an `f32` or
+an `f64`, and bytes otherwise -- which one is decided by the field, as it is in C. `frame.eng[...]` reads
+and writes a calibrated field in engineering units, `frame.names[...]` a field typed by an enum by its
+names, and `frame.raw[...]` any scalar's bits. Every error the C API
 reports becomes an exception of its own, all of them under `framedsl.Error`.
 """
 
@@ -256,7 +257,7 @@ class Definition:
         self._handle = _native.framedsl_definition(result)
         # Warnings, on a definition that loaded: a load that succeeds may still have something to say.
         self.diagnostics = diagnostics
-        # Dotted name -> (FieldId, is_scalar). framedsl_find() is a string walk; a script setting the
+        # Dotted name -> (FieldId, kind), a kind of None being a bit string. framedsl_find() is a string walk; a script setting the
         # same field in a loop should pay for it once, as a C program resolving its ids up front does.
         self._ids = {}
 
@@ -334,18 +335,18 @@ class Definition:
         return cal
 
     def _field(self, dotted):
-        """(FieldId, is_scalar) for a dotted name, or FieldError."""
+        """(FieldId, kind) for a dotted name, or FieldError. A bit string's kind is None."""
         known = self._ids.get(dotted)
         if known is not None:
             return known
         field_id = _native.FieldId()
         if not _native.framedsl_find(self._handle, dotted.encode("utf-8"), ctypes.byref(field_id)):
             raise FieldError(f"no field {dotted!r}")
-        known = (field_id, self._is_scalar(field_id))
+        known = (field_id, self._kind(field_id))
         self._ids[dotted] = known
         return known
 
-    def _is_scalar(self, field_id):
+    def _kind(self, field_id):
         info = _native.Field()
         if field_id.member == 0:
             _native.framedsl_field(self._handle, field_id.packet, field_id.field, ctypes.byref(info))
@@ -353,7 +354,7 @@ class Definition:
             _native.framedsl_member(
                 self._handle, field_id.packet, field_id.field, field_id.member - 1, ctypes.byref(info)
             )
-        return info.is_scalar
+        return info.kind if info.is_scalar else None
 
 
 # ---- Frames -----------------------------------------------------------------------------------
@@ -392,22 +393,33 @@ class Frame:
         """Fields typed by an enum, by name: frame.names["PKT.field"], read and written."""
         return _Names(self)
 
+    @property
+    def raw(self):
+        """Any scalar's bits, whatever its type: frame.raw["PKT.field"], read and written."""
+        return _Raw(self)
+
     def reset(self):
         """Every field back to zero or its default, as a new frame is."""
         _native.framedsl_frame_reset(self._handle)
 
     def __getitem__(self, dotted):
-        field_id, is_scalar = self._definition._field(dotted)
-        return self._get(field_id, is_scalar, dotted)
+        field_id, kind = self._definition._field(dotted)
+        return self._get(field_id, kind, dotted)
 
     def __setitem__(self, dotted, value):
-        field_id, is_scalar = self._definition._field(dotted)
-        if is_scalar:
+        field_id, kind = self._definition._field(dotted)
+        if kind == _native.KIND_FLOAT:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{dotted} is a float and takes a number, not {type(value).__name__}")
+            _check(_native.framedsl_set_f64(self._handle, field_id, float(value)), f"{dotted} = {value}")
+        elif kind == _native.KIND_SIGNED:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError(f"{dotted} is a scalar and takes an int, not {type(value).__name__}")
-            if value < 0 or value >= 1 << 64:
-                raise RangeError(f"{dotted}: {value} is not an unsigned 64-bit value")
-            _check(_native.framedsl_set_u64(self._handle, field_id, value), f"{dotted} = {value}")
+            if value < -(1 << 63) or value >= 1 << 63:
+                raise RangeError(f"{dotted}: {value} is not a signed 64-bit value")
+            _check(_native.framedsl_set_i64(self._handle, field_id, value), f"{dotted} = {value}")
+        elif kind is not None:
+            self.raw[dotted] = value
         else:
             if not isinstance(value, (bytes, bytearray, memoryview)):
                 raise TypeError(f"{dotted} is a bit string and takes bytes, not {type(value).__name__}")
@@ -434,12 +446,12 @@ class Frame:
         The member is named through the repetition with no element chosen; the list is as long as
         count() says the frame holds, and each value is what frame["TM.samples[i].reading"] reads.
         """
-        field_id, is_scalar = self._definition._field(dotted)
+        field_id, kind = self._definition._field(dotted)
         element = _native.FieldId()
         values = []
         for i in range(self.count(dotted)):
             _check(_native.framedsl_element(self._definition._handle, field_id, i, ctypes.byref(element)), dotted)
-            values.append(self._get(element, is_scalar, f"{dotted}[{i}]"))
+            values.append(self._get(element, kind, f"{dotted}[{i}]"))
         return values
 
     def encode(self, packet):
@@ -469,8 +481,16 @@ class Frame:
             _raise(status.value, f"decoding {len(data)} bytes")
         return name.decode("utf-8"), consumed.value
 
-    def _get(self, field_id, is_scalar, what):
-        if is_scalar:
+    def _get(self, field_id, kind, what):
+        if kind == _native.KIND_SIGNED:
+            value = ctypes.c_int64()
+            _check(_native.framedsl_get_i64(self._handle, field_id, ctypes.byref(value)), what)
+            return value.value
+        if kind == _native.KIND_FLOAT:
+            value = ctypes.c_double()
+            _check(_native.framedsl_get_f64(self._handle, field_id, ctypes.byref(value)), what)
+            return value.value
+        if kind is not None:
             value = ctypes.c_uint64()
             _check(_native.framedsl_get_u64(self._handle, field_id, ctypes.byref(value)), what)
             return value.value
@@ -480,6 +500,39 @@ class Frame:
         if not data:
             _raise(status.value, what)
         return ctypes.string_at(data, length.value)
+
+
+class _Raw:
+    """frame.raw: any scalar's bits, through framedsl_get_u64() and _set_u64(), whatever its type.
+
+    -160 in an i16 is 0xFF60 here and 1.5 in an f32 is 0x3FC00000, and a test can send any pattern, a NaN
+    included.
+    """
+
+    __slots__ = ("_frame",)
+
+    def __init__(self, frame):
+        self._frame = frame
+
+    def __getitem__(self, dotted):
+        frame = self._frame
+        field_id, kind = frame._definition._field(dotted)
+        if kind is None:
+            raise FieldError(f"{dotted} is a bit string, with no single pattern to read")
+        value = ctypes.c_uint64()
+        _check(_native.framedsl_get_u64(frame._handle, field_id, ctypes.byref(value)), dotted)
+        return value.value
+
+    def __setitem__(self, dotted, value):
+        frame = self._frame
+        field_id, kind = frame._definition._field(dotted)
+        if kind is None:
+            raise FieldError(f"{dotted} is a bit string, with no single pattern to write")
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{dotted} is a scalar and takes an int, not {type(value).__name__}")
+        if value < 0 or value >= 1 << 64:
+            raise RangeError(f"{dotted}: {value} is not an unsigned 64-bit value")
+        _check(_native.framedsl_set_u64(frame._handle, field_id, value), f"{dotted} = {value}")
 
 
 class _Engineering:

@@ -69,6 +69,19 @@ static int us30_tc02_overrides_stay_on_their_line(const TestArguments *args) {
   );
 }
 
+/* A sign stays against its number, on a field and in an override (#10). */
+static int us30_tc06_a_negative_value_keeps_its_sign(const TestArguments *args) {
+  (void)args;
+  return expect_format(
+    "pkt TM {\n  hdr: Header {a:=- 1;};\n  t: i16:=-160;\n  gain: f32 ?= -1.5e3;\n};\n",
+    "pkt TM {\n"
+    "  hdr:  Header { a := -1; };\n"
+    "  t:    i16 := -160;\n"
+    "  gain: f32 ?= -1.5e3;\n"
+    "};\n"
+  );
+}
+
 static int us30_tc03_a_comment_after_a_value_aligns(const TestArguments *args) {
   (void)args;
   return expect_format(
@@ -124,4 +137,5 @@ void register_user_story30(void) {
     us30_tc04_the_column_is_stable_and_checked, "the column is idempotent, and --check names a file", false
   );
   ADD_TEST_CASE(us30_tc05_every_example_is_in_the_layout, "every example is in the layout", false);
+  ADD_TEST_CASE(us30_tc06_a_negative_value_keeps_its_sign, "a sign stays against its number", false);
 }

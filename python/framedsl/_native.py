@@ -61,6 +61,10 @@ lib = _load_library()
 SCALAR_MAX_BITS = 64
 NO_ELEMENT = 0xFFFFFFFF
 
+KIND_UNSIGNED = 0
+KIND_SIGNED = 1
+KIND_FLOAT = 2
+
 OK = 0
 ERROR_IO = 1
 ERROR_INVALID = 2
@@ -115,6 +119,7 @@ class Field(ctypes.Structure):
         ("offset_known", ctypes.c_bool),
         ("offset_bits", ctypes.c_uint64),
         ("is_scalar", ctypes.c_bool),
+        ("kind", ctypes.c_int),
         ("has_fixed", ctypes.c_bool),
         ("fixed", ctypes.c_uint64),
         ("has_default", ctypes.c_bool),
@@ -210,6 +215,10 @@ _declare("framedsl_field_id", ctypes.c_bool, Definition, ctypes.c_size_t, ctypes
 # Values.
 _declare("framedsl_set_u64", ctypes.c_int, Frame, FieldId, ctypes.c_uint64)
 _declare("framedsl_get_u64", ctypes.c_int, Frame, FieldId, ctypes.POINTER(ctypes.c_uint64))
+_declare("framedsl_set_i64", ctypes.c_int, Frame, FieldId, ctypes.c_int64)
+_declare("framedsl_get_i64", ctypes.c_int, Frame, FieldId, ctypes.POINTER(ctypes.c_int64))
+_declare("framedsl_set_f64", ctypes.c_int, Frame, FieldId, ctypes.c_double)
+_declare("framedsl_get_f64", ctypes.c_int, Frame, FieldId, ctypes.POINTER(ctypes.c_double))
 _declare("framedsl_set_bytes", ctypes.c_int, Frame, FieldId, ctypes.c_char_p, ctypes.c_size_t)
 _declare("framedsl_get_bytes", _bytes_p, Frame, FieldId, _size_p, _status_p)
 _declare("framedsl_get_bytes_into", ctypes.c_int, Frame, FieldId, ctypes.c_char_p, ctypes.c_size_t, _size_p)

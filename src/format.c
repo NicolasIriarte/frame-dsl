@@ -425,6 +425,15 @@ static void group(Formatter *f, int depth) {
 
 static void body(Formatter *f, int depth);
 
+/* A value, and the sign against it when it is negative (#10). */
+static void signed_value(Formatter *f) {
+  const bool negative = peek(f)->kind == TOK_MINUS;
+  take(f, true);
+  if (negative) {
+    take(f, false);
+  }
+}
+
 /* ` { a = 1; b.c = 2; }` after a block's name in a use, when there is one. */
 static void overrides(Formatter *f) {
   if (peek(f)->kind != TOK_LBRACE) {
@@ -433,8 +442,8 @@ static void overrides(Formatter *f) {
   take(f, true);
   while (peek(f)->kind == TOK_IDENT) {
     dotted(f, true);
-    take(f, true); /* = */
-    take(f, true); /* value */
+    take(f, true); /* := or ?= */
+    signed_value(f);
     take(f, false); /* ; */
   }
   take(f, true); /* } */
@@ -475,7 +484,7 @@ static void value(Formatter *f) {
   }
   f->in_value = true;
   take(f, true);
-  take(f, true);
+  signed_value(f);
 }
 
 /* `name: width [:= value];`, `name[bytes]: width;`, `name: Block [{ overrides }];` or `name: Block[count];` */

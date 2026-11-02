@@ -1,0 +1,29 @@
+# Signed and floating-point fields.
+#
+# A type goes where a width goes: `i1` to `i64` are two's complement, and `f32` and `f64` are IEEE-754. A
+# plain number stays unsigned. The bits on the wire are laid out as any field's are, at any offset and
+# under either order, so a type only says how to read them.
+#
+# A calibration on a typed field sees the value: -160 here, not 0xFF60.
+#
+# `frame-dsl <file> -d <hex>` prints a typed field by its value, then its pattern.
+
+cal celsius(raw) = raw * 0.0625;
+
+pkt TM_THERMAL {
+  id:     8   := 0x30;
+  offset: i8  := -1;     # a value in the type's range, so 0xFF would be refused
+  [ @cal: celsius; ]
+  temp:   i16 ?= -160;
+  gain:   f32 ?= 1.5;
+  bias:   f64;
+  trim:   i4;            # sign-extended from its own width where it is read
+  mode:   4;
+
+  # A condition compares a signed field as signed, and a mask works on its pattern.
+  [ @if: valof(temp) < -1; ]
+  heater: 8;
+
+  [ @if: valof(trim) & 0x8 != 0; ]
+  spare:  8;
+};

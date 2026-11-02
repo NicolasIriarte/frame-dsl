@@ -372,6 +372,7 @@ bool framedsl_field(const FramedslDefinition *definition, size_t packet, size_t 
     .is_scalar = slot->is_scalar,
     .has_fixed = ast_field->has_fixed,
     .fixed = ast_field->has_fixed ? ast_field->fixed : 0,
+    .kind = (FramedslKind)ast_field->kind,
     .has_default = ast_field->has_default,
     .default_value = ast_field->has_default ? ast_field->default_value : 0,
     .bit_order =
@@ -425,6 +426,7 @@ bool framedsl_member(
     .is_scalar = m->is_scalar,
     .has_fixed = m->has_fixed,
     .fixed = m->has_fixed ? m->fixed : 0,
+    .kind = (FramedslKind)m->kind,
     .has_default = m->has_default,
     .default_value = m->has_default ? m->default_value : 0,
     .bit_order = m->bit_order == BIT_ORDER_LSB_FIRST ? FRAMEDSL_BIT_ORDER_LSB_FIRST : FRAMEDSL_BIT_ORDER_MSB_FIRST,

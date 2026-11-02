@@ -4,9 +4,8 @@
  * written to be turned directly into a recursive-descent parser: one function per production, no
  * backtracking needed, and every production decidable from a single lookahead token.
  *
- * What is NOT here is as deliberate as what is. Signed and floating-point fields and CRC declarations
- * are deferred,
- * each to its own issue, so that they are designed against a language that exists and a parser that
+ * What is NOT here is as deliberate as what is. A CRC is an ordinary field, and repeating a scalar is
+ * deferred to its own issue, so that it is designed against a language that exists and a parser that
  * runs rather than against a sketch.
  *
  * Rules this grammar cannot express -- a valof() referring only to an earlier field, the mandatory
@@ -88,6 +87,9 @@ block              = "block" , "{" , declaration , { declaration } , "}" , ";" ;
  * block must be declared above every use (check 24); an attribute group in front of a use is an
  * error, because a block's layout is decided where it is declared.
  *
+ * A type goes where a width goes (#10), as an enum's name does: `temp: i16;` is this production, and
+ * `i1` to `i64`, `f32` and `f64` are no block's or enum's, since check 1 refuses a name of that shape.
+ *
  * A use without an instance name pastes the block's fields in under their own names (`id`), in a
  * packet or in another block. A field's name is followed by ":" or "[", a block's by "{", ";" or the
  * "." of a namespace, so one token after the first name tells them apart. A pasted field may not
@@ -108,11 +110,12 @@ override           = identifier , { "." , identifier } , value_op , value , ";" 
 value_op           = ":=" | "?=" ;
 
 (* A value is a number, or -- on a field typed by an enum -- one of that enum's names, written bare
- * (#11). Which a name is is settled by composition, not the grammar: the same `name: Name` is a block's
+ * (#11). A sign or a fraction is parsed wherever a value goes, and judged by the field's type: only a
+ * signed field takes a negative number, and only a float a real or a whole decimal (#10, check 8). Which a name is is settled by composition, not the grammar: the same `name: Name` is a block's
  * use or an enum-typed field depending on what `Name` was declared as, and a group, a reservation and
  * a value are accepted here on both and refused by composition on a block's (check 39 for a name
  * where no enum gives one). *)
-value              = integer | identifier ;
+value              = [ "-" ] , ( integer | real ) | identifier ;
 
 (* A repetition, `samples[48]: Sample[valof(count)];` (#55): the block laid out `count` times. Only a
  * named use repeats, and only it may carry a reservation, which a count with a valof() in it needs
@@ -200,7 +203,7 @@ decimal            = digit , { digit } ;
 hexadecimal        = "0x" , hex_digit , { hex_digit } ;
 binary             = "0b" , bit , { bit } ;
 
-(* Calibrations only. A width or a fixed value written as one is refused with a message saying so. *)
+(* Calibrations, and a value on a float. A width written as one is refused with a message saying so. *)
 real               = digit , { digit } , ( fraction , [ exponent ] | exponent ) ;
 fraction           = "." , digit , { digit } ;
 exponent           = ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ;

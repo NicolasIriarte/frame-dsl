@@ -29,9 +29,8 @@ const char *packet = framedsl_decode(frame, received, received_length, &consumed
 When a frame changes, the definition file changes. The program does not get rebuilt.
 
 > **Status: early, and end to end.** A definition file loads and is checked; a program sets fields by
-> name, encodes a frame, and decodes one back without being told which packet arrived. Signed and
-> floating-point fields are still absent. What the project is for, and what it is not, is in
-> [`docs/scope.md`](docs/scope.md). The C API may still change before 1.0.
+> name, encodes a frame, and decodes one back without being told which packet arrived. What the
+> project is for, and what it is not, is in [`docs/scope.md`](docs/scope.md). The C API may still change before 1.0.
 
 ## The two ways this gets used
 

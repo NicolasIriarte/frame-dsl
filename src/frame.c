@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdalign.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,6 +177,7 @@ FramedslFrame *framedsl_frame_new(const FramedslDefinition *definition) {
         .is_scalar = field->is_scalar,
         .variable = field->variable,
         .is_fixed = definition->program->packets[p].fields[f].has_fixed,
+        .kind = definition->program->packets[p].fields[f].kind,
       };
 
       offset += frame->slots[slot].capacity;
@@ -622,12 +624,17 @@ FramedslStatus framedsl_get_u64(const FramedslFrame *frame, FramedslFieldId id, 
  *
  * The arena holds raw values only; a curve runs on the way out of a get and on the way into a set. */
 
-static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id) {
+static const CalCompiled *field_cal(const FramedslFrame *frame, FramedslFieldId id, FieldKind *kind, uint64_t *width) {
   const FieldInstruction *instruction = &frame->definition->program->packets[id.packet].fields[id.field];
   int32_t cal = instruction->cal;
+  *kind = instruction->kind;
+  *width = instruction->width_bits;
   if (id.member != 0) {
     MemberView view;
-    cal = member_view(frame, id, &view) ? view.member->cal : -1;
+    const bool found = member_view(frame, id, &view);
+    cal = found ? view.member->cal : -1;
+    *kind = found ? view.member->kind : FIELD_KIND_UNSIGNED;
+    *width = found ? view.member->width_bits : 0;
   }
   return cal < 0 ? NULL : &frame->definition->cals->cals[cal];
 }
@@ -643,17 +650,127 @@ static bool field_fixed(const FramedslFrame *frame, FramedslFieldId id) {
   return member_view(frame, id, &view) && view.member->has_fixed;
 }
 
+/* What `id` addresses, if it is a scalar: how its pattern reads, and how many bits it has. */
+static bool field_shape(const FramedslFrame *frame, FramedslFieldId id, FieldKind *kind, uint64_t *width) {
+  if (id.member != 0) {
+    MemberView view;
+    if (!member_view(frame, id, &view) || !view.member->is_scalar) {
+      return false;
+    }
+    *kind = view.member->kind;
+    *width = view.member->width_bits;
+    return true;
+  }
+  const Slot *slot = frame_slot(frame, id);
+  if (slot == NULL || !slot->is_scalar) {
+    return false;
+  }
+  *kind = slot->kind;
+  *width = slot->width_bits;
+  return true;
+}
+
+/* A pattern as the number a curve sees (#10): a curve receives -160 or 1.5, not the bits. */
+static double pattern_value(FieldKind kind, uint64_t width, uint64_t pattern) {
+  if (kind == FIELD_KIND_SIGNED) {
+    return (double)bits_sign_extend(pattern, width);
+  }
+  return kind == FIELD_KIND_FLOAT ? bits_to_double(pattern, width) : (double)pattern;
+}
+
+FramedslStatus framedsl_get_i64(const FramedslFrame *frame, FramedslFieldId id, int64_t *out) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  uint64_t pattern = 0;
+  if (out == NULL || !field_shape(frame, id, &kind, &width) || kind != FIELD_KIND_SIGNED) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  FramedslStatus status = framedsl_get_u64(frame, id, &pattern);
+  if (status == FRAMEDSL_OK) {
+    *out = bits_sign_extend(pattern, width);
+  }
+  return status;
+}
+
+FramedslStatus framedsl_set_i64(FramedslFrame *frame, FramedslFieldId id, int64_t value) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  if (!field_shape(frame, id, &kind, &width) || kind != FIELD_KIND_SIGNED) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_fixed(frame, id)) {
+    return FRAMEDSL_ERROR_FIXED;
+  }
+  if (bits_sign_extend(bits_low((uint64_t)value, width), width) != value) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  return framedsl_set_u64(frame, id, bits_low((uint64_t)value, width));
+}
+
+FramedslStatus framedsl_get_f64(const FramedslFrame *frame, FramedslFieldId id, double *out) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  uint64_t pattern = 0;
+  if (out == NULL || !field_shape(frame, id, &kind, &width) || kind != FIELD_KIND_FLOAT) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  FramedslStatus status = framedsl_get_u64(frame, id, &pattern);
+  if (status == FRAMEDSL_OK) {
+    *out = bits_to_double(pattern, width);
+  }
+  return status;
+}
+
+/* `value` written to a float field: rounded to an f32, with NaN and the infinities going through
+ * unjudged and only a finite value too large for one refused. */
+static FramedslStatus write_float(FramedslFrame *frame, FramedslFieldId id, uint64_t width, double value) {
+  if (width == 64) {
+    return framedsl_set_u64(frame, id, bits_of_double(value));
+  }
+  const float rounded = (float)value;
+  if (isinf(rounded) && !isinf(value)) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  return framedsl_set_u64(frame, id, bits_of_float(rounded));
+}
+
+FramedslStatus framedsl_set_f64(FramedslFrame *frame, FramedslFieldId id, double value) {
+  if (frame == NULL) {
+    return FRAMEDSL_ERROR_MEMORY;
+  }
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  if (!field_shape(frame, id, &kind, &width) || kind != FIELD_KIND_FLOAT) {
+    return FRAMEDSL_ERROR_FIELD;
+  }
+  if (field_fixed(frame, id)) {
+    return FRAMEDSL_ERROR_FIXED;
+  }
+  return write_float(frame, id, width, value);
+}
+
 FramedslStatus framedsl_get_eng(const FramedslFrame *frame, FramedslFieldId id, double *out) {
   uint64_t raw = 0;
   FramedslStatus status = framedsl_get_u64(frame, id, &raw);
   if (status != FRAMEDSL_OK) {
     return status;
   }
-  const CalCompiled *cal = field_cal(frame, id);
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  const CalCompiled *cal = field_cal(frame, id, &kind, &width);
   if (cal == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
-  return cal_forward(cal, (double)raw, out) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
+  return cal_forward(cal, pattern_value(kind, width, raw), out) ? FRAMEDSL_OK : FRAMEDSL_ERROR_RANGE;
 }
 
 /* To the nearest integer, half away from zero, refusing what no unsigned field can hold. Written out
@@ -677,6 +794,16 @@ static bool nearest_raw(double x, uint64_t *out) {
   return true;
 }
 
+/* As nearest_raw(), for a field that can go below zero. */
+static bool nearest_signed(double x, int64_t *out) {
+  uint64_t magnitude = 0;
+  if (!nearest_raw(fabs(x), &magnitude) || magnitude > (x < 0 ? (uint64_t)1 << 63 : (uint64_t)INT64_MAX)) {
+    return false;
+  }
+  *out = x < 0 ? (int64_t)((uint64_t)0 - magnitude) : (int64_t)magnitude;
+  return true;
+}
+
 FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double value) {
   if (frame == NULL) {
     return FRAMEDSL_ERROR_MEMORY;
@@ -685,7 +812,9 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
   if (slot == NULL || (id.member == 0 && !slot->is_scalar)) {
     return FRAMEDSL_ERROR_FIELD;
   }
-  const CalCompiled *cal = field_cal(frame, id);
+  FieldKind kind = FIELD_KIND_UNSIGNED;
+  uint64_t width = 0;
+  const CalCompiled *cal = field_cal(frame, id, &kind, &width);
   if (cal == NULL) {
     return FRAMEDSL_ERROR_FIELD;
   }
@@ -697,8 +826,19 @@ FramedslStatus framedsl_set_eng(FramedslFrame *frame, FramedslFieldId id, double
   }
 
   double raw = 0;
+  if (!cal_backward(cal, value, &raw)) {
+    return FRAMEDSL_ERROR_RANGE;
+  }
+  /* A float takes the inverse as it is. A signed field rounds as an unsigned one does, to what fits. */
+  if (kind == FIELD_KIND_FLOAT) {
+    return write_float(frame, id, width, raw);
+  }
+  if (kind == FIELD_KIND_SIGNED) {
+    int64_t whole = 0;
+    return nearest_signed(raw, &whole) ? framedsl_set_i64(frame, id, whole) : FRAMEDSL_ERROR_RANGE;
+  }
   uint64_t rounded = 0;
-  if (!cal_backward(cal, value, &raw) || !nearest_raw(raw, &rounded)) {
+  if (!nearest_raw(raw, &rounded)) {
     return FRAMEDSL_ERROR_RANGE;
   }
   /* The width check, and the write, are set_u64()'s. */

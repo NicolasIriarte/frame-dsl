@@ -1,0 +1,9 @@
+# REJECTED: check 44 -- a signed field is `i1` to `i64`, and a float `f32` or `f64`.
+#
+# Half-precision floats are not planned, and a name of this shape is never a block's (check 1), so
+# nothing else could be meant.
+
+pkt TM_SMALL {
+  id:   8 := 0x01;
+  gain: f16;
+};

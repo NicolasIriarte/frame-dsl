@@ -72,6 +72,8 @@ typedef struct {
   size_t length;
   /** @brief TOK_INT. */
   uint64_t value;
+  /** @brief TOK_INT written in hex or binary: a pattern to a reader, so a float refuses one (#10). */
+  bool based;
   /** @brief TOK_REAL, and TOK_INT as well, so a calibration can take either without asking. */
   double real;
 } Token;
