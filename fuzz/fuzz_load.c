@@ -3,8 +3,8 @@
  * Most inputs are rejected, and that is fine -- the parser, composition and the checks must reject
  * them without crashing, reading out of bounds or leaking. What loads is then used: every packet is
  * encoded with its fields at zero and decoded back, and must come back as the same packet. That is
- * the promise checks 11 and 12 make -- every packet identifies itself and no two can be confused --
- * so a definition that loads and breaks it is a checker bug. (All zeros is not always encodable, so
+ * the promise checks 11 and 12 make -- every `auto` packet identifies itself and no two can be confused
+ * -- so a definition that loads and breaks it is a checker bug. (All zeros is not always encodable, so
  * a packet the encoder refuses is skipped.) Calibrations are run and written out as
  * C, which walks every compiled curve.
  *
@@ -54,6 +54,22 @@ static void use(const FramedslDefinition *definition) {
     }
 
     size_t consumed = 0;
+
+    /* A manual packet identifies nothing, so the program names it, and dispatch never answers with it
+     * (#146), however its bytes look. */
+    if (framedsl_packet_manual(definition, p)) {
+      if (framedsl_decode_as(back, name, bytes, length, &consumed) != FRAMEDSL_OK || consumed != length) {
+        abort();
+      }
+      const char *found = framedsl_decode(back, bytes, length, NULL, NULL);
+      size_t index = 0;
+      if (found != NULL
+          && (!framedsl_find_packet(definition, found, &index) || framedsl_packet_manual(definition, index))) {
+        abort();
+      }
+      continue;
+    }
+
     const char *decoded = framedsl_decode(back, bytes, length, &consumed, NULL);
     if (decoded == NULL || strcmp(decoded, name) != 0 || consumed != length) {
       abort();

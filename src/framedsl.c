@@ -320,6 +320,10 @@ size_t framedsl_packet_count(const FramedslDefinition *definition) {
   return definition == NULL ? 0 : definition->ast->packet_count;
 }
 
+bool framedsl_packet_manual(const FramedslDefinition *definition, size_t index) {
+  return definition != NULL && index < framedsl_packet_count(definition) && definition->ast->packets[index].manual;
+}
+
 const char *framedsl_packet_name(const FramedslDefinition *definition, size_t index) {
   if (definition == NULL || index >= definition->ast->packet_count) {
     return NULL;

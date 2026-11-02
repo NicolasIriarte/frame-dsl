@@ -44,14 +44,14 @@ Two, because that is what every file under examples/ is written at."
   "Reserved words.  None of these may be used as an identifier.")
 
 (defconst frame-dsl-attribute-names
-  '("bit_order" "byte_order" "cal" "if")
+  '("bit_order" "byte_order" "cal" "decode" "if")
   "Attribute names this version of the language knows.
 These are not reserved: they are meaningful only after `@', and a field may
 perfectly well be called `bit_order'.  Highlighted only where they mean
 something, which is why the patterns below anchor on the `@'.")
 
 (defconst frame-dsl-attribute-values
-  '("msb_first" "lsb_first" "big_endian" "little_endian")
+  '("msb_first" "lsb_first" "big_endian" "little_endian" "auto" "manual")
   "Values an attribute may take.  Not reserved either, for the same reason.")
 
 ;; ---------------------------------------------------------------------------------------------

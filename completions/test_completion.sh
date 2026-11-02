@@ -68,6 +68,8 @@ same "a definition completes to .fdsl files and directories" "$(lines broken.fds
 same "-d's hex is not taken for a file, and offers nothing" "" "$(bash_complete device.fdsl -d "")"
 same "--stdin-name <TAB> offers any file" "$(lines broken.fdsl device.fdsl notes.txt sub)" \
 	"$(bash_complete - --check --stdin-name "")"
+same "--packet <TAB> offers the definition's packets" "$("$program" "$work/device.fdsl" --list-packets | sort)" \
+	"$(bash_complete device.fdsl -d 00 --packet "")"
 
 if ! command -v zsh >/dev/null 2>&1; then
 	echo "test_completion: no zsh on PATH, skipping completions/_frame-dsl"
@@ -108,6 +110,8 @@ else
 	same "a definition completes to .fdsl files" "<files: -g *.fdsl(-.)>" "$(zsh_complete "")"
 	same "-d's hex offers nothing" "" "$(zsh_complete device.fdsl -d "")"
 	same "--stdin-name <TAB> offers any file" "<files: >" "$(zsh_complete - --check --stdin-name "")"
+	same "--packet <TAB> offers the definition's packets" "$("$program" "$work/device.fdsl" --list-packets | sort)" \
+		"$(zsh_complete device.fdsl -d 00 --packet "")"
 fi
 
 if [[ "$failures" -ne 0 ]]; then

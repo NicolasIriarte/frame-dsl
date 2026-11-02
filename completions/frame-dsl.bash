@@ -7,8 +7,8 @@
 #
 # Nothing here is a copy of the tool's own knowledge. The flags come from `frame-dsl --help` at the
 # moment <TAB> is pressed, so they cannot drift from the parser. The tool asked is whichever one is
-# being completed -- `./build/frame-dsl` as much as the installed one. No flag takes a packet or a
-# field name since encoding left the command line (#97), so nothing else needs asking.
+# being completed -- `./build/frame-dsl` as much as the installed one. So do the packets --packet
+# takes, from --list-packets on the definition already on the line. Nothing else needs asking.
 # completions/_frame-dsl is the same for zsh.
 
 # The option lines of --help, as "flag takes-argument" pairs: `-d 1`, `--decode 1`, `--check 0`.
@@ -49,6 +49,17 @@ _frame_dsl() {
 	if [[ "$prev" == --stdin-name ]]; then
 		compopt -o filenames 2>/dev/null
 		mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+		return 0
+	fi
+	if [[ "$prev" == --packet ]]; then
+		local word packets=""
+		for word in "${COMP_WORDS[@]:1}"; do
+			if [[ "$word" == *.fdsl && -f "$word" ]]; then
+				packets="$("$program" "$word" --list-packets 2>/dev/null)"
+				break
+			fi
+		done
+		mapfile -t COMPREPLY < <(compgen -W "$packets" -- "$cur")
 		return 0
 	fi
 	# Any other flag that takes an argument (-d's hex) has nothing worth offering.

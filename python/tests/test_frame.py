@@ -312,6 +312,24 @@ class Conditions(unittest.TestCase):
         with self.assertRaises(framedsl.AbsentError):
             self.frame.names["TM_OPTIONAL.code"]
 
+    def test_a_packet_the_caller_names(self):
+        definition = framedsl.loads(
+            "@decode: manual;\n"
+            "pkt ENGINE { rpm: 16; temp: 8; };\n"
+            "pkt BATTERY { volts: 16; amps: 16; };\n"
+            "[ @decode: auto; ]\npkt PING { id: 8 := 1; };\n"
+        )
+        frame = definition.frame()
+        self.assertEqual(frame.decode(bytes.fromhex("01 02 03"), packet="ENGINE"), "ENGINE")
+        self.assertEqual(frame["ENGINE.rpm"], 0x0102)
+        self.assertEqual(frame.decode_prefix(bytes.fromhex("01 02 03 04 05"), packet="BATTERY"), ("BATTERY", 4))
+        with self.assertRaises(framedsl.FieldError):
+            frame.decode(b"\x01", packet="PING")
+        with self.assertRaises(framedsl.TruncatedError):
+            frame.decode(b"\x01", packet="ENGINE")
+        with self.assertRaises(framedsl.UnrecognisedError):
+            frame.decode(bytes.fromhex("02 02 03"))
+
     def test_a_field_reads_by_its_type(self):
         definition = framedsl.loads(
             "cal celsius(raw) = raw * 0.0625;\n"

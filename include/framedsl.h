@@ -396,6 +396,15 @@ const FramedslDefinition *framedsl_definition(const FramedslResult *result);
 size_t framedsl_packet_count(const FramedslDefinition *definition);
 
 /**
+ * @brief Whether a packet is `@decode: manual`: only framedsl_decode_as() reads it, and framedsl_decode()
+ * never returns it (#146).
+ * @param definition A loaded definition.
+ * @param index An index below framedsl_packet_count(definition).
+ * @return false for an `auto` packet, and for an index out of range.
+ */
+bool framedsl_packet_manual(const FramedslDefinition *definition, size_t index);
+
+/**
  * @param definition A loaded definition.
  * @param index An index below framedsl_packet_count(definition).
  * @return The packet's name, or NULL if `index` is out of range.
@@ -859,6 +868,31 @@ const char *framedsl_decode(
   size_t length,
   size_t *consumed,
   FramedslStatus *status
+);
+
+/**
+ * @brief Read one frame of a packet the caller names (#146), for a link that carries identity outside
+ * the bytes, as a CAN ID does: the driver knows which packet this is, and the payload does not say.
+ *
+ * Only a `@decode: manual` packet can be decoded this way. Only size denies it: a fixed value that differs
+ * reads as what arrived, and a decode that fails changes nothing, as framedsl_decode()'s does. Bytes past
+ * the packet are left for the caller.
+ *
+ * @param frame The frame to read into.
+ * @param packet The packet's name, which the caller has, so the answer is a status rather than a name.
+ * @param buffer The bytes.
+ * @param length How many there are.
+ * @param consumed Set to how many the frame took on success. May be NULL.
+ * @return FRAMEDSL_OK; FRAMEDSL_ERROR_FIELD for a name the definition lacks or an `auto` packet;
+ * FRAMEDSL_ERROR_TRUNCATED when the bytes run out; FRAMEDSL_ERROR_RANGE when a length passes its
+ * reservation or goes below zero.
+ */
+FramedslStatus framedsl_decode_as(
+  FramedslFrame *frame,
+  const char *packet,
+  const uint8_t *buffer,
+  size_t length,
+  size_t *consumed
 );
 
 /* ---- Calibrations -------------------------------------------------------------------------------

@@ -14,9 +14,9 @@ endif
 " Reserved words: none of these may be used as an identifier.
 syntax keyword fdslKeyword pkt valof block
 " Attribute names this version of the language knows. Not reserved: meaningful only after `@'.
-syntax keyword fdslAttributeName bit_order byte_order cal if contained
+syntax keyword fdslAttributeName bit_order byte_order cal decode if contained
 " Values an attribute may take. Not reserved either.
-syntax keyword fdslAttributeValue msb_first lsb_first big_endian little_endian contained
+syntax keyword fdslAttributeValue msb_first lsb_first big_endian little_endian auto manual contained
 
 " Words that are words only where they stand: a field may still be called `import' or `inverse'.
 syntax match fdslContextual "^\s*\<import\>"

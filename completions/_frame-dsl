@@ -46,6 +46,18 @@ _frame-dsl() {
     _files
     return
   fi
+  if [[ $previous == --packet ]]; then
+    local word
+    local -a packets
+    for word in ${words[2,-1]}; do
+      if [[ $word == *.fdsl && -f $word ]]; then
+        packets=(${(f)"$($program $word --list-packets 2>/dev/null)"})
+        break
+      fi
+    done
+    compadd -a packets
+    return
+  fi
   # Any other flag that takes an argument (-d's hex) has nothing worth offering.
   [[ ${takes_argument[$previous]:-0} == 1 ]] && return 1
 

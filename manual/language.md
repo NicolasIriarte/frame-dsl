@@ -154,6 +154,38 @@ a fixed value is one of the enum's names -- see [Enumerations](#enumerations).
 = ...;` does for a curve. On a field or in an override it is an error, and the error comes with a fix
 that writes `:=`.
 
+## Packets a program names
+
+Everything above assumes a frame says which packet it is. On CAN it does not: the identity is in the CAN
+ID, which the driver has and the payload does not. `@decode` says who decides which packet arrived. `auto`,
+the default, is the library, from the fixed values in the bytes. `manual` is the program, which knows
+already:
+
+```
+@decode: manual;
+
+pkt ENGINE {     # CAN ID 0x100
+  rpm:  16;
+  temp: 8;
+};
+
+pkt BATTERY {    # CAN ID 0x200
+  volts: 16;
+  amps:  16;
+};
+```
+
+`@decode` goes where an order does. At the top of a file it is the file's default, and `[ @decode: auto; ]` in
+front of a `pkt` is the exception. The innermost wins, and on a block or a field it is an error.
+
+A `manual` packet is held to neither check 11 nor check 12: it needs no fixed field, and may overlap any
+packet. It may still have fixed fields, which are written on encode as any other. An `auto` packet is held to
+both as it always was, so a forgotten discriminator on a serial link is still refused at load.
+
+`framedsl_decode_as()` reads one, and `frame-dsl -d <hex> --packet ENGINE` does from the tool. `framedsl_decode()`
+never returns one. Only size denies this decode: a fixed value that differs reads as what arrived. A CAN ID
+stays out of the definition, since it belongs to the transport: the program maps an id to a packet.
+
 ## Default values
 
 A field with `?= <value>` holds that value until something replaces it, the way `?=` reads in Make: this,
@@ -294,6 +326,7 @@ Anything that modifies a declaration rather than describing it is an attribute, 
 
 | Attribute | Values | Default | Controls |
 | --- | --- | --- | --- |
+| `@decode` | `auto`, `manual` | `auto` | who decides which packet arrived: see [Packets a program names](#packets-a-program-names) |
 | `@bit_order` | `msb_first`, `lsb_first` | `msb_first` | the order a field's bits enter the stream |
 | `@byte_order` | `big_endian`, `little_endian` | `big_endian` | the order the bytes of a multi-byte value appear |
 | `@cal` | the name of a `cal` | none | the curve between a field's raw and engineering value -- see [Calibrations](#calibrations) |

@@ -37,8 +37,8 @@ dotted_name        = identifier , { "." , identifier } ;
  * The names are identifiers rather than keywords, and this grammar deliberately does not enumerate
  * them: the parser holds the table, so none of them is reserved and a field may be called
  * `bit_order`. v1 knows `bit_order` (msb_first | lsb_first), `byte_order` (big_endian |
- * little_endian), `cal` (the name of a calibration, on a field only) and `if` (a condition, #12); an
- * unknown one is reported by name.
+ * little_endian), `cal` (the name of a calibration, on a field only), `decode` (auto | manual, at file
+ * scope or in front of a packet, #146) and `if` (a condition, #12); an unknown one is reported by name.
  *
  * `if` takes a condition where the others take a name. It goes in a group in front of a field, a use
  * or an anonymous block -- not at file scope, nor in front of a packet or a named block -- and is the

@@ -240,12 +240,17 @@ static bool loads(const char *source) {
 
 /* Whether `@name: value;` loads on a byte-wide field -- with a calibration named after the value, since
  * `@cal`'s value is the name of one. `@if` (#12) takes a comparison rather than a word, so it is tried
- * with one; a value belongs to one attribute, so most other pairings are rejected, and what a caller
- * asks is whether every name pairs with at least one. */
+ * with one, and `@decode` (#146) applies to a packet, so it is tried on one; a value belongs to one
+ * attribute, so most other pairings are rejected, and what a caller asks is whether every name pairs
+ * with at least one. */
 static bool attribute_loads(const char *name, const char *value) {
   char definition[256];
   if (strcmp(name, "if") == 0) {
     return loads("pkt A { x: 8 := 1; [ @if: valof(x) == 1; ] y: 8; };");
+  }
+  if (strcmp(name, "decode") == 0) {
+    snprintf(definition, sizeof(definition), "[ @decode: %s; ]\npkt A { x: 8 := 1; };", value);
+    return loads(definition);
   }
   snprintf(
     definition, sizeof(definition), "cal %s(x) = x;\npkt A { x: 8 := 1; [ @%s: %s; ] y: 8; };", value, name, value
@@ -417,7 +422,7 @@ static int us9_tc05_the_word_lists_are_actually_found(const TestArguments *args)
       || !collect_elisp_list(source_buffer, "frame-dsl-attribute-values", &list)) {
     return __LINE__;
   }
-  if (list.count != 4 || !list_has(&list, "msb_first") || !list_has(&list, "little_endian")) {
+  if (list.count != 6 || !list_has(&list, "msb_first") || !list_has(&list, "manual")) {
     return __LINE__;
   }
 
@@ -746,7 +751,7 @@ static int us9_tc14_the_vim_and_json_word_lists_are_actually_found(const TestArg
     region_free(region);
     return __LINE__;
   }
-  if (list.count != 4 || !list_has(&list, "msb_first") || !list_has(&list, "little_endian")) {
+  if (list.count != 6 || !list_has(&list, "msb_first") || !list_has(&list, "manual")) {
     region_free(region);
     return __LINE__;
   }

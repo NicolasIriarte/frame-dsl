@@ -5,9 +5,10 @@
 
 #include "lexer.h"
 
-const char *const PARSER_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "if", NULL };
+const char *const PARSER_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "decode", "if", NULL };
 static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first" };
 static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian" };
+static const char *const DECODE_VALUES[] = { "auto", "manual" };
 
 typedef struct {
   Lexer lexer;
@@ -282,6 +283,16 @@ typedef struct {
   int byte_end_line;
   int byte_end_column;
 
+  /* `@decode:` says who decides which packet arrived (#146): a file's default and a packet's exception,
+   * resolved as an order is, so it has the flags an order has. */
+  bool manual;
+  bool decode_written;
+  bool decode_explicit;
+  int decode_line;
+  int decode_column;
+  int decode_end_line;
+  int decode_end_column;
+
   /* `@cal:` names a calibration for one field. It is not inherited -- a curve is a property of one
    * sensor reading, and handing one to every field in a block would be a guess about the others -- so
    * wherever it is written, other than in front of a field, is an error rather than a default. */
@@ -308,6 +319,7 @@ typedef struct {
 static Attributes inherited(Attributes scope) {
   scope.bit_written = false;
   scope.byte_written = false;
+  scope.decode_written = false;
   scope.cal = NULL;
   scope.if_written = false;
   return scope;
@@ -326,6 +338,23 @@ static void refuse_if_here(Parser *parser, const Attributes *attrs, const char *
     0,
     "'if' makes what follows it present only in some frames, and cannot apply to %s; put it in a "
     "'[ ... ]' group in front of a field, a block's use or an anonymous 'block { ... };'",
+    where
+  );
+}
+
+/* Wherever a group applies to something that is not a whole packet: which packet arrived is a question
+ * about a frame, and a block or a field is only part of one. */
+static void refuse_decode_here(Parser *parser, const Attributes *attrs, const char *where) {
+  if (!attrs->decode_written) {
+    return;
+  }
+  diag_add(
+    parser->diags,
+    attrs->decode_line,
+    attrs->decode_column,
+    0,
+    "'decode' says who decides which packet arrived, and cannot apply to %s; put it at the top of the file, "
+    "or in a '[ ... ]' group in front of a 'pkt'",
     where
   );
 }
@@ -665,18 +694,19 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
   if (word_is(&name, "if")) {
     return parse_condition(parser, attrs, line, column);
   }
-  if (!word_is(&name, "bit_order") && !word_is(&name, "byte_order") && !word_is(&name, "cal")) {
+  if (!word_is(&name, "bit_order") && !word_is(&name, "byte_order") && !word_is(&name, "cal")
+      && !word_is(&name, "decode")) {
     size_t index = parser->diags->count;
     diag_add(
       parser->diags,
       name.line,
       name.column,
       0,
-      "unknown attribute '%.*s'; this version knows 'bit_order', 'byte_order', 'cal' and 'if'",
+      "unknown attribute '%.*s'; this version knows 'bit_order', 'byte_order', 'cal', 'decode' and 'if'",
       (int)name.length,
       name.text
     );
-    suggest(parser, index, &name, PARSER_ATTRIBUTE_NAMES, 4);
+    suggest(parser, index, &name, PARSER_ATTRIBUTE_NAMES, 5);
     /* Its value is passed over whatever it looks like -- a name, or a condition meant for `if` -- so the
      * one mistake is reported once. */
     while (!check(parser, TOK_SEMICOLON) && !check(parser, TOK_RBRACKET) && !check(parser, TOK_EOF)
@@ -698,6 +728,9 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
    * earlier in the *same* group is not that: the group is one scope, repeating itself. */
   const bool bit_inherited = attrs->bit_explicit && !attrs->bit_written;
   const bool byte_inherited = attrs->byte_explicit && !attrs->byte_written;
+  const bool decode_inherited = attrs->decode_explicit && !attrs->decode_written;
+  const bool manual_before = attrs->manual;
+  const int decode_from = attrs->decode_line;
   const BitOrder bit_before = attrs->bit_order;
   const ByteOrder byte_before = attrs->byte_order;
   const int bit_from = attrs->bit_line;
@@ -789,6 +822,47 @@ static bool parse_attribute(Parser *parser, Attributes *attrs) {
     /* Positioned at the '@', which is what check 10 points the author at. */
     attrs->byte_line = line;
     attrs->byte_column = column;
+  } else if (word_is(&name, "decode")) {
+    if (word_is(&value, "auto")) {
+      attrs->manual = false;
+    } else if (word_is(&value, "manual")) {
+      attrs->manual = true;
+    } else {
+      size_t index = parser->diags->count;
+      diag_add(
+        parser->diags,
+        value.line,
+        value.column,
+        0,
+        "'decode' is 'auto' or 'manual', not '%.*s'",
+        (int)value.length,
+        value.text
+      );
+      suggest(parser, index, &value, DECODE_VALUES, 2);
+      ok = false;
+    }
+    if (ok && decode_inherited && attrs->manual == manual_before) {
+      redundant(parser, &value, "decode", decode_from);
+    }
+    if (ok && attrs->decode_written) {
+      repeated(
+        parser,
+        &name,
+        attrs->manual == manual_before,
+        DECODE_VALUES[attrs->manual],
+        DECODE_VALUES[manual_before],
+        decode_from,
+        attrs->decode_column,
+        attrs->decode_end_line,
+        attrs->decode_end_column
+      );
+    }
+    end_line = &attrs->decode_end_line;
+    end_column = &attrs->decode_end_column;
+    attrs->decode_written = ok;
+    attrs->decode_explicit = attrs->decode_explicit || ok;
+    attrs->decode_line = line;
+    attrs->decode_column = column;
   } else if (word_is(&name, "cal")) {
     /* Not inherited, so one already here was written earlier in this same group. */
     const char *before = attrs->cal;
@@ -1309,9 +1383,11 @@ static void parse_declaration(Parser *parser, AstPacket *packet, Attributes scop
 
   if (check(parser, TOK_BLOCK)) {
     refuse_cal_here(parser, &attrs, "a block");
+    refuse_decode_here(parser, &attrs, "a block");
     parse_block(parser, packet, attrs);
     return;
   }
+  refuse_decode_here(parser, &attrs, "a field");
   parse_field(parser, packet, attrs);
 }
 
@@ -1766,6 +1842,9 @@ AstFile *parse(const char *source, DiagList *diags) {
         continue;
       }
       refuse_cal_here(&parser, &packet_attrs, check(&parser, TOK_BLOCK) ? "a block" : "a packet");
+      if (check(&parser, TOK_BLOCK)) {
+        refuse_decode_here(&parser, &packet_attrs, "a block");
+      }
       refuse_if_here(&parser, &packet_attrs, check(&parser, TOK_BLOCK) ? "a named block's declaration" : "a packet");
       packet_attrs.condition = NULL;
     }
@@ -1840,6 +1919,7 @@ AstFile *parse(const char *source, DiagList *diags) {
       break;
     }
     packet->line = line;
+    packet->manual = packet_attrs.manual;
     packet->column = column;
     packet->start_line = start_line;
     packet->start_column = start_column;

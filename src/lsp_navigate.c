@@ -19,11 +19,12 @@
 #include "lsp_semantic.h"
 #include "parser.h"
 
-const char *const NAV_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "if", NULL };
+const char *const NAV_ATTRIBUTE_NAMES[] = { "bit_order", "byte_order", "cal", "decode", "if", NULL };
 /* The usual types: `i3` is as good as `i8`, and a list of 66 would bury the blocks. */
 static const char *const TYPE_VALUES[] = { "i8", "i16", "i32", "i64", "f32", "f64", NULL };
 static const char *const BIT_ORDER_VALUES[] = { "msb_first", "lsb_first", NULL };
 static const char *const BYTE_ORDER_VALUES[] = { "big_endian", "little_endian", NULL };
+static const char *const DECODE_VALUES[] = { "auto", "manual", NULL };
 
 struct Navigator {
   char *source;
@@ -790,6 +791,9 @@ static void describe_import(Buffer *buffer, const AstImport *import) {
 
 static void describe_packet(Buffer *buffer, const Navigator *navigator, const AstPacket *packet) {
   put(buffer, "**pkt %s**\n\n", packet->name);
+  if (packet->manual) {
+    put(buffer, "- `@decode: manual`: decoded with `framedsl_decode_as()`\n");
+  }
   size_t index = 0;
   if (navigator->definition == NULL || !framedsl_find_packet(navigator->definition, packet->name, &index)) {
     return;
@@ -824,6 +828,12 @@ static void describe_attribute(Buffer *buffer, const Token *name) {
       buffer,
       "**@byte_order**: `big_endian` (the default) or `little_endian` -- the order of the bytes of a "
       "byte-aligned field a whole number of bytes wide.\n"
+    );
+  } else if (spells(name, "decode")) {
+    put(
+      buffer,
+      "**@decode**: who decides which packet arrived. `auto` (the default) is the library, from the fixed "
+      "values in the bytes, and `manual` is the program, which calls `framedsl_decode_as()`.\n"
     );
   } else if (spells(name, "cal")) {
     put(buffer, "**@cal**: the calibration that turns this field's raw value into engineering units.\n");
@@ -1263,6 +1273,8 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
       offer_list(&completions, BIT_ORDER_VALUES, NAV_VALUE);
     } else if (spells(second, "byte_order")) {
       offer_list(&completions, BYTE_ORDER_VALUES, NAV_VALUE);
+    } else if (spells(second, "decode")) {
+      offer_list(&completions, DECODE_VALUES, NAV_VALUE);
     } else if (spells(second, "cal")) {
       offer_cals(&completions, navigator->ast);
     } else if (spells(second, "if")) {

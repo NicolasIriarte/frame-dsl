@@ -1,0 +1,16 @@
+# REJECTED: check 11 -- an `auto` packet is held to what it always was.
+#
+# The file's default is `manual`, and this packet is the exception, so the library has to find it from its
+# bytes and nothing in them says which packet this is. A forgotten discriminator on a serial link is still
+# refused at load.
+
+@decode: manual;
+
+pkt ENGINE {
+  rpm: 16;
+};
+
+[ @decode: auto; ]
+pkt TC_PING {
+  sequence: 16;
+};

@@ -546,6 +546,30 @@ static int us15_tc12_semantic_tokens_read_a_condition(const TestArguments *args)
   return failure;
 }
 
+/* The attribute completes its values, and a manual packet says so on hover (#146). */
+static int us15_tc15_decode_is_offered_and_shown(const TestArguments *args) {
+  (void)args;
+  const char *value = "@decode: \npkt P { id: 8 := 1; };\n";
+  static const char *const VALUES[] = { "auto", "manual", NULL };
+  Navigator *navigator = nav_open(value, NULL);
+  int failure = navigator == NULL || !completes_to(navigator, 1, 10, VALUES) ? __LINE__ : 0;
+  nav_close(navigator);
+
+  navigator = nav_open("[ @decode: manual; ]\npkt P {\n  x: 8;\n};\n", NULL);
+  NavLocation range;
+  char *packet = navigator != NULL ? nav_hover(navigator, 2, 5, &range) : NULL;
+  char *attribute = navigator != NULL ? nav_hover(navigator, 1, 4, &range) : NULL;
+  if (failure == 0 && !contains(packet, "`@decode: manual`")) {
+    failure = __LINE__;
+  } else if (failure == 0 && !contains(attribute, "**@decode**")) {
+    failure = __LINE__;
+  }
+  free(packet);
+  free(attribute);
+  nav_close(navigator);
+  return failure;
+}
+
 /* A typed field is a field, and says its type, in a packet and in a block's own declaration (#10). */
 static int us15_tc14_hover_shows_a_type(const TestArguments *args) {
   (void)args;
@@ -637,4 +661,5 @@ void register_user_story15(void) {
   ADD_TEST_CASE(us15_tc12_semantic_tokens_read_a_condition, "semantic tokens read a condition", false);
   ADD_TEST_CASE(us15_tc13_hover_shows_a_default, "hover shows a default, and a name written as one", false);
   ADD_TEST_CASE(us15_tc14_hover_shows_a_type, "hover shows a field's type", false);
+  ADD_TEST_CASE(us15_tc15_decode_is_offered_and_shown, "@decode completes its values, and hover shows it", false);
 }

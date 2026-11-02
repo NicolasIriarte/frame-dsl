@@ -1073,7 +1073,7 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
 
   /* Check 11. A fixed value identifies a packet only where a decoder knows to look for it: at a known
    * offset, in a field every frame carries. */
-  if (!is_block && !has_fixed && packet->field_count > 0) {
+  if (!is_block && !packet->manual && !has_fixed && packet->field_count > 0) {
     fail(
       checker,
       packet->line,
@@ -1083,7 +1083,7 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
       "has no way to conclude the frame is this packet",
       packet->name
     );
-  } else if (!is_block && has_fixed && discriminator_bits == 0 && packet->field_count > 0) {
+  } else if (!is_block && !packet->manual && has_fixed && discriminator_bits == 0 && packet->field_count > 0) {
     const AstField *fixed = NULL;
     for (size_t i = 0; i < packet->field_count && fixed == NULL; ++i) {
       if (packet->fields[i].has_fixed) {
@@ -1119,6 +1119,10 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
   }
 
   /* Second pass: project the fixed fields that sit at a constant offset. */
+  /* A manual packet is identified by the program, so dispatch has nothing to match (#146). */
+  if (packet->manual) {
+    discriminator_bits = 0;
+  }
   layout->discriminator_bits = (size_t)discriminator_bits;
   if (discriminator_bits > 0) {
     size_t bytes = (size_t)((discriminator_bits + 7) / 8);
@@ -1154,6 +1158,10 @@ static void check_distinguishable(Checker *checker) {
 
   for (size_t a = 0; a < layout->packet_count; ++a) {
     for (size_t b = a + 1; b < layout->packet_count; ++b) {
+      /* A manual packet is never looked for, so it overlaps anything it likes (#146). */
+      if (checker->file->packets[a].manual || checker->file->packets[b].manual) {
+        continue;
+      }
       const PacketLayout *lhs = &layout->packets[a];
       const PacketLayout *rhs = &layout->packets[b];
 

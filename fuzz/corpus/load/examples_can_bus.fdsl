@@ -1,0 +1,29 @@
+# Packets a program names: `@decode: manual`.
+#
+# On CAN the identity is in the CAN ID, which the driver has and the payload does not. `@decode` says who
+# decides which packet arrived. `auto`, the default, is the library, from the fixed values in the bytes,
+# and `manual` is the program, which calls framedsl_decode_as() with the packet's name. A CAN ID stays out
+# of the definition: it belongs to the transport, and the program maps one to a packet.
+#
+# A manual packet needs no fixed field and may overlap any packet. An encode gives the bare payload.
+#
+# `frame-dsl can_bus.fdsl -d "0B 54 5A" --packet ENGINE` decodes one.
+
+@decode: manual;
+
+pkt ENGINE {     # CAN ID 0x100
+  rpm:  16;
+  temp: 8;
+};
+
+pkt BATTERY {    # CAN ID 0x200
+  volts: 16;
+  amps:  16;
+};
+
+# The exception: this one is on a serial link, and says what it is.
+[ @decode: auto; ]
+pkt TC_PING {
+  id:       8 := 0x01;
+  sequence: 16;
+};

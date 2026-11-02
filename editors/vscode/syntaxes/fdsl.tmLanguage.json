@@ -27,7 +27,7 @@
       "name": "keyword.control.fdsl"
     },
     "attribute-values": {
-      "match": "\\b(msb_first|lsb_first|big_endian|little_endian)\\b",
+      "match": "\\b(msb_first|lsb_first|big_endian|little_endian|auto|manual)\\b",
       "name": "constant.language.fdsl"
     },
 
@@ -134,7 +134,7 @@
     },
     "attribute-header": {
       "comment": "Only the word right after '@' is judged: an unknown attribute name is painted as an error before anything is compiled, the way an unreserved cal name later in the same statement is not.",
-      "match": "\\G\\s{0,4}(?:(bit_order|byte_order|cal|if)|([A-Za-z_]\\w*))",
+      "match": "\\G\\s{0,4}(?:(bit_order|byte_order|cal|decode|if)|([A-Za-z_]\\w*))",
       "captures": {
         "1": { "name": "entity.other.attribute-name.fdsl" },
         "2": { "name": "invalid.illegal.unknown-attribute.fdsl" }
