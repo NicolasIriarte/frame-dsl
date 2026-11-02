@@ -245,10 +245,10 @@ static bool loads(const char *source) {
 static bool attribute_loads(const char *name, const char *value) {
   char definition[256];
   if (strcmp(name, "if") == 0) {
-    return loads("pkt A { x: 8 = 1; [ @if: valof(x) == 1; ] y: 8; };");
+    return loads("pkt A { x: 8 := 1; [ @if: valof(x) == 1; ] y: 8; };");
   }
   snprintf(
-    definition, sizeof(definition), "cal %s(x) = x;\npkt A { x: 8 = 1; [ @%s: %s; ] y: 8; };", value, name, value
+    definition, sizeof(definition), "cal %s(x) = x;\npkt A { x: 8 := 1; [ @%s: %s; ] y: 8; };", value, name, value
   );
   return loads(definition);
 }
@@ -272,7 +272,7 @@ static int us9_tc01_every_word_the_mode_reserves_is_reserved(const TestArguments
 
   for (size_t i = 0; i < keywords.count; ++i) {
     char definition[256];
-    snprintf(definition, sizeof(definition), "pkt A { %s: 8 = 1; };", keywords.words[i]);
+    snprintf(definition, sizeof(definition), "pkt A { %s: 8 := 1; };", keywords.words[i]);
     if (loads(definition)) {
       return __LINE__;
     }
@@ -280,7 +280,7 @@ static int us9_tc01_every_word_the_mode_reserves_is_reserved(const TestArguments
 
   /* The control. Without it this case would pass just as well against a compiler that rejected
    * everything, and would be measuring nothing. */
-  if (!loads("pkt A { not_a_keyword: 8 = 1; };")) {
+  if (!loads("pkt A { not_a_keyword: 8 := 1; };")) {
     return __LINE__;
   }
   return 0;
@@ -325,7 +325,7 @@ static int us9_tc02_every_attribute_the_mode_knows_is_accepted(const TestArgumen
     return __LINE__;
   }
   /* The control again: a name the mode would paint as a typo is one the parser refuses. */
-  if (loads("@byte_ordre: big_endian;\npkt A { x: 8 = 1; };")) {
+  if (loads("@byte_ordre: big_endian;\npkt A { x: 8 := 1; };")) {
     return __LINE__;
   }
   return 0;
@@ -446,12 +446,12 @@ static int us9_tc06_every_word_the_vim_syntax_reserves_is_reserved(const TestArg
 
   for (size_t i = 0; i < keywords.count; ++i) {
     char definition[256];
-    snprintf(definition, sizeof(definition), "pkt A { %s: 8 = 1; };", keywords.words[i]);
+    snprintf(definition, sizeof(definition), "pkt A { %s: 8 := 1; };", keywords.words[i]);
     if (loads(definition)) {
       return __LINE__;
     }
   }
-  if (!loads("pkt A { not_a_keyword: 8 = 1; };")) {
+  if (!loads("pkt A { not_a_keyword: 8 := 1; };")) {
     return __LINE__;
   }
   return 0;
@@ -492,7 +492,7 @@ static int us9_tc07_every_attribute_the_vim_syntax_knows_is_accepted(const TestA
   if (accepted != names.count) {
     return __LINE__;
   }
-  if (loads("@byte_ordre: big_endian;\npkt A { x: 8 = 1; };")) {
+  if (loads("@byte_ordre: big_endian;\npkt A { x: 8 := 1; };")) {
     return __LINE__;
   }
   return 0;
@@ -587,12 +587,12 @@ static int us9_tc10_every_word_the_grammar_reserves_is_reserved(const TestArgume
   int failure = 0;
   for (size_t i = 0; i < keywords.count && failure == 0; ++i) {
     char definition[256];
-    snprintf(definition, sizeof(definition), "pkt A { %s: 8 = 1; };", keywords.words[i]);
+    snprintf(definition, sizeof(definition), "pkt A { %s: 8 := 1; };", keywords.words[i]);
     if (loads(definition)) {
       failure = __LINE__;
     }
   }
-  if (failure == 0 && !loads("pkt A { not_a_keyword: 8 = 1; };")) {
+  if (failure == 0 && !loads("pkt A { not_a_keyword: 8 := 1; };")) {
     failure = __LINE__;
   }
   region_free(region);
@@ -636,7 +636,7 @@ static int us9_tc11_every_attribute_the_grammar_knows_is_accepted(const TestArgu
   if (failure == 0 && accepted != names.count) {
     failure = __LINE__;
   }
-  if (failure == 0 && loads("@byte_ordre: big_endian;\npkt A { x: 8 = 1; };")) {
+  if (failure == 0 && loads("@byte_ordre: big_endian;\npkt A { x: 8 := 1; };")) {
     failure = __LINE__;
   }
   region_free(region);

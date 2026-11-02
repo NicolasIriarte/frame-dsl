@@ -934,12 +934,55 @@ static bool parse_value(Parser *parser, uint64_t *value, const char **name, int 
       written.line,
       written.column,
       0,
-      "a value is written as a bare name, '= HK', since the field's type already says which enum it "
+      "a value is written as a bare name, ':= HK', since the field's type already says which enum it "
       "is from"
     );
     return false;
   }
   return *name != NULL;
+}
+
+/* `=` names something, an enum's value or a curve, and every value on a field says which kind it is
+ * (#144). So a bare one is an error with one obvious repair, and is then read as `:=`, so that the rest
+ * of the line is still checked. */
+static void refuse_bare_equals(Parser *parser) {
+  if (!check(parser, TOK_EQUALS)) {
+    return;
+  }
+  size_t index = parser->diags->count;
+  const int line = parser->current.line;
+  const int column = parser->current.column;
+  diag_add(parser->diags, line, column, 0, "a value is written ':=' to fix it or '?=' to give a default, not '='");
+  diag_set_fix(parser->diags, index, line, column, line, column + 1, ":=", "replace '=' with ':='");
+}
+
+/* A field's value, if one follows: `:=` fixes it and `?=` gives it a default (#144). A name is recorded
+ * as written, whatever it turns out to be: composition knows whether it is an enum's. */
+static bool parse_field_value(Parser *parser, AstField *field) {
+  const bool is_default = check(parser, TOK_QUESTION_EQUALS);
+  refuse_bare_equals(parser);
+  if (!token_is_value_operator(&parser->current)) {
+    return true;
+  }
+  advance(parser);
+  uint64_t value = 0;
+  const char *name = NULL;
+  if (is_default) {
+    if (!parse_value(parser, &value, &name, &field->default_line, &field->default_column)) {
+      return false;
+    }
+    field->has_default = name == NULL;
+    field->default_value = value;
+    field->default_name = name;
+  } else {
+    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
+      return false;
+    }
+    field->has_fixed = name == NULL;
+    field->fixed = value;
+    field->fixed_name = name;
+  }
+  return true;
 }
 
 static bool parse_override(Parser *parser, AstField *field) {
@@ -973,9 +1016,13 @@ static bool parse_override(Parser *parser, AstField *field) {
   }
   path[used] = '\0';
 
-  if (!expect(parser, TOK_EQUALS)) {
+  const bool is_default = check(parser, TOK_QUESTION_EQUALS);
+  refuse_bare_equals(parser);
+  if (!token_is_value_operator(&parser->current)) {
+    error_at_current(parser, "':=' or '?='");
     return false;
   }
+  advance(parser);
 
   AstOverride *override = region_alloc(parser->file->region, sizeof(AstOverride));
   if (override == NULL) {
@@ -984,6 +1031,7 @@ static bool parse_override(Parser *parser, AstField *field) {
   }
   memset(override, 0, sizeof(*override));
   override->name = region_strndup(parser->file->region, path, used);
+  override->is_default = is_default;
   override->line = line;
   override->column = column;
   if (!parse_value(parser, &override->value, &override->value_name, &override->value_line, &override->value_column)) {
@@ -1015,18 +1063,10 @@ static void parse_use_rest(Parser *parser, AstField *field) {
     }
   }
 
-  /* A value, `= HK`, is what a field typed by an enum takes. Recorded whatever the name turns out to
-   * be: composition knows whether it is an enum's or a block's, and refuses one for a block. */
-  if (match(parser, TOK_EQUALS)) {
-    uint64_t value = 0;
-    const char *name = NULL;
-    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
-      recover_to_field_end(parser);
-      return;
-    }
-    field->has_fixed = name == NULL;
-    field->fixed = value;
-    field->fixed_name = name;
+  /* A value is what a field typed by an enum takes, and composition refuses one for a block. */
+  if (!parse_field_value(parser, field)) {
+    recover_to_field_end(parser);
+    return;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {
@@ -1152,16 +1192,9 @@ static void parse_field(Parser *parser, AstPacket *packet, Attributes attrs) {
   /* A name here is refused by composition (check 39): only a field typed by an enum has names for its
    * values. Parsed rather than refused on the spot, so the message can say that instead of "expected a
    * number". */
-  if (match(parser, TOK_EQUALS)) {
-    uint64_t value = 0;
-    const char *name = NULL;
-    if (!parse_value(parser, &value, &name, &field->fixed_line, &field->fixed_column)) {
-      recover_to_field_end(parser);
-      return;
-    }
-    field->has_fixed = name == NULL;
-    field->fixed = value;
-    field->fixed_name = name;
+  if (!parse_field_value(parser, field)) {
+    recover_to_field_end(parser);
+    return;
   }
 
   if (!expect(parser, TOK_SEMICOLON)) {

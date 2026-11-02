@@ -95,6 +95,9 @@ typedef struct {
   bool is_scalar;
   bool has_fixed;
   uint64_t fixed;
+  /** @brief As FieldInstruction.has_default. */
+  bool has_default;
+  uint64_t default_value;
   int32_t cal;
   /** @brief As FieldInstruction.enumeration. */
   int32_t enumeration;
@@ -117,6 +120,8 @@ typedef struct {
   size_t fixed_count;
   /** @brief How many members are fixed: none is common, and leaves encode nothing to stamp. */
   size_t fixed_members;
+  /** @brief How many members have a default, which only a frame starting out has to write (#144). */
+  size_t default_members;
   uint32_t *fixed_at;
   uint8_t *fixed_mask;
   uint8_t *fixed_value;
@@ -228,6 +233,11 @@ typedef struct {
    */
   bool has_fixed;
   uint64_t fixed;
+
+  /** @brief What the slot starts with when nothing has set it (#144). Only a frame starting out reads
+   * this: from then on the value is in the arena, like any other. */
+  bool has_default;
+  uint64_t default_value;
 
   /** @brief Index into the definition's calibrations, or -1. Resolved here so that reading an
    * engineering value never searches by name. */

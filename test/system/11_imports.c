@@ -56,7 +56,7 @@ static const char *const LINK =
   "@byte_order: big_endian;\n"
   "block Header { id: 8; sequence: 16; };\n"
   "cal volts(raw) = raw * 3.3 / 4095;\n"
-  "pkt LINK_ONLY { magic: 8 = 0xEE; };\n";
+  "pkt LINK_ONLY { magic: 8 := 0xEE; };\n";
 
 static int us11_tc01_a_flat_import_is_used_as_if_written_here(const TestArguments *args) {
   if (!write_file(args, "lib/link.fdsl", LINK)
@@ -64,7 +64,7 @@ static int us11_tc01_a_flat_import_is_used_as_if_written_here(const TestArgument
         args,
         "device.fdsl",
         "import \"lib/link.fdsl\";\n"
-        "pkt TM { hdr: Header { id = 0x82; }; [ @cal: volts; ] bus: 16; };\n"
+        "pkt TM { hdr: Header { id := 0x82; }; [ @cal: volts; ] bus: 16; };\n"
       )) {
     FORCE_FAILURE();
   }
@@ -91,9 +91,9 @@ static int us11_tc02_an_import_as_a_name_is_addressed_through_it(const TestArgum
         args,
         "device.fdsl",
         "import \"link.fdsl\" as link;\n"
-        "pkt TM { hdr: link.Header { id = 0x82; }; [ @cal: link.volts; ] bus: 16; };\n"
+        "pkt TM { hdr: link.Header { id := 0x82; }; [ @cal: link.volts; ] bus: 16; };\n"
       )
-      || !write_file(args, "flat.fdsl", "import \"link.fdsl\" as link;\npkt TM { hdr: Header { id = 1; }; };\n")) {
+      || !write_file(args, "flat.fdsl", "import \"link.fdsl\" as link;\npkt TM { hdr: Header { id := 1; }; };\n")) {
     FORCE_FAILURE();
   }
 
@@ -120,7 +120,7 @@ static int us11_tc03_a_file_reached_twice_is_merged_once(const TestArguments *ar
         args,
         "top.fdsl",
         "import \"a.fdsl\";\nimport \"b.fdsl\";\nimport \"base.fdsl\";\n"
-        "pkt P { id: 8 = 1; x: A; y: B; end: Crc; };\n"
+        "pkt P { id: 8 := 1; x: A; y: B; end: Crc; };\n"
       )) {
     FORCE_FAILURE();
   }
@@ -135,12 +135,12 @@ static int us11_tc04_different_declarations_of_one_name_clash(const TestArgument
   if (!write_file(args, "one.fdsl", "block Header { id: 8; };\n")
       || !write_file(args, "two.fdsl", "block Header { kind: 8; };\n")
       || !write_file(
-        args, "clash.fdsl", "import \"one.fdsl\";\nimport \"two.fdsl\";\npkt P { h: Header { id = 1; }; };\n"
+        args, "clash.fdsl", "import \"one.fdsl\";\nimport \"two.fdsl\";\npkt P { h: Header { id := 1; }; };\n"
       )
       || !write_file(
         args,
         "both.fdsl",
-        "import \"one.fdsl\";\nimport \"two.fdsl\" as two;\npkt P { h: Header { id = 1; }; k: two.Header; };\n"
+        "import \"one.fdsl\";\nimport \"two.fdsl\" as two;\npkt P { h: Header { id := 1; }; k: two.Header; };\n"
       )) {
     FORCE_FAILURE();
   }
@@ -158,10 +158,10 @@ static int us11_tc04_different_declarations_of_one_name_clash(const TestArgument
 }
 
 static int us11_tc05_a_missing_file_and_a_cycle_are_refused(const TestArguments *args) {
-  if (!write_file(args, "missing.fdsl", "import \"nowhere.fdsl\";\npkt P { id: 8 = 1; };\n")
-      || !write_file(args, "a.fdsl", "import \"b.fdsl\";\nblock A { a: 8; };\npkt P { id: 8 = 1; };\n")
+  if (!write_file(args, "missing.fdsl", "import \"nowhere.fdsl\";\npkt P { id: 8 := 1; };\n")
+      || !write_file(args, "a.fdsl", "import \"b.fdsl\";\nblock A { a: 8; };\npkt P { id: 8 := 1; };\n")
       || !write_file(args, "b.fdsl", "import \"a.fdsl\";\nblock B { b: 8; };\n")
-      || !write_file(args, "self.fdsl", "import \"self.fdsl\";\npkt P { id: 8 = 1; };\n")) {
+      || !write_file(args, "self.fdsl", "import \"self.fdsl\";\npkt P { id: 8 := 1; };\n")) {
     FORCE_FAILURE();
   }
   const char *names[] = { "missing.fdsl", "a.fdsl", "self.fdsl" };
@@ -181,7 +181,7 @@ static int us11_tc05_a_missing_file_and_a_cycle_are_refused(const TestArguments 
  * import, and not as a position in the file that imported it. */
 static int us11_tc06_an_error_in_an_imported_file_names_that_file(const TestArguments *args) {
   if (!write_file(args, "lib/bad.fdsl", "block Good { g: 8; };\nblock Bad {\n  x: 4 - 4;\n};\n")
-      || !write_file(args, "device.fdsl", "import \"lib/bad.fdsl\";\npkt P { id: 8 = 1; };\n")) {
+      || !write_file(args, "device.fdsl", "import \"lib/bad.fdsl\";\npkt P { id: 8 := 1; };\n")) {
     FORCE_FAILURE();
   }
   FramedslResult *result = load(args, "device.fdsl");
@@ -203,7 +203,7 @@ static int us11_tc07_an_imported_block_keeps_its_own_byte_order(const TestArgume
       || !write_file(
         args,
         "device.fdsl",
-        "import \"link.fdsl\";\n@byte_order: little_endian;\npkt TM { hdr: Header { id = 0x82; }; value: 16; };\n"
+        "import \"link.fdsl\";\n@byte_order: little_endian;\npkt TM { hdr: Header { id := 0x82; }; value: 16; };\n"
       )) {
     FORCE_FAILURE();
   }
@@ -296,7 +296,7 @@ static int us11_tc08_the_tool_and_a_string_load_follow_imports(const TestArgumen
   }
 
   FramedslResult *result = framedsl_load_string(
-    "import \"" EXAMPLES_DIR "/common/link.fdsl\";\npkt P { h: Header { id = 1; }; };\n", "string"
+    "import \"" EXAMPLES_DIR "/common/link.fdsl\";\npkt P { h: Header { id := 1; }; };\n", "string"
   );
   bool ok = framedsl_ok(result);
   framedsl_result_free(result);

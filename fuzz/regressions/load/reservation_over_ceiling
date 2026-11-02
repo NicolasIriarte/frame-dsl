@@ -6,14 +6,14 @@
 
 [ @byte_order: little_endian; ]      # the whole packet
 pkt TM_MIXED {
-  marker: 16 = 0xCAFE;               # little_endian, from the packet
+  marker: 16 := 0xCAFE;               # little_endian, from the packet
 
   [ @byte_order: big_endian; ]       # one field, overriding the p       # bit order is independent of 
   mode: 8;
 };
 
 pkt TC_PAYLOAD {
-  type: 8 = 0x03;
+  type: 8 := 0x03;
   seq: 16;
   len: 16;                           # counts payload bytes
   body[806666664]: valof(len) * 8;

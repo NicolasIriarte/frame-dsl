@@ -229,6 +229,8 @@ typedef struct AstOverride {
   uint64_t value;
   /** @brief The value written as a name of the field's enum, `type = HK;`, or NULL for a number. */
   const char *value_name;
+  /** @brief `?=` rather than `:=` (#144): the field becomes what the use wrote, whatever the block said. */
+  bool is_default;
   int line;
   int column;
   /** @brief Where the value is. */
@@ -298,6 +300,18 @@ typedef struct {
    * field's enum and sets `fixed` from it. NULL when the value is a number, or there is none.
    */
   const char *fixed_name;
+
+  /**
+   * @brief A default, `?= 1` (#144): what the field holds until something replaces it. Written where
+   * `fixed` is and in the same bits, and held to the same checks of its width, but it identifies nothing
+   * and is never stamped over what a program set.
+   */
+  bool has_default;
+  uint64_t default_value;
+  int default_line;
+  int default_column;
+  /** @brief As `fixed_name`, for a default written as a name. */
+  const char *default_name;
 
   /**
    * @brief The enum this field is typed by, as this file names it (`vendor.Mode`), or NULL. Set by

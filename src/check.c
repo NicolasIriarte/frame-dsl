@@ -548,6 +548,45 @@ static void project(const AstField *field, uint64_t offset, uint64_t width, uint
 
 /* ---- Per-packet checks ---------------------------------------------------------------------- */
 
+/* Check 8, for one value written on a field of `width` bits, `kind` saying which sort of value it is. */
+static void check_value(
+  Checker *checker,
+  const AstPacket *packet,
+  const AstField *field,
+  uint64_t width,
+  uint64_t value,
+  int line,
+  int column,
+  const char *kind
+) {
+  if (width > FRAMEDSL_SCALAR_MAX_BITS) {
+    fail(
+      checker,
+      line,
+      column,
+      8,
+      "'%s.%s' is %llu bits, wider than a scalar's %d -- a %s value cannot be given to a bit string",
+      packet->name,
+      field->name,
+      (unsigned long long)width,
+      FRAMEDSL_SCALAR_MAX_BITS,
+      kind
+    );
+  } else if (width > 0 && width < 64 && value >= ((uint64_t)1 << width)) {
+    fail(
+      checker,
+      line,
+      column,
+      8,
+      "'%s.%s' is %llu bits, which cannot hold the value %#llx",
+      packet->name,
+      field->name,
+      (unsigned long long)width,
+      (unsigned long long)value
+    );
+  }
+}
+
 /* Every check a run of fields can be judged by. A named block goes through here as well, so that a
  * mistake inside one is reported at the block, once, and in a block nothing uses yet -- which is what
  * an imported file mostly is. What only makes sense of a whole frame, checks 11 and 13's total, is
@@ -793,36 +832,36 @@ static void check_packet(Checker *checker, const AstPacket *packet, PacketLayout
     /* Check 8. A fixed value is a number, stored and compared as one; a field wider than a scalar is a
      * bit string, the bytes the caller handed over, with no single value to hold one against. Found by
      * fuzzing (#59): nothing stopped a fixed value from being written on one, and encoding it read past
-     * the 64 bits `field->fixed` actually has. */
+     * the 64 bits `field->fixed` actually has. A default is held to the same (#144). */
     if (field->has_fixed) {
       has_fixed = true;
-      uint64_t width = slot->width_bits;
-      if (!variable && width > FRAMEDSL_SCALAR_MAX_BITS) {
-        fail(
-          checker,
-          field->fixed_line,
-          field->fixed_column,
-          8,
-          "'%s.%s' is %llu bits, wider than a scalar's %d -- a fixed value cannot be given to a bit "
-          "string",
-          packet->name,
-          field->name,
-          (unsigned long long)width,
-          FRAMEDSL_SCALAR_MAX_BITS
-        );
-      } else if (!variable && width > 0 && width < 64 && field->fixed >= ((uint64_t)1 << width)) {
-        fail(
-          checker,
-          field->fixed_line,
-          field->fixed_column,
-          8,
-          "'%s.%s' is %llu bits, which cannot hold the value %#llx",
-          packet->name,
-          field->name,
-          (unsigned long long)width,
-          (unsigned long long)field->fixed
+      if (!variable) {
+        check_value(
+          checker, packet, field, slot->width_bits, field->fixed, field->fixed_line, field->fixed_column, "fixed"
         );
       }
+    }
+    if (field->has_default && variable) {
+      fail(
+        checker,
+        field->default_line,
+        field->default_column,
+        8,
+        "'%s.%s' is sized per frame -- a default value cannot be given to a bit string",
+        packet->name,
+        field->name
+      );
+    } else if (field->has_default) {
+      check_value(
+        checker,
+        packet,
+        field,
+        slot->width_bits,
+        field->default_value,
+        field->default_line,
+        field->default_column,
+        "default"
+      );
     }
 
     /* Check 15. Both attributes describe how the bits of a *value* are arranged. A bit string is not

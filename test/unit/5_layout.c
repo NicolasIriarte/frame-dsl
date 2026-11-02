@@ -28,7 +28,7 @@ static int us5_tc01_assigns_bit_offsets_in_declaration_order(const TestArguments
   (void)args;
 
   AstFile *file = NULL;
-  Layout *layout = layout_of("pkt A { h: 8 = 1; a: 11; b: 1; c: 4; };", &file);
+  Layout *layout = layout_of("pkt A { h: 8 := 1; a: 11; b: 1; c: 4; };", &file);
 
   int failure = 0;
   if (layout == NULL) {
@@ -53,7 +53,7 @@ static int us5_tc02_offsets_stop_being_known_after_a_variable_field(const TestAr
   (void)args;
 
   AstFile *file = NULL;
-  Layout *layout = layout_of("pkt A { h: 8 = 1; n: 16; d[8]: valof(n) * 8; crc: 16; };", &file);
+  Layout *layout = layout_of("pkt A { h: 8 := 1; n: 16; d[8]: valof(n) * 8; crc: 16; };", &file);
 
   int failure = 0;
   if (layout == NULL) {
@@ -81,7 +81,7 @@ static int us5_tc03_marks_wide_fields_as_bit_strings(const TestArguments *args) 
 
   AstFile *file = NULL;
   /* `pad` is there only to bring the packet to 144 bits: check 13 wants a whole number of bytes. */
-  Layout *layout = layout_of("pkt A { h: 8 = 1; small: 64; big: 65; pad: 7; };", &file);
+  Layout *layout = layout_of("pkt A { h: 8 := 1; small: 64; big: 65; pad: 7; };", &file);
 
   int failure = 0;
   if (layout == NULL) {
@@ -103,8 +103,8 @@ static int us5_tc04_bit_order_changes_which_stream_bits_are_pinned(const TestArg
 
   AstFile *msb_file = NULL;
   AstFile *lsb_file = NULL;
-  Layout *msb = layout_of("pkt A { h: 8 = 0xAA; };", &msb_file);
-  Layout *lsb = layout_of("pkt A { [ @bit_order: lsb_first; ] h: 8 = 0xAA; };", &lsb_file);
+  Layout *msb = layout_of("pkt A { h: 8 := 0xAA; };", &msb_file);
+  Layout *lsb = layout_of("pkt A { [ @bit_order: lsb_first; ] h: 8 := 0xAA; };", &lsb_file);
 
   int failure = 0;
   if (msb == NULL || lsb == NULL) {
@@ -130,8 +130,8 @@ static int us5_tc05_byte_order_swaps_the_bytes_that_are_pinned(const TestArgumen
 
   AstFile *little_file = NULL;
   AstFile *big_file = NULL;
-  Layout *little = layout_of("pkt A { [ @byte_order: little_endian; ] h: 16 = 0xCAFE; };", &little_file);
-  Layout *big = layout_of("pkt A { [ @byte_order: big_endian; ] h: 16 = 0xFECA; };", &big_file);
+  Layout *little = layout_of("pkt A { [ @byte_order: little_endian; ] h: 16 := 0xCAFE; };", &little_file);
+  Layout *big = layout_of("pkt A { [ @byte_order: big_endian; ] h: 16 := 0xFECA; };", &big_file);
 
   int failure = 0;
   if (little == NULL || big == NULL) {

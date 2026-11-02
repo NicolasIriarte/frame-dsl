@@ -30,6 +30,9 @@ typedef enum {
   TOK_LPAREN,
   TOK_RPAREN,
   TOK_EQUALS,
+  /** @brief `:=` fixes a field's value and `?=` gives it a default (#144). */
+  TOK_COLON_EQUALS,
+  TOK_QUESTION_EQUALS,
   /** @brief `==` and `!=`, which only a condition compares with, `[ @if: valof(x) == 1; ]` (#12). */
   TOK_EQUAL_EQUAL,
   TOK_NOT_EQUAL,
@@ -72,6 +75,13 @@ typedef struct {
   /** @brief TOK_REAL, and TOK_INT as well, so a calibration can take either without asking. */
   double real;
 } Token;
+
+/** @brief Whether `token`, which may be NULL, gives a field its value: `:=`, `?=` (#144), or in a file
+ * that does not load yet the bare `=` that is refused in their place. */
+static inline bool token_is_value_operator(const Token *token) {
+  return token != NULL
+         && (token->kind == TOK_EQUALS || token->kind == TOK_COLON_EQUALS || token->kind == TOK_QUESTION_EQUALS);
+}
 
 typedef struct {
   const char *source;

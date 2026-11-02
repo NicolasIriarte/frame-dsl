@@ -53,7 +53,7 @@ static bool accepted(const char *source) {
 
 static int us4_tc01_rejects_byte_order_written_on_a_sub_byte_field(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 1; [ @byte_order: little_endian; ] s: 15; t: 1; };", 10)) {
+  if (!rejected_by("pkt A { h: 8 := 1; [ @byte_order: little_endian; ] s: 15; t: 1; };", 10)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -64,7 +64,7 @@ static int us4_tc01_rejects_byte_order_written_on_a_sub_byte_field(const TestArg
  * it can do nothing is an error. */
 static int us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field(const TestArguments *args) {
   (void)args;
-  if (!accepted("@byte_order: little_endian;\npkt A { h: 8 = 1; s: 15; t: 1; };")) {
+  if (!accepted("@byte_order: little_endian;\npkt A { h: 8 := 1; s: 15; t: 1; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -72,7 +72,7 @@ static int us4_tc02_accepts_byte_order_inherited_by_a_sub_byte_field(const TestA
 
 static int us4_tc03_rejects_byte_order_on_a_field_off_a_byte_boundary(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 4 = 1; [ @byte_order: little_endian; ] w: 16; t: 4; };", 10)) {
+  if (!rejected_by("pkt A { h: 4 := 1; [ @byte_order: little_endian; ] w: 16; t: 4; };", 10)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -89,7 +89,7 @@ static int us4_tc04_rejects_a_packet_with_no_fixed_field(const TestArguments *ar
 /* Both have a discriminator, both pin the same bits to the same value: nothing contradicts. */
 static int us4_tc05_rejects_packets_pinning_the_same_bits_alike(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 0xAA; n: 16; };\npkt B { h: 8 = 0xAA; m: 32; };", 12)) {
+  if (!rejected_by("pkt A { h: 8 := 0xAA; n: 16; };\npkt B { h: 8 := 0xAA; m: 32; };", 12)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -99,7 +99,7 @@ static int us4_tc05_rejects_packets_pinning_the_same_bits_alike(const TestArgume
  * overlap: the masks share no bits, so a frame can satisfy both and the decoder would be guessing. */
 static int us4_tc06_rejects_packets_whose_discriminators_do_not_overlap(const TestArguments *args) {
   (void)args;
-  if (!rejected_by("pkt A { h: 8 = 0xAA; n: 16; };\npkt B { p: 8; q: 8 = 0xBB; };", 12)) {
+  if (!rejected_by("pkt A { h: 8 := 0xAA; n: 16; };\npkt B { p: 8; q: 8 := 0xBB; };", 12)) {
     FORCE_FAILURE();
   }
   return 0;
@@ -108,9 +108,9 @@ static int us4_tc06_rejects_packets_whose_discriminators_do_not_overlap(const Te
 static int us4_tc07_accepts_packets_pinning_one_offset_to_different_values(const TestArguments *args) {
   (void)args;
   if (!accepted(
-        "pkt A { t: 8 = 0x01; n: 16; };\n"
-        "pkt B { t: 8 = 0x02; m: 32; };\n"
-        "pkt C { t: 8 = 0x03; k: 8; };"
+        "pkt A { t: 8 := 0x01; n: 16; };\n"
+        "pkt B { t: 8 := 0x02; m: 32; };\n"
+        "pkt C { t: 8 := 0x03; k: 8; };"
       )) {
     FORCE_FAILURE();
   }
@@ -124,7 +124,7 @@ static int us4_tc08_names_both_packets_in_an_ambiguity(const TestArguments *args
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("pkt ALPHA { h: 8 = 0xAA; n: 16; };\npkt BETA { h: 8 = 0xAA; m: 32; };", &diags);
+  AstFile *file = parse("pkt ALPHA { h: 8 := 0xAA; n: 16; };\npkt BETA { h: 8 := 0xAA; m: 32; };", &diags);
 
   int failure = 0;
   if (diags.count == 0 && file != NULL) {

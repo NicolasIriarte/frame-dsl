@@ -51,7 +51,7 @@ static bool completes_to(const Navigator *navigator, int line, int column, const
 static const char *const GROUPED =
   "@byte_order: big_endian;\n"
   "pkt P {\n"
-  "  id: 8 = 1;\n"
+  "  id: 8 := 1;\n"
   "  [ @byte_order: little_endian; ]\n"
   "  v:  16;\n"
   "};\n";
@@ -88,7 +88,7 @@ static const char *const INSTANCES =
   "};\n"
   "pkt P {\n"
   "  x:   8;\n"
-  "  hdr: H { id = 2; };\n"
+  "  hdr: H { id := 2; };\n"
   "};\n";
 
 static int us15_tc02_hover_inside_an_instance_shows_its_offset_in_the_packet(const TestArguments *args) {
@@ -143,7 +143,7 @@ static int us15_tc03_definition_follows_every_kind_of_name(const TestArguments *
     "  b: 8;\n"
     "};\n"
     "pkt P {\n"
-    "  hdr:  Header { id = 1; };\n"
+    "  hdr:  Header { id := 1; };\n"
     "  ext:  link.Header;\n"
     "  in:   B;\n"
     "  len:  8;\n"
@@ -191,7 +191,7 @@ static int us15_tc04_attribute_completion_is_what_the_parser_knows(const TestArg
   /* Each is one the parser accepts as a name: whatever it says about the value, it is not "unknown". */
   for (size_t i = 0; failure == 0 && NAV_ATTRIBUTE_NAMES[i] != NULL; ++i) {
     char text[128];
-    snprintf(text, sizeof(text), "pkt P { [ @%s: msb_first; ] x: 8 = 1; };\n", NAV_ATTRIBUTE_NAMES[i]);
+    snprintf(text, sizeof(text), "pkt P { [ @%s: msb_first; ] x: 8 := 1; };\n", NAV_ATTRIBUTE_NAMES[i]);
     DiagList diags;
     diag_init(&diags);
     AstFile *file = parse(text, &diags);
@@ -215,7 +215,7 @@ static int us15_tc05_valof_completion_offers_scalars_declared_above(const TestAr
   (void)args;
   const char *source =
     "pkt P {\n"
-    "  a:    8 = 1;\n"
+    "  a:    8 := 1;\n"
     "  wide: 128;\n"
     "  n:    4 * 4;\n"
     "  d[4]: valof(\n"
@@ -227,7 +227,7 @@ static int us15_tc05_valof_completion_offers_scalars_declared_above(const TestAr
   int failure = navigator == NULL || !completes_to(navigator, 5, 15, WANT) ? __LINE__ : 0;
   nav_close(navigator);
 
-  navigator = failure == 0 ? nav_open("pkt P {\n  a: 8 = 1;\n  n: 4;\n  d[4]: valof(n", NULL) : NULL;
+  navigator = failure == 0 ? nav_open("pkt P {\n  a: 8 := 1;\n  n: 4;\n  d[4]: valof(n", NULL) : NULL;
   if (failure == 0 && (navigator == NULL || !completes_to(navigator, 4, 16, PREFIXED))) {
     failure = __LINE__;
   }
@@ -270,9 +270,9 @@ static int us15_tc07_a_broken_file_is_answered_with_what_can_be_said(const TestA
   const char *typed =
     "import \"missing.fdsl\" as n;\n"
     "cal f(x) = x * 2;\n"
-    "block H {\n  id: 8 = 1;\n  inner: n.X { a.b = 1; };\n};\n"
+    "block H {\n  id: 8 := 1;\n  inner: n.X { a.b := 1; };\n};\n"
     "enum E: 2 {\n  A;\n  B = 2;\n};\n"
-    "pkt TM {\n  h: H { id = 2; };\n  e: E = B;\n  [ @cal: f; ]\n  v[2]: valof(v) * 8;\n  H;\n};\n";
+    "pkt TM {\n  h: H { id := 2; };\n  e: E := B;\n  [ @cal: f; ]\n  v[2]: valof(v) * 8;\n  H;\n};\n";
   size_t length = strlen(typed);
   char buffer[1024];
   for (size_t prefix = 0; prefix <= length; prefix += 3) {
@@ -324,9 +324,9 @@ static const char *const RADIO =
   "  seq:  12;\n" /* 8 */
   "};\n" /* 9 */
   "pkt TM {\n" /* 10 */
-  "  hdr:  Header { type = EVENT; };\n" /* 11 */
-  "  kind: PktType = HK;\n" /* 12 */
-  "  mode: vendor.Mode = TX;\n" /* 13 */
+  "  hdr:  Header { type := EVENT; };\n" /* 11 */
+  "  kind: PktType := HK;\n" /* 12 */
+  "  mode: vendor.Mode := TX;\n" /* 13 */
   "  pad:  6;\n" /* 14 */
   "};\n";
 
@@ -379,7 +379,7 @@ static int us15_tc09_completion_offers_enums_and_their_names(const TestArguments
   nav_close(navigator);
 
   static const char *const NAMES[] = { "OFF", "ON", NULL };
-  const char *value = "enum PowerState: 1 {\n  OFF;\n  ON;\n};\npkt P {\n  p: PowerState = \n";
+  const char *value = "enum PowerState: 1 {\n  OFF;\n  ON;\n};\npkt P {\n  p: PowerState := \n";
   navigator = failure == 0 ? nav_open(value, NULL) : NULL;
   if (failure == 0 && (navigator == NULL || !completes_to(navigator, 6, 19, NAMES))) {
     failure = __LINE__;
@@ -387,7 +387,7 @@ static int us15_tc09_completion_offers_enums_and_their_names(const TestArguments
   nav_close(navigator);
 
   const char *override =
-    "enum PowerState: 1 {\n  OFF;\n  ON;\n};\nblock B {\n  p: PowerState;\n};\npkt P {\n  b: B { p = \n";
+    "enum PowerState: 1 {\n  OFF;\n  ON;\n};\nblock B {\n  p: PowerState;\n};\npkt P {\n  b: B { p := \n";
   navigator = failure == 0 ? nav_open(override, NULL) : NULL;
   if (failure == 0 && (navigator == NULL || !completes_to(navigator, 9, 15, NAMES))) {
     failure = __LINE__;
@@ -420,11 +420,11 @@ static int us15_tc10_semantic_tokens_know_an_enum_from_a_block(const TestArgumen
     { 4,  3,  SEM_ENUM_MEMBER, true  }, /* EVENT */
     { 7,  9,  SEM_ENUM,        false }, /* type: PktType */
     { 11, 9,  SEM_STRUCT,      false }, /* Header, a block */
-    { 11, 18, SEM_PROPERTY,    false }, /* type = */
-    { 11, 25, SEM_ENUM_MEMBER, false }, /* = EVENT */
+    { 11, 18, SEM_PROPERTY,    false }, /* type := */
+    { 11, 26, SEM_ENUM_MEMBER, false }, /* := EVENT */
     { 12, 9,  SEM_ENUM,        false }, /* kind: PktType */
-    { 12, 19, SEM_ENUM_MEMBER, false }, /* = HK */
-    { 13, 23, SEM_ENUM_MEMBER, false }, /* = TX */
+    { 12, 20, SEM_ENUM_MEMBER, false }, /* := HK */
+    { 13, 24, SEM_ENUM_MEMBER, false }, /* := TX */
   };
   int failure = tokens == NULL ? __LINE__ : 0;
   for (size_t w = 0; failure == 0 && w < sizeof(want) / sizeof(*want); ++w) {
@@ -446,7 +446,7 @@ static const char *const CONDITIONAL =
   "enum Kind: 4 { IDLE; RUN; };\n"
   "block H { flag: 8; kind: Kind; pad: 4; };\n"
   "pkt P {\n"
-  "  id:  8 = 1;\n"
+  "  id:  8 := 1;\n"
   "  hdr: H;\n"
   "  [ @if: valof(hdr.flag) == 1; ] e: 8;\n"
   "  [ @if: valof(hdr.kind) != RUN; ] f: 8;\n"
@@ -494,7 +494,7 @@ static int us15_tc11_a_condition_is_navigable(const TestArguments *args) {
   /* After `@if:` comes valof(); after `==` on an enum's field, its names. */
   static const char *const VALOF[] = { "valof", NULL };
   static const char *const NAMES[] = { "IDLE", "RUN", NULL };
-  navigator = failure == 0 ? nav_open("pkt P {\n  id: 8 = 1;\n  [ @if: \n", NULL) : NULL;
+  navigator = failure == 0 ? nav_open("pkt P {\n  id: 8 := 1;\n  [ @if: \n", NULL) : NULL;
   if (failure == 0 && (navigator == NULL || !completes_to(navigator, 3, 10, VALOF))) {
     failure = __LINE__;
   }
@@ -502,7 +502,7 @@ static int us15_tc11_a_condition_is_navigable(const TestArguments *args) {
   navigator =
     failure == 0
       ? nav_open(
-          "enum Kind: 4 { IDLE; RUN; };\npkt P {\n  id: 8 = 1;\n  k: Kind;\n  p: 4;\n  [ @if: valof(k) == \n", NULL
+          "enum Kind: 4 { IDLE; RUN; };\npkt P {\n  id: 8 := 1;\n  k: Kind;\n  p: 4;\n  [ @if: valof(k) == \n", NULL
         )
       : NULL;
   if (failure == 0 && (navigator == NULL || !completes_to(navigator, 6, 22, NAMES))) {
@@ -546,6 +546,42 @@ static int us15_tc12_semantic_tokens_read_a_condition(const TestArguments *args)
   return failure;
 }
 
+/* A default shows on the field, in a block's own declaration as well, and an enum's name written as one
+ * goes to the enum (#144). */
+static int us15_tc13_hover_shows_a_default(const TestArguments *args) {
+  (void)args;
+  const char *const source =
+    "enum Health: 8 {\n" /* 1 */
+    "  FAULT;\n" /* 2 */
+    "  OK;\n" /* 3 */
+    "};\n" /* 4 */
+    "block B {\n" /* 5 */
+    "  s: Health ?= OK;\n" /* 6 */
+    "};\n" /* 7 */
+    "pkt P {\n" /* 8 */
+    "  id: 8 := 1;\n" /* 9 */
+    "  d:  8 ?= 7;\n" /* 10 */
+    "};\n";
+  Navigator *navigator = nav_open(source, NULL);
+  NavLocation range;
+  char *field = navigator != NULL ? nav_hover(navigator, 10, 3, &range) : NULL; /* `d` */
+  char *declared = navigator != NULL ? nav_hover(navigator, 6, 3, &range) : NULL; /* `s` in the block */
+  char *named = navigator != NULL ? nav_hover(navigator, 6, 16, &range) : NULL; /* `OK` */
+  int failure = 0;
+  if (!contains(field, "defaults to 0x7") || contains(field, "fixed at")) {
+    failure = __LINE__;
+  } else if (!contains(declared, "defaults to `OK`")) {
+    failure = __LINE__;
+  } else if (!contains(named, "**OK** = 1")) {
+    failure = __LINE__;
+  }
+  free(field);
+  free(declared);
+  free(named);
+  nav_close(navigator);
+  return failure;
+}
+
 void register_user_story15(void) {
   START_REGISTERING();
   ADD_TEST_CASE(us15_tc01_hover_shows_where_a_field_lands, "hover shows width, offset and the orders in force", true);
@@ -572,4 +608,5 @@ void register_user_story15(void) {
   );
   ADD_TEST_CASE(us15_tc11_a_condition_is_navigable, "a condition is navigable", false);
   ADD_TEST_CASE(us15_tc12_semantic_tokens_read_a_condition, "semantic tokens read a condition", false);
+  ADD_TEST_CASE(us15_tc13_hover_shows_a_default, "hover shows a default, and a name written as one", false);
 }

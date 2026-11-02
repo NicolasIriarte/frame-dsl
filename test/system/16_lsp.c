@@ -152,7 +152,7 @@ static int us16_tc02_nothing_but_protocol_on_stdout(const TestArguments *args) {
     &server,
     "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file:///tmp/"
     "missing_import.fdsl\",\"languageId\":\"fdsl\",\"version\":1,\"text\":\"import \\\"nowhere.fdsl\\\";\\nblock S "
-    "{\\n  s: 8;\\n};\\npkt TM {\\n  id: 8 = 1;\\n};\\n\"}}}"
+    "{\\n  s: 8;\\n};\\npkt TM {\\n  id: 8 := 1;\\n};\\n\"}}}"
   );
   reply = receive(&server);
   int failure = reply != NULL && strstr(reply, "publishDiagnostics") != NULL ? 0 : __LINE__;

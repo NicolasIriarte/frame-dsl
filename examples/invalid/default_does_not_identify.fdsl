@@ -1,0 +1,9 @@
+# REJECTED: check 11 -- a default identifies nothing.
+#
+# A frame may carry any value in a field with a default, so a packet with nothing but defaults gives a
+# decoder nothing to recognise. `:=` is what identifies a packet.
+
+pkt TM_HEALTH {
+  id:    8 ?= 0x01;
+  state: 8 ?= 1;
+};

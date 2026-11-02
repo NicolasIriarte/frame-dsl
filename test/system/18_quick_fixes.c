@@ -112,23 +112,23 @@ static bool reported_without_fix(const char *source, int check) {
 static int us18_tc01_a_misspelt_attribute_is_corrected(const TestArguments *args) {
   (void)args;
   if (!fixes_to(
-        "@byte_ordre: big_endian;\npkt TM {\n  id: 8 = 1;\n};\n",
+        "@byte_ordre: big_endian;\npkt TM {\n  id: 8 := 1;\n};\n",
         0,
         "did you mean 'byte_order'?",
-        "@byte_order: big_endian;\npkt TM {\n  id: 8 = 1;\n};\n"
+        "@byte_order: big_endian;\npkt TM {\n  id: 8 := 1;\n};\n"
       )) {
     return __LINE__;
   }
   if (!fixes_to(
-        "pkt TM {\n  [ @bit_order: msb_frist; ] id: 8 = 1;\n};\n",
+        "pkt TM {\n  [ @bit_order: msb_frist; ] id: 8 := 1;\n};\n",
         0,
         "did you mean 'msb_first'?",
-        "pkt TM {\n  [ @bit_order: msb_first; ] id: 8 = 1;\n};\n"
+        "pkt TM {\n  [ @bit_order: msb_first; ] id: 8 := 1;\n};\n"
       )) {
     return __LINE__;
   }
   /* Nothing within two edits: no guess. */
-  return reported_without_fix("@ordering: big_endian;\npkt TM {\n  id: 8 = 1;\n};\n", 0) ? 0 : __LINE__;
+  return reported_without_fix("@ordering: big_endian;\npkt TM {\n  id: 8 := 1;\n};\n", 0) ? 0 : __LINE__;
 }
 
 /* `lenght` is one swap from `length`. Against `length` and `lenhgt` it is one edit from each, and a fix
@@ -136,30 +136,30 @@ static int us18_tc01_a_misspelt_attribute_is_corrected(const TestArguments *args
 static int us18_tc02_a_valof_target_is_corrected_only_when_one_name_is_closest(const TestArguments *args) {
   (void)args;
   if (!fixes_to(
-        "pkt TM {\n  id: 8 = 1;\n  length: 8;\n  x[4]: valof(lenght) * 8;\n};\n",
+        "pkt TM {\n  id: 8 := 1;\n  length: 8;\n  x[4]: valof(lenght) * 8;\n};\n",
         7,
         "did you mean 'length'?",
-        "pkt TM {\n  id: 8 = 1;\n  length: 8;\n  x[4]: valof(length) * 8;\n};\n"
+        "pkt TM {\n  id: 8 := 1;\n  length: 8;\n  x[4]: valof(length) * 8;\n};\n"
       )) {
     return __LINE__;
   }
   if (!reported_without_fix(
-        "pkt TM {\n  id: 8 = 1;\n  length: 8;\n  lenhgt: 8;\n  x[4]: valof(lenght) * 8;\n};\n", 7
+        "pkt TM {\n  id: 8 := 1;\n  length: 8;\n  lenhgt: 8;\n  x[4]: valof(lenght) * 8;\n};\n", 7
       )) {
     return __LINE__;
   }
   /* Three edits from `len`: too far to be a typo. */
-  return reported_without_fix("pkt TM {\n  id: 8 = 1;\n  len: 8;\n  x[4]: valof(lenght) * 8;\n};\n", 7) ? 0 : __LINE__;
+  return reported_without_fix("pkt TM {\n  id: 8 := 1;\n  len: 8;\n  x[4]: valof(lenght) * 8;\n};\n", 7) ? 0 : __LINE__;
 }
 
 /* Inside a block only the part after the instance's prefix is written, so only that part is replaced. */
 static int us18_tc03_a_valof_inside_a_block_keeps_its_prefix_out(const TestArguments *args) {
   (void)args;
   return fixes_to(
-           "block H {\n  length: 8;\n  x[4]: valof(lenght) * 8;\n};\npkt TM {\n  id: 8 = 1;\n  hdr: H;\n};\n",
+           "block H {\n  length: 8;\n  x[4]: valof(lenght) * 8;\n};\npkt TM {\n  id: 8 := 1;\n  hdr: H;\n};\n",
            7,
            "did you mean 'length'?",
-           "block H {\n  length: 8;\n  x[4]: valof(length) * 8;\n};\npkt TM {\n  id: 8 = 1;\n  hdr: H;\n};\n"
+           "block H {\n  length: 8;\n  x[4]: valof(length) * 8;\n};\npkt TM {\n  id: 8 := 1;\n  hdr: H;\n};\n"
          )
            ? 0
            : __LINE__;
@@ -168,27 +168,27 @@ static int us18_tc03_a_valof_inside_a_block_keeps_its_prefix_out(const TestArgum
 static int us18_tc04_a_misspelt_block_or_calibration_is_corrected(const TestArguments *args) {
   (void)args;
   if (!fixes_to(
-        "block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Heder { id = 1; };\n};\n",
+        "block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Heder { id := 1; };\n};\n",
         23,
         "did you mean 'Header'?",
-        "block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Header { id = 1; };\n};\n"
+        "block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Header { id := 1; };\n};\n"
       )) {
     return __LINE__;
   }
   if (!fixes_to(
-        "cal volts(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: vots; ]\n  v: 8;\n};\n",
+        "cal volts(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  [ @cal: vots; ]\n  v: 8;\n};\n",
         18,
         "did you mean 'volts'?",
-        "cal volts(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: volts; ]\n  v: 8;\n};\n"
+        "cal volts(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  [ @cal: volts; ]\n  v: 8;\n};\n"
       )) {
     return __LINE__;
   }
   return fixes_to(
-           "cal half(x) = x / 2;\ncal volts(x) = hlaf(x) + 1;\npkt TM {\n  id: 8 = 1;\n  [ @cal: volts; ]\n  v: "
+           "cal half(x) = x / 2;\ncal volts(x) = hlaf(x) + 1;\npkt TM {\n  id: 8 := 1;\n  [ @cal: volts; ]\n  v: "
            "8;\n};\n",
            18,
            "did you mean 'half'?",
-           "cal half(x) = x / 2;\ncal volts(x) = half(x) + 1;\npkt TM {\n  id: 8 = 1;\n  [ @cal: volts; ]\n  v: "
+           "cal half(x) = x / 2;\ncal volts(x) = half(x) + 1;\npkt TM {\n  id: 8 := 1;\n  [ @cal: volts; ]\n  v: "
            "8;\n};\n"
          )
            ? 0
@@ -199,7 +199,7 @@ static int us18_tc04_a_misspelt_block_or_calibration_is_corrected(const TestArgu
 static int us18_tc05_an_imported_block_is_corrected_with_its_namespace(const TestArguments *args) {
   char library[1024];
   char top[1024];
-  const char *source = "import \"link.fdsl\" as link;\npkt TM {\n  hdr: link.Heder { id = 1; };\n};\n";
+  const char *source = "import \"link.fdsl\" as link;\npkt TM {\n  hdr: link.Heder { id := 1; };\n};\n";
   if (!write_file(args, "link.fdsl", "block Header {\n  id: 8;\n};\n", library, sizeof(library))
       || !write_file(args, "top.fdsl", source, top, sizeof(top))) {
     return __LINE__;
@@ -222,8 +222,8 @@ static int us18_tc05_an_imported_block_is_corrected_with_its_namespace(const Tes
 
 static int us18_tc06_a_missing_semicolon_is_inserted(const TestArguments *args) {
   (void)args;
-  const char *source = "pkt TM {\n  id: 8 = 1;\n  len: 8\n  data: 8;\n};\n";
-  const char *want = "pkt TM {\n  id: 8 = 1;\n  len: 8;\n  data: 8;\n};\n";
+  const char *source = "pkt TM {\n  id: 8 := 1;\n  len: 8\n  data: 8;\n};\n";
+  const char *want = "pkt TM {\n  id: 8 := 1;\n  len: 8;\n  data: 8;\n};\n";
   if (!fixes_to(source, 0, "insert ';'", want)) {
     return __LINE__;
   }
@@ -235,12 +235,38 @@ static int us18_tc06_a_missing_semicolon_is_inserted(const TestArguments *args) 
 
 /* The block goes with its attribute group and one of the blank lines around it, so what is left is
  * what the formatter would have written without it. */
+/* A bare `=` has one repair in each place it can be written, and the file then loads (#144). */
+static int us18_tc13_a_bare_equals_becomes_a_fixed_value(const TestArguments *args) {
+  (void)args;
+  const char *const sources[] = {
+    "pkt A { id: 8 = 1; };\n",
+    "enum E: 8 { X; };\npkt A { id: 8 := 1; e: E = X; };\n",
+    "block B { x: 8; };\npkt A { id: 8 := 1; b: B { x = 1; }; };\n",
+  };
+  for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
+    FramedslResult *result = framedsl_load_string(sources[i], "bare.fdsl");
+    char *fixed = apply(sources[i], find(result, 0));
+    framedsl_result_free(result);
+    if (fixed == NULL) {
+      return __LINE__ * 100 + (int)i;
+    }
+    result = framedsl_load_string(fixed, "bare.fdsl");
+    const bool loaded = framedsl_ok(result);
+    framedsl_result_free(result);
+    free(fixed);
+    if (!loaded) {
+      return __LINE__ * 100 + (int)i;
+    }
+  }
+  return 0;
+}
+
 static int us18_tc07_an_unused_block_is_removed_cleanly(const TestArguments *args) {
   (void)args;
   const char *source =
     "block Header {\n  id: 8;\n};\n\n[ @byte_order: little_endian; ]\nblock Spare {\n  s: 16;\n};\n\n"
-    "pkt TM {\n  hdr: Header { id = 1; };\n};\n";
-  const char *want = "block Header {\n  id: 8;\n};\n\npkt TM {\n  hdr: Header { id = 1; };\n};\n";
+    "pkt TM {\n  hdr: Header { id := 1; };\n};\n";
+  const char *want = "block Header {\n  id: 8;\n};\n\npkt TM {\n  hdr: Header { id := 1; };\n};\n";
   if (!fixes_to(source, 30, "remove the unused block 'Spare'", want)) {
     return __LINE__;
   }
@@ -259,17 +285,17 @@ static int us18_tc07_an_unused_block_is_removed_cleanly(const TestArguments *arg
 
 static int us18_tc08_an_unused_calibration_or_import_is_removed(const TestArguments *args) {
   if (!fixes_to(
-        "cal volts(x) = x * 2;\n\npkt TM {\n  id: 8 = 1;\n};\n",
+        "cal volts(x) = x * 2;\n\npkt TM {\n  id: 8 := 1;\n};\n",
         30,
         "remove the unused calibration 'volts'",
-        "pkt TM {\n  id: 8 = 1;\n};\n"
+        "pkt TM {\n  id: 8 := 1;\n};\n"
       )) {
     return __LINE__;
   }
 
   char library[1024];
   char top[1024];
-  const char *source = "import \"lib.fdsl\";\n\npkt TM {\n  id: 8 = 1;\n};\n";
+  const char *source = "import \"lib.fdsl\";\n\npkt TM {\n  id: 8 := 1;\n};\n";
   if (!write_file(args, "lib.fdsl", "block Header {\n  id: 8;\n};\n", library, sizeof(library))
       || !write_file(args, "top.fdsl", source, top, sizeof(top))) {
     return __LINE__;
@@ -279,7 +305,7 @@ static int us18_tc08_an_unused_calibration_or_import_is_removed(const TestArgume
   char *fixed = apply(source, diagnostic);
   int failure = 0;
   if (fixed == NULL || strcmp(diagnostic->fix_title, "remove the unused import") != 0
-      || strcmp(fixed, "pkt TM {\n  id: 8 = 1;\n};\n") != 0) {
+      || strcmp(fixed, "pkt TM {\n  id: 8 := 1;\n};\n") != 0) {
     failure = __LINE__;
   }
   free(fixed);
@@ -291,19 +317,19 @@ static int us18_tc08_an_unused_calibration_or_import_is_removed(const TestArgume
 static int us18_tc09_a_redundant_attribute_is_removed_with_its_group(const TestArguments *args) {
   (void)args;
   if (!fixes_to(
-        "@bit_order: msb_first;\npkt TM {\n  [ @bit_order: msb_first; ]\n  id: 8 = 1;\n};\n",
+        "@bit_order: msb_first;\npkt TM {\n  [ @bit_order: msb_first; ]\n  id: 8 := 1;\n};\n",
         31,
         "remove the attribute group",
-        "@bit_order: msb_first;\npkt TM {\n  id: 8 = 1;\n};\n"
+        "@bit_order: msb_first;\npkt TM {\n  id: 8 := 1;\n};\n"
       )) {
     return __LINE__;
   }
   return fixes_to(
-           "@bit_order: msb_first;\npkt TM {\n  [ @bit_order: msb_first; @byte_order: little_endian; ]\n  id: 16 = "
+           "@bit_order: msb_first;\npkt TM {\n  [ @bit_order: msb_first; @byte_order: little_endian; ]\n  id: 16 := "
            "1;\n};\n",
            31,
            "remove the redundant attribute",
-           "@bit_order: msb_first;\npkt TM {\n  [ @byte_order: little_endian; ]\n  id: 16 = 1;\n};\n"
+           "@bit_order: msb_first;\npkt TM {\n  [ @byte_order: little_endian; ]\n  id: 16 := 1;\n};\n"
          )
            ? 0
            : __LINE__;
@@ -313,8 +339,9 @@ static int us18_tc09_a_redundant_attribute_is_removed_with_its_group(const TestA
  * would make two problems of one. */
 static int us18_tc10_nothing_is_offered_for_deletion_while_there_are_errors(const TestArguments *args) {
   (void)args;
-  return reported_without_fix("block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Heder { id = 1; };\n};\n", 30) ? 0
-                                                                                                             : __LINE__;
+  return reported_without_fix("block Header {\n  id: 8;\n};\npkt TM {\n  hdr: Heder { id := 1; };\n};\n", 30)
+           ? 0
+           : __LINE__;
 }
 
 /* Every fix offered for every file under examples/invalid/, each applied alone, leaves no more errors
@@ -365,13 +392,13 @@ static int us18_tc11_no_fix_makes_an_invalid_example_worse(const TestArguments *
 static int us18_tc12_the_earlier_of_an_attribute_written_twice_is_removed(const TestArguments *args) {
   (void)args;
   const char *cases[][2] = {
-    { "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: little_endian; @byte_order: big_endian; ]\n  x: 16;\n};\n",
-     "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: big_endian; ]\n  x: 16;\n};\n"    },
-    { "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [\n    @cal: k;\n    @cal: c;\n  ]\n  x: 8;\n"
-      "  [ @cal: k; ]\n  y: 8;\n};\n",                                                                 "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [\n    @cal: c;\n  ]\n  x: 8;\n"
+    { "pkt TM {\n  id: 8 := 1;\n  [ @byte_order: little_endian; @byte_order: big_endian; ]\n  x: 16;\n};\n",
+     "pkt TM {\n  id: 8 := 1;\n  [ @byte_order: big_endian; ]\n  x: 16;\n};\n"   },
+    { "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 := 1;\n  [\n    @cal: k;\n    @cal: c;\n  ]\n  x: 8;\n"
+      "  [ @cal: k; ]\n  y: 8;\n};\n",                                                                  "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 := 1;\n  [\n    @cal: c;\n  ]\n  x: 8;\n"
       "  [ @cal: k; ]\n  y: 8;\n};\n" },
-    { "@byte_order: little_endian;\n@byte_order: big_endian;\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n",
-     "@byte_order: big_endian;\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n"          },
+    { "@byte_order: little_endian;\n@byte_order: big_endian;\npkt TM {\n  id: 8 := 1;\n  x: 16;\n};\n",
+     "@byte_order: big_endian;\npkt TM {\n  id: 8 := 1;\n  x: 16;\n};\n"         },
   };
   const char *titles[] = { "remove the earlier '@byte_order'",
                            "remove the earlier '@cal'",
@@ -441,4 +468,5 @@ void register_user_story18(void) {
     "of an attribute written twice, the earlier goes",
     false
   );
+  ADD_TEST_CASE(us18_tc13_a_bare_equals_becomes_a_fixed_value, "a bare '=' is rewritten to ':=', and loads", false);
 }

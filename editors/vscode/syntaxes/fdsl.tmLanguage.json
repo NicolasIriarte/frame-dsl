@@ -51,7 +51,7 @@
       ]
     },
     "operator": {
-      "match": "[!=<>]=|&&|\\|\\||[-+*/=<>&]",
+      "match": "[:?!=<>]=|&&|\\|\\||[-+*/=<>&]",
       "name": "keyword.operator.fdsl"
     },
 
@@ -99,7 +99,7 @@
       "captures": { "1": { "name": "variable.other.member.fdsl" } }
     },
     "type-name": {
-      "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*[;{=])",
+      "match": "(?<=:\\s{0,16})[A-Za-z_]\\w*(?:\\.\\w+)*(?=\\s*(?:[;{=]|[:?]=))",
       "name": "entity.name.type.fdsl"
     },
     "pasted-block-name": {

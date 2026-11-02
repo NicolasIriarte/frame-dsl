@@ -1,0 +1,9 @@
+# REJECTED: check 8 -- a default needs a scalar.
+#
+# A field wider than 64 bits is a bit string, the bytes a caller hands over, with no single value to
+# start from.
+
+pkt TM_BLOB {
+  id:   8   := 0x01;
+  blob: 128 ?= 0;
+};

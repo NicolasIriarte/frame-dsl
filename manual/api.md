@@ -199,8 +199,12 @@ nothing else: two threads encoding different frames of the same protocol do not 
 ### There is no "unset"
 
 The arena starts zeroed, and a slot keeps whatever was last written to it. A field nobody has touched
-reads back as zero and will encode as zero. A fixed field reads its fixed value, until a decode
-replaces that with what arrived. `framedsl_frame_reset()` puts it all back to that state.
+reads back as zero and will encode as zero, unless the definition gives it a default, when it reads and
+encodes that. A fixed field reads its fixed value, until a decode replaces that with what arrived.
+`framedsl_frame_reset()` puts it all back to that state.
+
+There is no call to put one field back. `FramedslField.default_value`, in the bits `fixed` uses, says what
+to write.
 
 This is a deliberate choice rather than an omission. Tracking which fields a caller had set would
 mean a bit per field, a rule about what `reset` does to it, and an encode that fails on a field the
@@ -217,7 +221,7 @@ disturb the command being answered. One frame serves both directions of a conver
 rule here to get wrong, because there is no state to be in.
 
 Reading is never refused on the grounds of what the frame is holding. A field nobody has written and
-no frame has carried reads back as zero, exactly like the section above -- one rule for values you
+no frame has carried reads back as zero or its default, exactly like the section above -- one rule for values you
 wrote and values that arrived, rather than one each.
 
 **Which packet arrived is `framedsl_decode()`'s return value.** That is where the question "did this
@@ -712,9 +716,10 @@ when its repetition is.
 waits in its slot, and `framedsl_encode()` leaves the field out until the condition holds. So fields can
 be set in any order, the field before the flag that turns it on as well as after.
 
-**A decode clears what it did not carry.** A decoded frame without the field leaves its slot zeroed,
-and a variable one empty, so setting the flag afterwards reads a field nobody has written -- zero --
-rather than the one an earlier frame carried.
+**A decode clears what it did not carry.** A decoded frame without the field leaves its slot as a frame
+starts, zero or its default, and a variable one empty, so setting the flag afterwards reads a field
+nobody has written rather than the one an earlier frame carried. The same goes for the elements of a
+repetition past the last one a frame carried.
 
 A condition, a width or a count reading a fixed field reads what the frame holds: its fixed value on a
 frame being built, and what arrived on a decoded one. Past the fields that identify a packet those can

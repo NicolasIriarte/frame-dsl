@@ -76,13 +76,13 @@ value; the word `enum' is a keyword only where it declares one."
                         "};\n"
                         "\n"
                         "pkt TM {\n"
-                        "  level: TxLevel = MAX;\n"
+                        "  level: TxLevel ?= MAX;\n"
                         "  mode:  vendor.Mode;\n"
                         "  enum:  8;\n"
                         "};\n")))
     (should (eq (frame-dsl-tests--face-of sample "enum Tx") 'font-lock-keyword-face))
     (should (eq (frame-dsl-tests--face-of sample "TxLevel:") 'font-lock-type-face))
-    (should (eq (frame-dsl-tests--face-of sample "TxLevel =") 'font-lock-type-face))
+    (should (eq (frame-dsl-tests--face-of sample "TxLevel ?=") 'font-lock-type-face))
     (should (eq (frame-dsl-tests--face-of sample "vendor.Mode") 'font-lock-type-face))
     (should-not (eq (frame-dsl-tests--face-of sample "enum:") 'font-lock-keyword-face))))
 
@@ -145,7 +145,7 @@ anywhere else; a field may still be called `if'."
 
 (ert-deftest frame-dsl-tests-a-comment-stays-a-comment ()
   "A keyword inside a comment is comment text, whatever it spells."
-  (let ((sample "# pkt TM { valof(len) 0xAA };\npkt A { x: 8 = 1; };\n"))
+  (let ((sample "# pkt TM { valof(len) 0xAA };\npkt A { x: 8 := 1; };\n"))
     (should (eq (frame-dsl-tests--face-of sample "pkt TM") 'font-lock-comment-face))
     (should (eq (frame-dsl-tests--face-of sample "valof") 'font-lock-comment-face))
     (should (eq (frame-dsl-tests--face-of sample "0xAA") 'font-lock-comment-face))
@@ -254,7 +254,7 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
   (let* ((directory (make-temp-file "frame-dsl-flymake" t))
          (diagnostics (frame-dsl-tests--flymake
                        directory "unsaved.fdsl"
-                       "pkt TM {\n  id: 8 = 1;\n  h: Heder;\n};\n")))
+                       "pkt TM {\n  id: 8 := 1;\n  h: Heder;\n};\n")))
     (unwind-protect
         (progn
           (should (= 1 (length diagnostics)))
@@ -284,7 +284,7 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
         (progn
           (make-directory (expand-file-name "lib" directory))
           (with-temp-file (expand-file-name "lib/link.fdsl" directory)
-            (insert "block Header {\n  id: 8 = 1\n};\n"))
+            (insert "block Header {\n  id: 8 := 1\n};\n"))
           (let ((diagnostics (frame-dsl-tests--flymake
                               directory "top.fdsl"
                               "# header\nimport \"lib/link.fdsl\";\npkt TM {\n  h: Header;\n};\n")))
@@ -300,13 +300,13 @@ file is the way this mode breaks, and it breaks on somebody's buffer."
   "The buffer comes back in the tool's layout, with point on the same text."
   (skip-unless (executable-find frame-dsl-program))
   (with-temp-buffer
-    (insert "pkt TM {\n\tid:8=1;\n  sequence :16;\n};\n")
+    (insert "pkt TM {\n\tid:8:=1;\n  sequence :16;\n};\n")
     (let ((frame-dsl-flymake nil))
       (frame-dsl-mode))
     (goto-char (point-min))
     (search-forward "sequence")
     (frame-dsl-format-buffer)
-    (should (equal (buffer-string) "pkt TM {\n  id:       8 = 1;\n  sequence: 16;\n};\n"))
+    (should (equal (buffer-string) "pkt TM {\n  id:       8 := 1;\n  sequence: 16;\n};\n"))
     (should (looking-back "sequence" (line-beginning-position)))))
 
 (ert-deftest frame-dsl-tests-format-buffer-leaves-a-broken-buffer-alone ()

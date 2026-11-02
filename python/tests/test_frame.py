@@ -15,7 +15,7 @@ def example(name):
 
 class Loading(unittest.TestCase):
     def test_an_invalid_definition_raises_with_every_diagnostic(self):
-        source = "pkt A { id: 8 = 1; x: 3; };\npkt B { id: 8 = 2; n: 8; z[4]: valof(q) * 8; };\n"
+        source = "pkt A { id: 8 := 1; x: 3; };\npkt B { id: 8 := 2; n: 8; z[4]: valof(q) * 8; };\n"
         with self.assertRaises(framedsl.LoadError) as caught:
             framedsl.loads(source, name="two.fdsl")
         error = caught.exception
@@ -39,7 +39,7 @@ class Loading(unittest.TestCase):
                 handle.write("block B {\n  x: 3;\n  y: valof(q);\n};\n")
             main = os.path.join(directory, "main.fdsl")
             with open(main, "w") as handle:
-                handle.write('import "broken.fdsl";\npkt P { id: 8 = 1; };\n')
+                handle.write('import "broken.fdsl";\npkt P { id: 8 := 1; };\n')
             with self.assertRaises(framedsl.LoadError) as caught:
                 framedsl.load(main)
         [diagnostic] = [d for d in caught.exception.diagnostics if "valof(q)" in d.message]
@@ -54,7 +54,7 @@ class Loading(unittest.TestCase):
         self.assertIn("/nonexistent/nothing.fdsl", str(caught.exception))
 
     def test_warnings_on_a_definition_that_loads_are_kept(self):
-        definition = framedsl.loads("block Spare { x: 8; };\npkt P { id: 8 = 1; };\n")
+        definition = framedsl.loads("block Spare { x: 8; };\npkt P { id: 8 := 1; };\n")
         self.assertEqual([d.severity for d in definition.diagnostics], ["warning"])
 
     def test_loads_with_a_path_resolves_imports_from_there(self):
@@ -185,7 +185,7 @@ class Engineering(unittest.TestCase):
             self.frame.eng["TM_POWER.id"]
 
     def test_a_curve_without_an_inverse_cannot_be_set(self):
-        definition = framedsl.loads("cal square(raw) = raw * raw;\npkt P { id: 8 = 1; [ @cal: square; ] x: 8; };\n")
+        definition = framedsl.loads("cal square(raw) = raw * raw;\npkt P { id: 8 := 1; [ @cal: square; ] x: 8; };\n")
         frame = definition.frame()
         frame["P.x"] = 3
         self.assertEqual(frame.eng["P.x"], 9.0)
@@ -312,12 +312,28 @@ class Conditions(unittest.TestCase):
         with self.assertRaises(framedsl.AbsentError):
             self.frame.names["TM_OPTIONAL.code"]
 
+    def test_a_default_is_held_until_replaced(self):
+        definition = framedsl.loads(
+            "enum Health: 8 { FAULT; OK; };\n"
+            "block Channel { state: Health ?= OK; };\n"
+            "pkt P { id: 8 := 0x40; spare: 8 ?= 0; temp: Health ?= OK; channels: Channel[2]; };\n"
+        )
+        frame = definition.frame()
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 01 01 01"))
+        frame.names["P.temp"] = "FAULT"
+        frame.names["P.channels[1].state"] = "FAULT"
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 00 01 00"))
+        frame.reset()
+        self.assertEqual(frame.encode("P"), bytes.fromhex("40 00 01 01 01"))
+        self.assertEqual(frame.decode(bytes.fromhex("40 80 00 01 01")), "P")
+        self.assertEqual(frame["P.spare"], 0x80)
+
     def test_a_fixed_field_cannot_be_set(self):
         definition = framedsl.loads(
             "enum Mode: 8 { OFF; ON; };\n"
             "cal twice(raw) = raw * 2;\n"
-            "block Item { mark: 4 = 0xA; value: 4; };\n"
-            "pkt P { id: 8 = 0x10; [ @cal: twice; ] scale: 8 = 4; mode: Mode = ON; items: Item[2]; };\n"
+            "block Item { mark: 4 := 0xA; value: 4; };\n"
+            "pkt P { id: 8 := 0x10; [ @cal: twice; ] scale: 8 := 4; mode: Mode := ON; items: Item[2]; };\n"
         )
         frame = definition.frame()
         self.assertEqual(frame["P.id"], 0x10)

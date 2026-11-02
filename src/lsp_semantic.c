@@ -167,6 +167,8 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
     case TOK_STAR:
     case TOK_SLASH:
     case TOK_EQUALS:
+    case TOK_COLON_EQUALS:
+    case TOK_QUESTION_EQUALS:
     case TOK_EQUAL_EQUAL:
     case TOK_NOT_EQUAL:
     case TOK_LESS:
@@ -266,12 +268,12 @@ SemanticToken *semantic_tokens(const char *source, size_t *count) {
         declaration = true;
       } else if (inside == BRACE_OVERRIDES) {
         /* `{ type = HK; }`: the field fixed, and the name of its enum it is fixed to. */
-        type = is(previous, TOK_EQUALS) ? SEM_ENUM_MEMBER : SEM_PROPERTY;
+        type = token_is_value_operator(previous) ? SEM_ENUM_MEMBER : SEM_PROPERTY;
       } else if (in_width) {
         if (is(previous, TOK_LPAREN) && is(before_previous, TOK_VALOF)) {
           type = SEM_PROPERTY;
-        } else if (is(previous, TOK_EQUALS)) {
-          type = SEM_ENUM_MEMBER; /* `level: TxLevel = HIGH;` */
+        } else if (token_is_value_operator(previous)) {
+          type = SEM_ENUM_MEMBER; /* `level: TxLevel := HIGH;` */
         } else if (is(next, TOK_DOT)) {
           type = SEM_NAMESPACE;
         } else {

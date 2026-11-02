@@ -535,14 +535,14 @@ static void sweep_size(Sweep *sweep, bool quick) {
     Text text = { 0 };
     Subject *s;
 
-    append(&text, "%spkt P { id: 8 = 0x5A; seq: 16; data: %" PRIu64 "; };\n", HEADER, (size - 3) * 8);
+    append(&text, "%spkt P { id: 8 := 0x5A; seq: 16; data: %" PRIu64 "; };\n", HEADER, (size - 3) * 8);
     s = load(sweep, &text);
     set(s, "P.seq", 0x1234);
     set_pattern(s, "P.data", size - 3);
     check_first(s, size);
     op_codec(sweep, s, "size", "fixed", size);
 
-    append(&text, "%spkt P { id: 8 = 0x5A; seq: 12; data: %" PRIu64 "; tail: 4; };\n", HEADER, (size - 3) * 8);
+    append(&text, "%spkt P { id: 8 := 0x5A; seq: 12; data: %" PRIu64 "; tail: 4; };\n", HEADER, (size - 3) * 8);
     s = load(sweep, &text);
     set(s, "P.seq", 0x123);
     set(s, "P.tail", 0x9);
@@ -550,7 +550,9 @@ static void sweep_size(Sweep *sweep, bool quick) {
     check_first(s, size);
     op_codec(sweep, s, "size", "fixed_unaligned", size);
 
-    append(&text, "%spkt P { id: 8 = 0x5A; len: 16; data[%" PRIu64 "]: valof(len) * 8; crc: 8; };\n", HEADER, size - 4);
+    append(
+      &text, "%spkt P { id: 8 := 0x5A; len: 16; data[%" PRIu64 "]: valof(len) * 8; crc: 8; };\n", HEADER, size - 4
+    );
     s = load(sweep, &text);
     set(s, "P.len", size - 4);
     set_pattern(s, "P.data", size - 4);
@@ -571,7 +573,7 @@ static void sweep_fields(Sweep *sweep, bool quick) {
   for (size_t k = 0; k < n; ++k) {
     uint64_t count = counts[k];
     Text text = { 0 };
-    append(&text, "%spkt P {\n  id: 8 = 0x5A;\n", HEADER);
+    append(&text, "%spkt P {\n  id: 8 := 0x5A;\n", HEADER);
     for (uint64_t f = 0; f < count; ++f) {
       append(&text, "  f%" PRIu64 ": 16;\n", f);
     }
@@ -598,10 +600,10 @@ static Subject *repeated(Sweep *sweep, const char *block, bool counted, uint64_t
   append(&text, "%sblock E {\n%s};\n\n", HEADER, block);
   if (counted) {
     append(
-      &text, "pkt P { id: 8 = 0x5A; count: 16; samples[%" PRIu64 "]: E[valof(count)]; };\n", elements * element_bytes
+      &text, "pkt P { id: 8 := 0x5A; count: 16; samples[%" PRIu64 "]: E[valof(count)]; };\n", elements * element_bytes
     );
   } else {
-    append(&text, "pkt P { id: 8 = 0x5A; samples: E[%" PRIu64 "]; };\n", elements);
+    append(&text, "pkt P { id: 8 := 0x5A; samples: E[%" PRIu64 "]; };\n", elements);
   }
   Subject *s = load(sweep, &text);
   if (counted) {
@@ -636,7 +638,8 @@ static Subject *repeated(Sweep *sweep, const char *block, bool counted, uint64_t
 }
 
 /* The element bench/bench.c uses: a fixed 4-bit marker, a 4-bit channel, a little-endian 16-bit reading. */
-static const char *const SAMPLE = "  marker: 4 = 0xA;\n  channel: 4;\n  [ @byte_order: little_endian; ] reading: 16;\n";
+static const char *const SAMPLE =
+  "  marker: 4 := 0xA;\n  channel: 4;\n  [ @byte_order: little_endian; ] reading: 16;\n";
 
 /* Repetitions: how many elements, with the count a constant or a field; then, at 32 counted elements,
  * how big an element is and what its members are like. */
@@ -679,10 +682,10 @@ static void sweep_repetition(Sweep *sweep, bool quick) {
     const char *block;
   } shapes[] = {
     { "plain",               "  channel: 8;\n  reading: 16;\n"                                                       },
-    { "fixed",               "  marker: 8 = 0xA5;\n  reading: 16;\n"                                                 },
+    { "fixed",               "  marker: 8 := 0xA5;\n  reading: 16;\n"                                                },
     { "little_endian",       "  channel: 8;\n  [ @byte_order: little_endian; ] reading: 16;\n"                       },
-    { "fixed_little_endian", "  marker: 8 = 0xA5;\n  [ @byte_order: little_endian; ] reading: 16;\n"                 },
-    { "sub_byte_fixed",      "  marker: 4 = 0xA;\n  channel: 4;\n  reading: 16;\n"                                   },
+    { "fixed_little_endian", "  marker: 8 := 0xA5;\n  [ @byte_order: little_endian; ] reading: 16;\n"                },
+    { "sub_byte_fixed",      "  marker: 4 := 0xA;\n  channel: 4;\n  reading: 16;\n"                                  },
     { "lsb_first",           "  [ @bit_order: lsb_first; ] channel: 8;\n  [ @bit_order: lsb_first; ] reading: 16;\n" },
     { "bench_sample",        NULL                                                                                    },
   };
@@ -710,7 +713,7 @@ static void sweep_packets(Sweep *sweep, bool quick) {
     Text text = { 0 };
     append(&text, "%s", HEADER);
     for (uint64_t p = 0; p < count; ++p) {
-      append(&text, "pkt P%" PRIu64 " { id: 16 = %" PRIu64 "; a: 16; b: 16; };\n", p, p + 1);
+      append(&text, "pkt P%" PRIu64 " { id: 16 := %" PRIu64 "; a: 16; b: 16; };\n", p, p + 1);
     }
     Subject *s = load(sweep, &text);
     char first[32], last[32];
@@ -772,7 +775,7 @@ static void sweep_shape(Sweep *sweep, bool quick) {
     append(&text, "%s", HEADER);
     append(&text, "cal linear(raw) = raw * 0.5 + 10;\n");
     append(&text, "cal ratio(raw) = 10000 * raw / (65535 - raw) inverse (eng) = 65535 * eng / (10000 + eng);\n\n");
-    append(&text, "pkt P {\n  id: 8 = 0x5A;\n");
+    append(&text, "pkt P {\n  id: 8 := 0x5A;\n");
     for (unsigned f = 0; f < 8; ++f) {
       append(&text, "  %sf%u: %u;\n", shapes[k].attributes, f, shapes[k].bits);
     }
@@ -891,7 +894,7 @@ static void mix_ccsds(Sweep *sweep) {
     append(
       &text,
       "pkt TM_APID_%u {\n"
-      "  version: 3 = 0; type: 1 = 0; sec_hdr: 1; apid: 11 = %u;\n"
+      "  version: 3 := 0; type: 1 := 0; sec_hdr: 1; apid: 11 := %u;\n"
       "  seq_flags: 2; seq_count: 14; data_length: 16;\n"
       "  a: %u; b: 16; c: 32; samples: %u;\n"
       "};\n",
@@ -917,7 +920,7 @@ static void mix_telecommands(Sweep *sweep) {
   Text text = { 0 };
   append(&text, "%s", HEADER);
   for (unsigned p = 0; p < 16; ++p) {
-    append(&text, "pkt TC_%u { type: 8 = 0x1C; seq: 16; subtype: 8 = %u; %s };\n", p, 0x40 + p, arguments[p % 4]);
+    append(&text, "pkt TC_%u { type: 8 := 0x1C; seq: 16; subtype: 8 := %u; %s };\n", p, 0x40 + p, arguments[p % 4]);
   }
   mix_family(sweep, load(sweep, &text), "telecommands", 8);
 }
@@ -942,7 +945,7 @@ static void mix_housekeeping(Sweep *sweep) {
   append(&text, "%s", HEADER);
   append(&text, "cal temp(raw) = raw * 0.01 - 40;\ncal volts(raw) = raw * 3.3 / 4095;\n\n");
   append(&text, "enum Mode: 3 { SAFE; NOMINAL; SCIENCE; };\n\n");
-  append(&text, "pkt TM_HK {\n  id: 8 = 0x5A;\n  mode: Mode;\n  flags: 5;\n");
+  append(&text, "pkt TM_HK {\n  id: 8 := 0x5A;\n  mode: Mode;\n  flags: 5;\n");
   for (unsigned t = 0; t < 4; ++t) {
     append(&text, "  [ @byte_order: little_endian; @cal: temp; ] t%u: 16;\n", t);
   }
@@ -962,7 +965,7 @@ static void mix_housekeeping(Sweep *sweep) {
 /* lsb_first readings off a byte boundary, followed by a 64-byte bit string three bits into a byte. */
 static void mix_unaligned_lsb_first(Sweep *sweep) {
   Text text = { 0 };
-  append(&text, "%spkt P {\n  id: 8 = 0x5A;\n  seq: 3;\n", HEADER);
+  append(&text, "%spkt P {\n  id: 8 := 0x5A;\n  seq: 3;\n", HEADER);
   for (unsigned f = 0; f < 4; ++f) {
     append(&text, "  [ @bit_order: lsb_first; ] r%u: 16;\n", f);
   }
@@ -983,12 +986,12 @@ static void mix_repetition(Sweep *sweep) {
   append(
     &text,
     "%sblock E {\n"
-    "  marker: 4 = 0xA;\n  channel: 4;\n"
+    "  marker: 4 := 0xA;\n  channel: 4;\n"
     "  [ @byte_order: little_endian; ] reading: 16;\n"
     "  [ @bit_order: lsb_first; ] status: 8;\n"
     "  value: 12;\n  spare: 4;\n"
     "};\n\n"
-    "pkt P { id: 8 = 0x5A; seq: 16; count: 8; samples[192]: E[valof(count)]; crc: 16; };\n",
+    "pkt P { id: 8 := 0x5A; seq: 16; count: 8; samples[192]: E[valof(count)]; crc: 16; };\n",
     HEADER
   );
   Subject *s = mix_single(sweep, &text, "repetition", 198, counted_32);
@@ -1001,7 +1004,7 @@ static const char *const CONDITIONAL =
   "block Time { seconds: 32; subsecs: 16; };\n"
   "block R { channel: 8; value: 16; };\n\n"
   "pkt P {\n"
-  "  id: 8 = 0x5A;\n"
+  "  id: 8 := 0x5A;\n"
   "  sec_hdr: 1; has_crc: 1; spare: 2; kind: Kind;\n"
   "  [ @if: valof(sec_hdr) == 1; ] time: Time;\n"
   "  [ @if: valof(kind) != IDLE; ] block {\n"
@@ -1045,7 +1048,7 @@ static void payload_200(Subject *s) {
 /* A valof() payload of 200 bytes that starts five bits into a byte. 203 bytes. */
 static void mix_valof_unaligned(Sweep *sweep) {
   Text text = { 0 };
-  append(&text, "%spkt P { id: 8 = 0x5A; len: 11; flags: 2; data[256]: valof(len) * 8; tail: 3; };\n", HEADER);
+  append(&text, "%spkt P { id: 8 := 0x5A; len: 11; flags: 2; data[256]: valof(len) * 8; tail: 3; };\n", HEADER);
   mix_single(sweep, &text, "valof_unaligned", 203, payload_200);
 }
 
@@ -1064,7 +1067,7 @@ static void mix_wide(Sweep *sweep) {
     "%s64: 64;",
   };
   Text text = { 0 };
-  append(&text, "%spkt P {\n  id: 8 = 0x5A;\n", HEADER);
+  append(&text, "%spkt P {\n  id: 8 := 0x5A;\n", HEADER);
   for (unsigned c = 0; c < 7; ++c) {
     char prefix[8];
     snprintf(prefix, sizeof(prefix), "c%u_", c);
@@ -1128,7 +1131,7 @@ static void sweep_grid(Sweep *sweep, bool quick) {
         unsigned bits = 8 + offset + count * shapes[k].bits;
         unsigned pad = (8 - bits % 8) % 8;
         Text text = { 0 };
-        append(&text, "%scal linear(raw) = raw * 0.5 + 10;\n\npkt P {\n  id: 8 = 0x5A;\n", HEADER);
+        append(&text, "%scal linear(raw) = raw * 0.5 + 10;\n\npkt P {\n  id: 8 := 0x5A;\n", HEADER);
         if (offset != 0) {
           append(&text, "  pre: %u;\n", offset);
         }

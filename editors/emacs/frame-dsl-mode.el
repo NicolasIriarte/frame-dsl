@@ -69,7 +69,7 @@ something, which is why the patterns below anchor on the `@'.")
     (modify-syntax-entry ?\[ "(]" table)
     (modify-syntax-entry ?\] ")[" table)
     ;; Arithmetic, so that a width expression is punctuation rather than word characters.
-    (dolist (character '(?+ ?- ?* ?/ ?= ?: ?\; ?@))
+    (dolist (character '(?+ ?- ?* ?/ ?= ?: ?? ?\; ?@))
       (modify-syntax-entry character "." table))
     table)
   "Syntax table for `frame-dsl-mode'.")
@@ -94,7 +94,7 @@ something, which is why the patterns below anchor on the `@'.")
       ;; `block NAME {' at file level -- a block being declared to be reused -- and `name: NAME'
       ;; where a field uses one: a name where a width would be can only be a block.
       (,(concat "\\_<block\\_>[ \t]+\\(" name "\\)") 1 font-lock-type-face)
-      (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\(?:\\." name "\\)*\\)[ \t]*[{;=]") 1 font-lock-type-face)
+      (,(concat "^[ \t]*" name "[ \t]*:[ \t]*\\(" name "\\(?:\\." name "\\)*\\)[ \t]*[{;=:?]") 1 font-lock-type-face)
 
       ;; `enum NAME: width {' -- not reserved either, so matched only in that shape at file level.
       (,(concat "^[ \t]*\\(enum\\)[ \t]+\\(" name "\\)[ \t]*:")

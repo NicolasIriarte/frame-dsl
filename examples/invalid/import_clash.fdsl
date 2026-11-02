@@ -7,5 +7,5 @@ import "../common/link.fdsl";
 import "../common/sensors.fdsl";
 
 pkt TC_PING {
-  hdr: Header { id = 0x01; };
+  hdr: Header { id := 0x01; };
 };

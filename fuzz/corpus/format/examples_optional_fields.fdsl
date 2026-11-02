@@ -29,7 +29,7 @@ block Reading {
 };
 
 pkt TM_OPTIONAL {
-  hdr:  Header { id = 0x50; };
+  hdr:  Header { id := 0x50; };
   [ @if: valof(hdr.sec_hdr) == 1; ]
   time: Time;  # TM_OPTIONAL.time.seconds, present only with a secondary header
   [ @if: valof(hdr.kind) != IDLE; ]

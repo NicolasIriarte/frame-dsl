@@ -66,6 +66,10 @@ typedef struct {
   unsigned run;
   Text head;
   Text tail;
+  /** @brief A field's `:= 1;` or `?= 1;` (#144), which starts in one column among the lines of its run
+   * that have one. Empty on every other line, and a line without one neither sets that column nor
+   * follows it. */
+  Text value;
   /** @brief A comment after the code on the same line, or NULL. */
   const Token *comment;
   /** @brief The source line of the last token put on it: what a trailing comment is matched against. */
@@ -88,6 +92,7 @@ typedef struct {
   LineKind next_kind;
   int next_depth;
   bool in_tail;
+  bool in_value;
   /** @brief Set when a comment has cut the line being built in two: the rest goes on continuation
    * lines, indented further, until the construct ends. */
   bool broken;
@@ -151,6 +156,7 @@ static void begin(Formatter *f, LineKind kind, int depth) {
   f->next_kind = kind;
   f->next_depth = depth;
   f->in_tail = false;
+  f->in_value = false;
   f->broken = false;
 }
 
@@ -245,7 +251,10 @@ static void put(Formatter *f, const Token *token, bool space) {
     f->open = (long)(line - f->lines);
   }
 
-  Text *half = f->in_tail && line->kind == LINE_ALIGNED ? &line->tail : &line->head;
+  Text *half = &line->head;
+  if (line->kind == LINE_ALIGNED && f->in_tail) {
+    half = f->in_value ? &line->value : &line->tail;
+  }
   if (space && half->length > 0) {
     f->failed |= !text_put(half, " ", 1);
   }
@@ -301,6 +310,9 @@ static void expression(Formatter *f, TokenKind stop_a, TokenKind stop_b, bool fi
   for (;;) {
     const Token *token = peek(f);
     if (token->kind == TOK_EOF || (depth == 0 && (token->kind == stop_a || token->kind == stop_b))) {
+      return;
+    }
+    if (depth == 0 && (token->kind == TOK_COLON_EQUALS || token->kind == TOK_QUESTION_EQUALS)) {
       return;
     }
     if (depth == 0 && is_word(token, "inverse")) {
@@ -456,7 +468,17 @@ static void anonymous_use(Formatter *f, int depth) {
   end(f);
 }
 
-/* `name: width [= value];`, `name[bytes]: width;`, `name: Block [{ overrides }];` or `name: Block[count];` */
+/* A field's value and the `;` after it, in the value column. */
+static void value(Formatter *f) {
+  if (peek(f)->kind != TOK_COLON_EQUALS && peek(f)->kind != TOK_QUESTION_EQUALS) {
+    return;
+  }
+  f->in_value = true;
+  take(f, true);
+  take(f, true);
+}
+
+/* `name: width [:= value];`, `name[bytes]: width;`, `name: Block [{ overrides }];` or `name: Block[count];` */
 static void field(Formatter *f, int depth) {
   begin(f, LINE_ALIGNED, depth);
   take(f, false); /* name */
@@ -477,18 +499,10 @@ static void field(Formatter *f, int depth) {
       take(f, false); /* ] */
     }
     overrides(f);
-    /* A field typed by an enum, fixed by one of its names: `type: PktType = HK;` (#11). */
-    if (peek(f)->kind == TOK_EQUALS) {
-      take(f, true);
-      take(f, true);
-    }
   } else {
-    expression(f, TOK_EQUALS, TOK_SEMICOLON, true);
-    if (peek(f)->kind == TOK_EQUALS) {
-      take(f, true);
-      take(f, true);
-    }
+    expression(f, TOK_SEMICOLON, TOK_SEMICOLON, true);
   }
+  value(f);
   take(f, false); /* ; */
   end(f);
 }
@@ -672,7 +686,10 @@ static void file(Formatter *f) {
 
 /* ---- Writing it out ---------------------------------------------------------------------------- */
 
-static size_t code_width(const Line *line, size_t head_width) {
+static size_t code_width(const Line *line, size_t head_width, size_t value_column) {
+  if (line->kind == LINE_ALIGNED && line->value.length > 0) {
+    return (size_t)line->depth * 2 + head_width + 1 + value_column + 1 + line->value.length;
+  }
   if (line->kind == LINE_ALIGNED) {
     return (size_t)line->depth * 2 + head_width + 1 + line->tail.length;
   }
@@ -680,14 +697,17 @@ static size_t code_width(const Line *line, size_t head_width) {
 }
 
 static char *render(Formatter *f) {
-  /* Per run: the widest head among its aligned lines, then the widest code among its lines that carry
-   * a comment. Runs are numbered densely from 1, so an array indexed by run is enough. */
+  /* Per run: the widest head among its aligned lines, the widest width among its lines with a value,
+   * then the widest code among its lines that carry a comment. Runs are numbered densely from 1, so an
+   * array indexed by run is enough. */
   size_t runs = f->next_run + 1;
   size_t *head = calloc(runs, sizeof(*head));
+  size_t *values = calloc(runs, sizeof(*values));
   size_t *comment = calloc(runs, sizeof(*comment));
   Text out = { 0 };
-  if (head == NULL || comment == NULL) {
+  if (head == NULL || values == NULL || comment == NULL) {
     free(head);
+    free(values);
     free(comment);
     return NULL;
   }
@@ -697,11 +717,14 @@ static char *render(Formatter *f) {
     if (line->kind == LINE_ALIGNED && line->head.length > head[line->run]) {
       head[line->run] = line->head.length;
     }
+    if (line->kind == LINE_ALIGNED && line->value.length > 0 && line->tail.length > values[line->run]) {
+      values[line->run] = line->tail.length;
+    }
   }
   for (size_t i = 0; i < f->line_count; ++i) {
     const Line *line = &f->lines[i];
     if (line->kind != LINE_COMMENT && line->comment != NULL) {
-      size_t width = code_width(line, head[line->run]);
+      size_t width = code_width(line, head[line->run], values[line->run]);
       if (width > comment[line->run]) {
         comment[line->run] = width;
       }
@@ -727,6 +750,10 @@ static char *render(Formatter *f) {
       ok &= text_put(&out, line->head.data, line->head.length);
       ok &= text_spaces(&out, head[line->run] - line->head.length + 1);
       ok &= text_put(&out, line->tail.data, line->tail.length);
+      if (line->value.length > 0) {
+        ok &= text_spaces(&out, values[line->run] - line->tail.length + 1);
+        ok &= text_put(&out, line->value.data, line->value.length);
+      }
     } else {
       ok &= text_put(&out, line->head.data != NULL ? line->head.data : "", line->head.length);
       if (line->tail.length > 0) {
@@ -734,7 +761,7 @@ static char *render(Formatter *f) {
         ok &= text_put(&out, line->tail.data, line->tail.length);
       }
     }
-    width = code_width(line, head[line->run]);
+    width = code_width(line, head[line->run], values[line->run]);
 
     if (line->comment != NULL) {
       ok &= text_spaces(&out, comment[line->run] - width + 2);
@@ -744,6 +771,7 @@ static char *render(Formatter *f) {
   }
 
   free(head);
+  free(values);
   free(comment);
   if (!ok || out.data == NULL) {
     free(out.data);
@@ -799,6 +827,7 @@ char *format_source(const char *source, DiagList *diags) {
   for (size_t i = 0; i < f.line_count; ++i) {
     free(f.lines[i].head.data);
     free(f.lines[i].tail.data);
+    free(f.lines[i].value.data);
   }
   free(f.lines);
   free(f.tokens);

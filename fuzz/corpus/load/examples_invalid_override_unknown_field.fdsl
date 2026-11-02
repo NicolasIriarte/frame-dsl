@@ -9,5 +9,5 @@ block Header {
 };
 
 pkt TC_PING {
-  hdr: Header { type = 0x01; };
+  hdr: Header { type := 0x01; };
 };

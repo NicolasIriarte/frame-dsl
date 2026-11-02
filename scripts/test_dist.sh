@@ -57,7 +57,7 @@ expect "the editors' links to the manual resolve" \
 
 # Each editor picks the support up from where the archive puts it, as INSTALL.md says to install it --
 # each only when that editor is here, as `make test-editors` does.
-printf 'pkt P {\n  id: 8 = 1;\n};\n' >"${tmp}/probe.fdsl"
+printf 'pkt P {\n  id: 8 := 1;\n};\n' >"${tmp}/probe.fdsl"
 if command -v emacs >/dev/null 2>&1; then
 	expect "Emacs loads the mode from the archive" emacs --batch -Q \
 		-l "${here}/share/frame-dsl/editors/emacs/frame-dsl-mode.el" \
@@ -87,7 +87,7 @@ cat >"${tmp}/use.c" <<'C'
 #include <stdio.h>
 #include "framedsl.h"
 int main(void) {
-  FramedslResult *result = framedsl_load_string("pkt P { id: 8 = 1; v: 8; };", "p.fdsl");
+  FramedslResult *result = framedsl_load_string("pkt P { id: 8 := 1; v: 8; };", "p.fdsl");
   int ok = framedsl_ok(result);
   framedsl_result_free(result);
   return ok ? 0 : 1;

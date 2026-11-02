@@ -39,16 +39,38 @@ static size_t slot_bytes(const FieldLayout *field) {
 }
 
 /* What a frame holds before anything is written to it: zeros, which the arena already is, except that a
- * fixed field holds its fixed value (#140), a repetition's fixed members included. A frame being built
- * then never reads back a value no frame of it could carry, and a decode replaces these with what
- * arrived. */
+ * fixed field holds its fixed value (#140) and a field with a default holds that (#144), a repetition's
+ * members included. A frame being built then never reads back a value no frame of it could carry, and a
+ * decode replaces these with what arrived. */
 void frame_seed_field(FramedslFrame *frame, size_t packet, size_t field) {
   const FieldInstruction *instruction = &frame->definition->program->packets[packet].fields[field];
   uint8_t *at = frame->arena + frame->slots[frame->packet_base[packet] + field].offset;
   if (instruction->has_fixed) {
     memcpy(at, &instruction->fixed, sizeof(instruction->fixed));
+  } else if (instruction->has_default) {
+    memcpy(at, &instruction->default_value, sizeof(instruction->default_value));
   } else if (instruction->element != NULL) {
     stamp_fixed(at, 0, instruction->element_capacity * instruction->element->bits, instruction->element);
+    frame_seed_elements(frame, packet, field, 0);
+  }
+}
+
+/* Unlike a fixed value, a default is not stamped on encode, where it would overwrite what a program set:
+ * this runs only where a frame's elements start out. */
+void frame_seed_elements(FramedslFrame *frame, size_t packet, size_t field, size_t first) {
+  const FieldInstruction *instruction = &frame->definition->program->packets[packet].fields[field];
+  const ElementProgram *element = instruction->element;
+  if (element->default_members == 0) {
+    return;
+  }
+  uint8_t *at = frame->arena + frame->slots[frame->packet_base[packet] + field].offset;
+  for (size_t i = first; i < instruction->element_capacity; ++i) {
+    for (size_t m = 0; m < element->member_count; ++m) {
+      const MemberInstruction *member = &element->members[m];
+      if (member->has_default) {
+        member_put(at, i * element->bits + member->offset_bits, member, member->default_value);
+      }
+    }
   }
 }
 

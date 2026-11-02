@@ -100,7 +100,7 @@ static int us2_tc05_parses_a_whole_packet(const TestArguments *args) {
   AstFile *file = parse(
     "@bit_order: msb_first;\n"
     "pkt TM {\n"
-    "  hdr: 8 = 0xAA;\n"
+    "  hdr: 8 := 0xAA;\n"
     "  len: 32;\n"
     "  data[128]: valof(len) * 8;\n"
     "};\n",
@@ -242,7 +242,7 @@ static int us2_tc11_max_is_no_longer_a_reserved_word(const TestArguments *args) 
 
   DiagList diags;
   diag_init(&diags);
-  AstFile *file = parse("pkt TM { hdr: 8 = 0xAA; max: 8; };", &diags);
+  AstFile *file = parse("pkt TM { hdr: 8 := 0xAA; max: 8; };", &diags);
 
   int failure = 0;
   if (diags.count != 0 || file == NULL || file->packet_count != 1) {

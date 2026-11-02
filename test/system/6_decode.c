@@ -15,9 +15,9 @@
 #define FAMILY                                                                                                         \
   "@bit_order:  msb_first;\n"                                                                                          \
   "@byte_order: big_endian;\n"                                                                                         \
-  "pkt TC_PING     { type: 8 = 0x01; seq: 16; };\n"                                                                    \
-  "pkt TC_SET_MODE { type: 8 = 0x02; seq: 16; mode: 8; };\n"                                                           \
-  "pkt TC_PAYLOAD  { type: 8 = 0x03; len: 8; body[8]: valof(len) * 8; crc: 8; };\n"
+  "pkt TC_PING     { type: 8 := 0x01; seq: 16; };\n"                                                                   \
+  "pkt TC_SET_MODE { type: 8 := 0x02; seq: 16; mode: 8; };\n"                                                          \
+  "pkt TC_PAYLOAD  { type: 8 := 0x03; len: 8; body[8]: valof(len) * 8; crc: 8; };\n"
 
 typedef struct {
   FramedslResult *result;
@@ -225,7 +225,7 @@ static int us6_tc06_bit_and_byte_order_are_undone(const TestArguments *args) {
 
   Fixture fixture;
   if (!open_fixture(
-        "pkt A { h: 8 = 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8;"
+        "pkt A { h: 8 := 0xAA; a: 8; [ @bit_order: lsb_first; ] b: 8;"
         " [ @byte_order: little_endian; ] c: 32; };",
         &fixture
       )) {

@@ -3,7 +3,7 @@
 # `valof(flags) & 0x4` is 0 or 4, never 8, so `ext` could never be present.
 
 pkt TM_FLAGS {
-  id:    8 = 0x66;
+  id:    8 := 0x66;
   flags: 4;
   pad:   4;
   [ @if: valof(flags) & 0x4 == 0x8; ]

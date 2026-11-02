@@ -13,18 +13,18 @@
 @byte_order: big_endian;
 
 pkt TC_PING {
-  type: 8 = 0x01;
+  type: 8 := 0x01;
   seq: 16;
 };
 
 pkt TC_SET_MODE {
-  type: 8 = 0x02;
+  type: 8 := 0x02;
   seq: 16;
   mode: 8;
 };
 
 pkt TC_PAYLOAD {
-  type: 8 = 0x03;
+  type: 8 := 0x03;
   seq: 16;
   len: 16;                           # counts payload bytes
   body[256]: valof(len) * 8;

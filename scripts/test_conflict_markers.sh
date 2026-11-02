@@ -64,7 +64,7 @@ repo="$(repo_new)"
 {
 	printf '# A comment in a definition file\n'
 	open_marker
-	printf 'pkt TM { id: 8 = 1; };\n'
+	printf 'pkt TM { id: 8 := 1; };\n'
 	close_marker
 } >"$repo/defs.fdsl"
 if clean "$repo"; then fail "a conflicted .fdsl fails"; else pass "a conflicted .fdsl fails"; fi

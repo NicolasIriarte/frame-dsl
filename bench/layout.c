@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
 
   /* The baseline's `size/fixed` packet: an id, a sequence number and a bit string. */
   char source[128];
-  snprintf(source, sizeof(source), "pkt P { id: 8 = 0x5A; seq: 16; data: %d; };\n", (bytes - 3) * 8);
+  snprintf(source, sizeof(source), "pkt P { id: 8 := 0x5A; seq: 16; data: %d; };\n", (bytes - 3) * 8);
   FramedslResult *result = framedsl_load_string(source, "layout.fdsl");
   const FramedslDefinition *definition = framedsl_definition(result);
   FramedslFrame *frame = definition != NULL ? framedsl_frame_new(definition) : NULL;

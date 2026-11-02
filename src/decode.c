@@ -231,7 +231,7 @@ const char *framedsl_decode(
 
     /* A field this frame does not carry (#12) takes no bits, and its slot goes back to how a frame
      * starts: a previous frame's value must not come back when a caller later makes the condition hold,
-     * and a fixed field reads its fixed value then (#141). */
+     * and a fixed field reads its fixed value then (#141), and a field with a default its default (#144). */
     if (instruction->condition_count != 0 && !field_present(instruction, slots)) {
       slots[f] = 0;
       memset(frame->arena + slot->offset, 0, slot->capacity);
@@ -279,6 +279,9 @@ const char *framedsl_decode(
        * shows the tail of a longer one. */
       if (slot->capacity > bytes) {
         memset(frame->arena + slot->offset + bytes, 0, slot->capacity - bytes);
+        if (instruction->element != NULL && instruction->element->bits > 0) {
+          frame_seed_elements(frame, index, f, (size_t)(width / instruction->element->bits));
+        }
       }
       slot->length = bytes;
     }

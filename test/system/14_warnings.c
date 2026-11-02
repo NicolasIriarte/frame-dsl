@@ -67,19 +67,20 @@ static int expect_warnings(const char *source, const char *expected) {
 static int us14_tc01_an_unused_block_warns_at_its_name(const TestArguments *args) {
   (void)args;
   return expect_warnings(
-    "block Spare {\n  s: 8;\n};\nblock Header {\n  id: 8 = 1;\n};\npkt TM {\n  h: Header;\n};\n", "1:7:30"
+    "block Spare {\n  s: 8;\n};\nblock Header {\n  id: 8 := 1;\n};\npkt TM {\n  h: Header;\n};\n", "1:7:30"
   );
 }
 
 static int us14_tc02_an_unused_calibration_warns(const TestArguments *args) {
   (void)args;
-  int failure = expect_warnings("cal volts(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  raw: 8;\n};\n", "1:5:30");
+  int failure = expect_warnings("cal volts(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  raw: 8;\n};\n", "1:5:30");
   if (failure != 0) {
     return failure;
   }
   /* Used through @cal on a field, or only by being called from a curve that is used: both count. */
   return expect_warnings(
-    "cal base(x) = x * 2;\ncal volts(x) = base(x) + 1;\npkt TM {\n  id: 8 = 1;\n  [ @cal: volts; ]\n  raw: 8;\n};\n", ""
+    "cal base(x) = x * 2;\ncal volts(x) = base(x) + 1;\npkt TM {\n  id: 8 := 1;\n  [ @cal: volts; ]\n  raw: 8;\n};\n",
+    ""
   );
 }
 
@@ -88,20 +89,20 @@ static int us14_tc02_an_unused_calibration_warns(const TestArguments *args) {
 static int us14_tc03_only_the_outer_of_an_unused_chain_warns(const TestArguments *args) {
   (void)args;
   int failure = expect_warnings(
-    "block Inner {\n  i: 8;\n};\nblock Outer {\n  o: Inner;\n};\npkt TM {\n  id: 8 = 1;\n  x: Outer;\n};\n", ""
+    "block Inner {\n  i: 8;\n};\nblock Outer {\n  o: Inner;\n};\npkt TM {\n  id: 8 := 1;\n  x: Outer;\n};\n", ""
   );
   if (failure != 0) {
     return failure;
   }
   return expect_warnings(
-    "block Inner {\n  i: 8;\n};\nblock Outer {\n  o: Inner;\n};\npkt TM {\n  id: 8 = 1;\n};\n", "4:7:30"
+    "block Inner {\n  i: 8;\n};\nblock Outer {\n  o: Inner;\n};\npkt TM {\n  id: 8 := 1;\n};\n", "4:7:30"
   );
 }
 
 static int us14_tc04_an_unused_import_warns_at_the_import(const TestArguments *args) {
   char library[1024];
   if (!write_file(
-        args, "lib/link.fdsl", "block Header {\n  id: 8 = 1;\n};\ncal volts(x) = x * 2;\n", library, sizeof(library)
+        args, "lib/link.fdsl", "block Header {\n  id: 8 := 1;\n};\ncal volts(x) = x * 2;\n", library, sizeof(library)
       )) {
     return __LINE__;
   }
@@ -109,12 +110,12 @@ static int us14_tc04_an_unused_import_warns_at_the_import(const TestArguments *a
     const char *source;
     const char *expected;
   } cases[] = {
-    { "import \"lib/link.fdsl\";\npkt TM {\n  id: 8 = 1;\n};\n",                                     "1:1:30" },
-    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  id: 8 = 1;\n};\n",                                "1:1:30" },
-    { "import \"lib/link.fdsl\";\npkt TM {\n  h: Header;\n};\n",                                     ""       },
-    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  h: l.Header;\n};\n",                              ""       },
+    { "import \"lib/link.fdsl\";\npkt TM {\n  id: 8 := 1;\n};\n",                                     "1:1:30" },
+    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  id: 8 := 1;\n};\n",                                "1:1:30" },
+    { "import \"lib/link.fdsl\";\npkt TM {\n  h: Header;\n};\n",                                      ""       },
+    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  h: l.Header;\n};\n",                               ""       },
     /* Any one name is enough: the calibration alone, through the namespace. */
-    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  id: 8 = 1;\n  [ @cal: l.volts; ]\n  r: 8;\n};\n", ""       },
+    { "import \"lib/link.fdsl\" as l;\npkt TM {\n  id: 8 := 1;\n  [ @cal: l.volts; ]\n  r: 8;\n};\n", ""       },
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
     char top[1024];
@@ -131,7 +132,7 @@ static int us14_tc04_an_unused_import_warns_at_the_import(const TestArguments *a
 /* A file with no packets is a library: every declaration in it is an export, imports included. */
 static int us14_tc05_a_library_file_does_not_warn_about_its_exports(const TestArguments *args) {
   char library[1024];
-  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 = 1;\n};\n", library, sizeof(library))) {
+  if (!write_file(args, "lib/link.fdsl", "block Header {\n  id: 8 := 1;\n};\n", library, sizeof(library))) {
     return __LINE__;
   }
   char path[1024];
@@ -154,7 +155,7 @@ static int us14_tc06_an_imported_files_warnings_stay_there(const TestArguments *
   if (!write_file(
         args,
         "lib/link.fdsl",
-        "@byte_order: little_endian;\n[ @byte_order: little_endian; ]\nblock Header {\n  id: 8 = 1;\n};\n",
+        "@byte_order: little_endian;\n[ @byte_order: little_endian; ]\nblock Header {\n  id: 8 := 1;\n};\n",
         library,
         sizeof(library)
       )
@@ -178,19 +179,19 @@ static int us14_tc07_a_repeated_attribute_warns_at_every_scope(const TestArgumen
     /* file, then packet */
     "@byte_order: little_endian;\n"
     "[ @byte_order: little_endian; ]\n"
-    "pkt TM {\n  id: 8 = 1;\n};\n",
+    "pkt TM {\n  id: 8 := 1;\n};\n",
     /* packet, then field */
     "[ @bit_order: lsb_first; ]\n"
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @bit_order: lsb_first; ]\n"
     "  x: 8;\n};\n",
     /* packet, then block */
     "[ @byte_order: little_endian; ]\n"
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  block {\n    x: 16;\n  };\n};\n",
     /* block, then a field inside it */
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  block {\n"
     "    [ @byte_order: little_endian; ]\n"
@@ -198,7 +199,7 @@ static int us14_tc07_a_repeated_attribute_warns_at_every_scope(const TestArgumen
     /* file, then a named block's declaration */
     "@bit_order: lsb_first;\n"
     "[ @bit_order: lsb_first; ]\n"
-    "block H {\n  id: 8 = 1;\n};\n"
+    "block H {\n  id: 8 := 1;\n};\n"
     "pkt TM {\n  h: H;\n};\n",
   };
   const char *expected[] = { "2:16:31", "4:17:31", "4:18:31", "5:20:31", "2:15:31" };
@@ -220,19 +221,19 @@ static int us14_tc08_what_is_not_a_repeated_attribute(const TestArguments *args)
     /* the defaults, written out at file and packet scope */
     "@bit_order: msb_first;\n"
     "@byte_order: big_endian;\n"
-    "pkt TM {\n  id: 8 = 1;\n};\n",
+    "pkt TM {\n  id: 8 := 1;\n};\n",
     "[ @bit_order: msb_first; ]\n"
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: big_endian; ]\n"
     "  x: 16;\n};\n",
     /* a value that changes something, and one that changes it back */
     "@byte_order: little_endian;\n"
     "[ @byte_order: big_endian; ]\n"
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  x: 16;\n};\n",
     /* two siblings saying the same thing: neither encloses the other */
-    "pkt TM {\n  id: 8 = 1;\n"
+    "pkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: little_endian; ]\n"
     "  x: 16;\n"
     "  [ @byte_order: little_endian; ]\n"
@@ -254,7 +255,7 @@ static int us14_tc09_a_file_with_warnings_still_works(const TestArguments *args)
     "@byte_order: little_endian;\n"
     "block Spare {\n  s: 8;\n};\n"
     "[ @byte_order: little_endian; ]\n"
-    "pkt TM {\n  id: 8 = 0xA5;\n  value: 16;\n};\n",
+    "pkt TM {\n  id: 8 := 0xA5;\n  value: 16;\n};\n",
     "t.fdsl"
   );
   int failure = 0;
@@ -309,7 +310,7 @@ static int us14_tc10_every_example_is_warning_free(const TestArguments *args) {
 /* The --check half of #70 that needed a warning to exist: one alone exits 0, and --werror makes it 1. */
 static int us14_tc11_werror_decides_what_a_warning_costs(const TestArguments *args) {
   char path[1024];
-  if (!write_file(args, "w.fdsl", "block Spare {\n  s: 8;\n};\npkt TM {\n  id: 8 = 1;\n};\n", path, sizeof(path))) {
+  if (!write_file(args, "w.fdsl", "block Spare {\n  s: 8;\n};\npkt TM {\n  id: 8 := 1;\n};\n", path, sizeof(path))) {
     return __LINE__;
   }
   char expected[2800];
@@ -347,19 +348,19 @@ static int us14_tc12_an_attribute_written_twice_in_one_place_warns(const TestArg
   (void)args;
   const char *sources[] = {
     /* a field's group, the same value */
-    "pkt TM {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @bit_order: lsb_first; ]\n  x: 8;\n};\n",
+    "pkt TM {\n  id: 8 := 1;\n  [ @bit_order: lsb_first; @bit_order: lsb_first; ]\n  x: 8;\n};\n",
     /* a packet's group, a different value */
-    "[ @byte_order: little_endian; @byte_order: big_endian; ]\npkt TM {\n  id: 8 = 1;\n  x: 16;\n};\n",
+    "[ @byte_order: little_endian; @byte_order: big_endian; ]\npkt TM {\n  id: 8 := 1;\n  x: 16;\n};\n",
     /* an anonymous block's group */
-    "pkt TM {\n  id: 8 = 1;\n  [ @byte_order: little_endian; @byte_order: little_endian; ]\n"
+    "pkt TM {\n  id: 8 := 1;\n  [ @byte_order: little_endian; @byte_order: little_endian; ]\n"
     "  block {\n    x: 16;\n  };\n};\n",
     /* a named block's group, over several lines */
-    "[\n  @bit_order: lsb_first;\n  @bit_order: msb_first;\n]\nblock H {\n  id: 8 = 1;\n};\npkt TM {\n  h: H;\n};\n",
+    "[\n  @bit_order: lsb_first;\n  @bit_order: msb_first;\n]\nblock H {\n  id: 8 := 1;\n};\npkt TM {\n  h: H;\n};\n",
     /* a calibration, each of the two used somewhere so that check 30 has nothing to say */
-    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n  [ @cal: k; @cal: c; ]\n  x: 8;\n"
+    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 := 1;\n  [ @cal: k; @cal: c; ]\n  x: 8;\n"
     "  [ @cal: k; ]\n  y: 8;\n};\n",
     /* the file's defaults */
-    "@byte_order: little_endian;\n@bit_order: lsb_first;\n@byte_order: little_endian;\npkt TM {\n  id: 8 = 1;\n};\n",
+    "@byte_order: little_endian;\n@bit_order: lsb_first;\n@byte_order: little_endian;\npkt TM {\n  id: 8 := 1;\n};\n",
   };
   const char *expected[] = { "3:29:34", "1:32:34", "3:34:34", "3:4:34", "5:15:34", "3:2:34" };
 
@@ -377,7 +378,7 @@ static int us14_tc12_an_attribute_written_twice_in_one_place_warns(const TestArg
 static int us14_tc13_the_last_of_two_still_wins(const TestArguments *args) {
   (void)args;
   FramedslResult *result = framedsl_load_string(
-    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 = 1;\n"
+    "cal c(x) = x * 2;\ncal k(x) = x * 3;\npkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: little_endian; @byte_order: big_endian; @cal: k; @cal: c; ]\n  x: 16;\n"
     "  [ @bit_order: lsb_first; @bit_order: lsb_first; @cal: k; ]\n  y: 8;\n};\n",
     "t.fdsl"
@@ -420,11 +421,11 @@ static int us14_tc13_the_last_of_two_still_wins(const TestArguments *args) {
 static int us14_tc14_what_is_not_written_twice(const TestArguments *args) {
   (void)args;
   const char *sources[] = {
-    "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n"
+    "cal c(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n"
     "  [ @bit_order: lsb_first; @byte_order: little_endian; @cal: c; ]\n  x: 16;\n};\n",
-    "cal c(x) = x * 2;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n"
+    "cal c(x) = x * 2;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 := 1;\n"
     "  [ @byte_order: big_endian; @cal: c; ]\n  x: 16;\n  [ @cal: c; ]\n  y: 8;\n};\n",
-    "@bit_order: lsb_first;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 = 1;\n};\n",
+    "@bit_order: lsb_first;\n[ @byte_order: little_endian; ]\npkt TM {\n  id: 8 := 1;\n};\n",
   };
   for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); ++i) {
     int failure = expect_warnings(sources[i], "");
@@ -441,7 +442,7 @@ static int us14_tc15_werror_refuses_an_attribute_written_twice(const TestArgumen
   if (!write_file(
         args,
         "twice.fdsl",
-        "pkt TM {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\n  x: 8;\n};\n",
+        "pkt TM {\n  id: 8 := 1;\n  [ @bit_order: lsb_first; @bit_order: msb_first; ]\n  x: 8;\n};\n",
         path,
         sizeof(path)
       )) {

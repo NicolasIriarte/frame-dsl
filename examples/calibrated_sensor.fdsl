@@ -23,7 +23,7 @@ cal celsius(raw) = raw * 0.0625 - 40;
 cal ohms(raw) = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);
 
 pkt TM_POWER {
-  id:     8 = 0x10;
+  id:     8 := 0x10;
   [ @cal: volts; ]
   bus:    12;
   [ @cal: current; ]

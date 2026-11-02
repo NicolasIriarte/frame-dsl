@@ -64,12 +64,12 @@ static bool loads(const char *source) {
   return ok;
 }
 
-#define HEADER "block Header { id: 8; sequence: 16; version: 4 = 0x1; flags: 4; };\n"
+#define HEADER "block Header { id: 8; sequence: 16; version: 4 := 0x1; flags: 4; };\n"
 
 static int us11_tc01_a_use_becomes_the_blocks_fields_under_its_name(const TestArguments *args) {
   (void)args;
   Composed composed;
-  compose_source(HEADER "pkt A { hdr: Header { id = 0x02; }; tail: 8; };", &composed);
+  compose_source(HEADER "pkt A { hdr: Header { id := 0x02; }; tail: 8; };", &composed);
 
   const char *names[] = { "hdr.id", "hdr.sequence", "hdr.version", "hdr.flags", "tail" };
   int failure = 0;
@@ -90,7 +90,7 @@ static int us11_tc01_a_use_becomes_the_blocks_fields_under_its_name(const TestAr
 static int us11_tc02_an_override_fixes_a_field_for_one_use(const TestArguments *args) {
   (void)args;
   Composed composed;
-  compose_source(HEADER "pkt A { hdr: Header { id = 0x02; version = 0x2; }; };", &composed);
+  compose_source(HEADER "pkt A { hdr: Header { id := 0x02; version := 0x2; }; };", &composed);
 
   int failure = 0;
   const AstField *fields = composed.composed ? composed.file->packets[0].fields : NULL;
@@ -114,7 +114,7 @@ static int us11_tc02_an_override_fixes_a_field_for_one_use(const TestArguments *
 static int us11_tc03_the_same_block_twice_gives_two_sets_of_names(const TestArguments *args) {
   (void)args;
   Composed composed;
-  compose_source("block V { x: 16; y: 16; };\npkt A { id: 8 = 1; a: V; b: V; };", &composed);
+  compose_source("block V { x: 16; y: 16; };\npkt A { id: 8 := 1; a: V; b: V; };", &composed);
 
   const char *names[] = { "id", "a.x", "a.y", "b.x", "b.y" };
   int failure = composed.composed && composed.file->packets[0].field_count == 5 ? 0 : __LINE__;
@@ -134,7 +134,7 @@ static int us11_tc04_blocks_nest_and_a_path_reaches_inside(const TestArguments *
   compose_source(
     "block V { x: 16; z: 16; };\n"
     "block S { tag: 8; v: V; };\n"
-    "pkt A { id: 8 = 1; s: S { v.z = 7; }; };",
+    "pkt A { id: 8 := 1; s: S { v.z := 7; }; };",
     &composed
   );
 
@@ -157,7 +157,7 @@ static int us11_tc05_a_valof_inside_a_block_names_the_same_instance(const TestAr
   Composed composed;
   compose_source(
     "block L { len: 8; data[4]: valof(len) * 8; };\n"
-    "pkt A { id: 8 = 1; len: 8; a: L; b: L; };",
+    "pkt A { id: 8 := 1; len: 8; a: L; b: L; };",
     &composed
   );
 
@@ -173,7 +173,7 @@ static int us11_tc05_a_valof_inside_a_block_names_the_same_instance(const TestAr
     }
   }
   release(&composed);
-  if (failure == 0 && !loads("block L { len: 8; data[4]: valof(len) * 8; };\npkt A { id: 8 = 1; a: L; b: L; };")) {
+  if (failure == 0 && !loads("block L { len: 8; data[4]: valof(len) * 8; };\npkt A { id: 8 := 1; a: L; b: L; };")) {
     failure = __LINE__;
   }
   return failure;
@@ -181,16 +181,16 @@ static int us11_tc05_a_valof_inside_a_block_names_the_same_instance(const TestAr
 
 static int us11_tc06_check_23_an_unknown_block(const TestArguments *args) {
   (void)args;
-  return reports("pkt A { id: 8 = 1; h: Nope; };", 23, NULL) ? 0 : __LINE__;
+  return reports("pkt A { id: 8 := 1; h: Nope; };", 23, NULL) ? 0 : __LINE__;
 }
 
 static int us11_tc07_check_24_a_block_used_before_it_is_declared(const TestArguments *args) {
   (void)args;
-  if (!reports("pkt A { id: 8 = 1; h: H; };\nblock H { x: 8; };", 24, NULL)) {
+  if (!reports("pkt A { id: 8 := 1; h: H; };\nblock H { x: 8; };", 24, NULL)) {
     return __LINE__;
   }
   /* Between blocks as well: the order is the file's, whatever uses what. */
-  if (!reports("block T { u: U; };\nblock U { x: 8; };\npkt A { id: 8 = 1; t: T; };", 24, NULL)) {
+  if (!reports("block T { u: U; };\nblock U { x: 8; };\npkt A { id: 8 := 1; t: T; };", 24, NULL)) {
     return __LINE__;
   }
   return 0;
@@ -199,7 +199,7 @@ static int us11_tc07_check_24_a_block_used_before_it_is_declared(const TestArgum
 /* Recursion is the same rule, and is caught whether or not a packet uses the block. */
 static int us11_tc08_check_24_a_block_cannot_contain_itself(const TestArguments *args) {
   (void)args;
-  if (!reports("block S { a: 8; s: S; };\npkt A { id: 8 = 1; };", 24, "uses itself")) {
+  if (!reports("block S { a: 8; s: S; };\npkt A { id: 8 := 1; };", 24, "uses itself")) {
     return __LINE__;
   }
   return 0;
@@ -207,10 +207,10 @@ static int us11_tc08_check_24_a_block_cannot_contain_itself(const TestArguments 
 
 static int us11_tc09_check_25_an_override_must_name_a_field_once(const TestArguments *args) {
   (void)args;
-  if (!reports(HEADER "pkt A { hdr: Header { type = 1; }; };", 25, "no field 'type'")) {
+  if (!reports(HEADER "pkt A { hdr: Header { type := 1; }; };", 25, "no field 'type'")) {
     return __LINE__;
   }
-  if (!reports(HEADER "pkt A { hdr: Header { id = 1; id = 2; }; };", 25, "twice")) {
+  if (!reports(HEADER "pkt A { hdr: Header { id := 1; id := 2; }; };", 25, "twice")) {
     return __LINE__;
   }
   return 0;
@@ -220,13 +220,13 @@ static int us11_tc09_check_25_an_override_must_name_a_field_once(const TestArgum
  * 8, and two packets whose overrides do not tell them apart are check 12. */
 static int us11_tc10_the_existing_checks_see_the_expanded_fields(const TestArguments *args) {
   (void)args;
-  if (!reports(HEADER "pkt A { hdr: Header { id = 256; }; };", 8, NULL)) {
+  if (!reports(HEADER "pkt A { hdr: Header { id := 256; }; };", 8, NULL)) {
     return __LINE__;
   }
-  if (!reports(HEADER "pkt A { hdr: Header { id = 1; }; };\npkt B { hdr: Header { id = 1; }; };", 12, NULL)) {
+  if (!reports(HEADER "pkt A { hdr: Header { id := 1; }; };\npkt B { hdr: Header { id := 1; }; };", 12, NULL)) {
     return __LINE__;
   }
-  if (!loads(HEADER "pkt A { hdr: Header { id = 1; }; };\npkt B { hdr: Header { id = 2; }; };")) {
+  if (!loads(HEADER "pkt A { hdr: Header { id := 1; }; };\npkt B { hdr: Header { id := 2; }; };")) {
     return __LINE__;
   }
   return 0;
@@ -235,10 +235,10 @@ static int us11_tc10_the_existing_checks_see_the_expanded_fields(const TestArgum
 /* An instance named like another field is a duplicate, though `hdr` and `hdr.id` no longer collide. */
 static int us11_tc11_check_2_an_instance_shares_a_name(const TestArguments *args) {
   (void)args;
-  if (!reports(HEADER "pkt A { hdr: 8 = 1; hdr: Header; };", 2, NULL)) {
+  if (!reports(HEADER "pkt A { hdr: 8 := 1; hdr: Header; };", 2, NULL)) {
     return __LINE__;
   }
-  if (!reports(HEADER "block Header { x: 8; };\npkt A { id: 8 = 1; };", 1, "already a block")) {
+  if (!reports(HEADER "block Header { x: 8; };\npkt A { id: 8 := 1; };", 1, "already a block")) {
     return __LINE__;
   }
   return 0;
@@ -251,12 +251,12 @@ static int us11_tc12_a_use_cannot_reshape_its_block(const TestArguments *args) {
     const char *source;
     const char *text;
   } cases[] = {
-    { HEADER "pkt A { [ @byte_order: little_endian; ] hdr: Header { id = 1; }; };",
-     "fixed where the block is declared"                                                                        },
-    { HEADER "pkt A { hdr[4]: Header { id = 1; }; };",                              "no reservation of its own" },
-    { HEADER "pkt A { hdr: Header = 3; };",                                         "no single value to fix"    },
-    { HEADER "pkt A { id: 8 = 1; block Header { x: 8; }; };",                       "declared at file level"    },
-    { "block E { };\npkt A { id: 8 = 1; };",                                        "at least one field"        },
+    { HEADER "pkt A { [ @byte_order: little_endian; ] hdr: Header { id := 1; }; };",
+     "fixed where the block is declared"                                                                         },
+    { HEADER "pkt A { hdr[4]: Header { id := 1; }; };",                              "no reservation of its own" },
+    { HEADER "pkt A { hdr: Header := 3; };",                                         "no single value to fix"    },
+    { HEADER "pkt A { id: 8 := 1; block Header { x: 8; }; };",                       "declared at file level"    },
+    { "block E { };\npkt A { id: 8 := 1; };",                                        "at least one field"        },
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
     if (!reports(cases[i].source, 0, cases[i].text)) {
@@ -278,7 +278,7 @@ static int us11_tc13_imports_parse_at_the_top_with_or_without_a_name(const TestA
     "import \"common/link.fdsl\";\n"
     "import \"vendor/s.fdsl\" as vendor;\n"
     "@byte_order: big_endian;\n"
-    "pkt A { id: 8 = 1; h: vendor.Header { id = 2; }; [ @cal: vendor.celsius; ] t: 16; };",
+    "pkt A { id: 8 := 1; h: vendor.Header { id := 2; }; [ @cal: vendor.celsius; ] t: 16; };",
     &diags
   );
 
@@ -303,10 +303,10 @@ static int us11_tc13_imports_parse_at_the_top_with_or_without_a_name(const TestA
 /* An import below anything else is refused where it is, rather than meaning "from here on". */
 static int us11_tc14_an_import_goes_at_the_top(const TestArguments *args) {
   (void)args;
-  if (!reports("pkt A { id: 8 = 1; };\nimport \"x.fdsl\";", 0, "at the top of the file")) {
+  if (!reports("pkt A { id: 8 := 1; };\nimport \"x.fdsl\";", 0, "at the top of the file")) {
     return __LINE__;
   }
-  if (!reports("@bit_order: msb_first;\nimport \"x.fdsl\";\npkt A { id: 8 = 1; };", 0, "at the top of the file")) {
+  if (!reports("@bit_order: msb_first;\nimport \"x.fdsl\";\npkt A { id: 8 := 1; };", 0, "at the top of the file")) {
     return __LINE__;
   }
   return 0;
@@ -315,10 +315,10 @@ static int us11_tc14_an_import_goes_at_the_top(const TestArguments *args) {
 /* A path is the only text in the language: no escapes, and it closes on the line it opens. */
 static int us11_tc15_a_path_is_a_string_on_one_line(const TestArguments *args) {
   (void)args;
-  if (!reports("import \"x.fdsl\n\";\npkt A { id: 8 = 1; };", 0, "close on the line")) {
+  if (!reports("import \"x.fdsl\n\";\npkt A { id: 8 := 1; };", 0, "close on the line")) {
     return __LINE__;
   }
-  if (!reports("import x;\npkt A { id: 8 = 1; };", 0, "quoted path")) {
+  if (!reports("import x;\npkt A { id: 8 := 1; };", 0, "quoted path")) {
     return __LINE__;
   }
   return 0;
@@ -337,7 +337,7 @@ static int us11_tc16_check_29_a_block_or_packet_declares_too_many_fields(const T
   if (source == NULL) {
     return __LINE__;
   }
-  size_t length = (size_t)snprintf(source, capacity, "%spkt A { id: 8 = 1;", HEADER);
+  size_t length = (size_t)snprintf(source, capacity, "%spkt A { id: 8 := 1;", HEADER);
   for (size_t i = 0; i < count; ++i) {
     length += (size_t)snprintf(source + length, capacity - length, " a%zu: Header;", i);
   }

@@ -65,7 +65,7 @@ static bool accepts(const char *source) {
 static int us6_tc01_accepts_a_packet_that_is_a_whole_number_of_bytes(const TestArguments *args) {
   (void)args;
   /* Every field is sub-byte and two of them straddle a byte boundary. The total is what matters. */
-  if (!accepts("pkt A { v: 3 = 0b000; t: 1 = 0b0; f: 1; id: 11; s: 2; n: 14; len: 16; };")) {
+  if (!accepts("pkt A { v: 3 := 0b000; t: 1 := 0b0; f: 1; id: 11; s: 2; n: 14; len: 16; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -73,7 +73,7 @@ static int us6_tc01_accepts_a_packet_that_is_a_whole_number_of_bytes(const TestA
 
 static int us6_tc02_rejects_a_packet_that_is_not(const TestArguments *args) {
   (void)args;
-  if (!rejects("pkt A { base: 11 = 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };")) {
+  if (!rejects("pkt A { base: 11 := 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -84,7 +84,7 @@ static int us6_tc03_reports_the_total_for_a_constant_width_packet(const TestArgu
   (void)args;
   char message[512] = { 0 };
   if (!rejected_by(
-        "pkt A { base: 11 = 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };", 13, message, sizeof(message)
+        "pkt A { base: 11 := 0; rtr: 1; ide: 1; r0: 1; dlc: 4; d: 8; seq: 15; };", 13, message, sizeof(message)
       )) {
     FORCE_FAILURE();
   }
@@ -96,7 +96,7 @@ static int us6_tc03_reports_the_total_for_a_constant_width_packet(const TestArgu
 
 static int us6_tc04_accepts_a_valof_width_in_bytes(const TestArguments *args) {
   (void)args;
-  if (!accepts("pkt A { h: 8 = 0xAA; n: 16; d[256]: valof(n) * 8; };")) {
+  if (!accepts("pkt A { h: 8 := 0xAA; n: 16; d[256]: valof(n) * 8; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -106,7 +106,7 @@ static int us6_tc04_accepts_a_valof_width_in_bytes(const TestArguments *args) {
  * the CCSDS shape: a length field that counts octets minus one. */
 static int us6_tc05_accepts_a_product_whose_other_factor_is_unknown(const TestArguments *args) {
   (void)args;
-  if (!accepts("pkt A { h: 8 = 0xAA; n: 16; d[256]: (valof(n) + 1) * 8; };")) {
+  if (!accepts("pkt A { h: 8 := 0xAA; n: 16; d[256]: (valof(n) + 1) * 8; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -115,7 +115,7 @@ static int us6_tc05_accepts_a_product_whose_other_factor_is_unknown(const TestAr
 /* The analysis is not a search for a literal `* 8`: a sum of two byte multiples is one too. */
 static int us6_tc06_accepts_a_byte_multiple_built_by_arithmetic(const TestArguments *args) {
   (void)args;
-  if (!accepts("pkt A { h: 8 = 0xAA; n: 16; d[256]: valof(n) * 16 - 32; };")) {
+  if (!accepts("pkt A { h: 8 := 0xAA; n: 16; d[256]: valof(n) * 16 - 32; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -123,7 +123,7 @@ static int us6_tc06_accepts_a_byte_multiple_built_by_arithmetic(const TestArgume
 
 static int us6_tc07_rejects_a_valof_width_that_is_not_a_byte_multiple(const TestArguments *args) {
   (void)args;
-  if (!rejects("pkt A { h: 8 = 0xAA; n: 16; d[384]: valof(n) * 3; };")) {
+  if (!rejects("pkt A { h: 8 := 0xAA; n: 16; d[384]: valof(n) * 3; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -135,7 +135,7 @@ static int us6_tc07_rejects_a_valof_width_that_is_not_a_byte_multiple(const Test
  * fail and be deleted on purpose. */
 static int us6_tc08_rejects_a_byte_multiple_it_cannot_see(const TestArguments *args) {
   (void)args;
-  if (!rejects("pkt A { h: 8 = 0xAA; n: 16; d[384]: valof(n) * 2 * 4; };")) {
+  if (!rejects("pkt A { h: 8 := 0xAA; n: 16; d[384]: valof(n) * 2 * 4; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -145,7 +145,7 @@ static int us6_tc08_rejects_a_byte_multiple_it_cannot_see(const TestArguments *a
  * because the analysis works outwards from each operator rather than looking for a literal. */
 static int us6_tc09_accepts_a_product_with_a_byte_multiple_factor(const TestArguments *args) {
   (void)args;
-  if (!accepts("pkt A { h: 8 = 0xAA; n: 16; d[384]: valof(n) * 3 * 8; };")) {
+  if (!accepts("pkt A { h: 8 := 0xAA; n: 16; d[384]: valof(n) * 3 * 8; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -154,7 +154,7 @@ static int us6_tc09_accepts_a_product_with_a_byte_multiple_factor(const TestArgu
 /* A byte-sized variable field does not rescue a constant part that is off by four bits. */
 static int us6_tc10_rejects_an_odd_constant_part(const TestArguments *args) {
   (void)args;
-  if (!rejects("pkt A { h: 4 = 0xA; n: 16; d[256]: valof(n) * 8; };")) {
+  if (!rejects("pkt A { h: 4 := 0xA; n: 16; d[256]: valof(n) * 8; };")) {
     FORCE_FAILURE();
   }
   return 0;
@@ -164,7 +164,7 @@ static int us6_tc10_rejects_an_odd_constant_part(const TestArguments *args) {
  * would report one mistake twice. */
 static int us6_tc11_does_not_pile_on_after_a_bad_width(const TestArguments *args) {
   (void)args;
-  if (rejects("pkt A { h: 8 = 0xAA; x: 4 - 4; };")) {
+  if (rejects("pkt A { h: 8 := 0xAA; x: 4 - 4; };")) {
     FORCE_FAILURE();
   }
   return 0;

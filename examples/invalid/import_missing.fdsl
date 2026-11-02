@@ -6,5 +6,5 @@
 import "common/link.fdsl";
 
 pkt TC_PING {
-  hdr: Header { id = 0x01; };
+  hdr: Header { id := 0x01; };
 };

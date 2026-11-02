@@ -32,8 +32,8 @@ static int expect_format(const char *source, const char *expected) {
 static int us15_tc01_indentation_and_spacing(const TestArguments *args) {
   (void)args;
   return expect_format(
-    "pkt\tTM{\n\tid:8=0x1;\n    block{\n  x:valof( id )*8 - 32;\n};\n};\n",
-    "pkt TM {\n  id: 8 = 0x1;\n  block {\n    x: valof(id) * 8 - 32;\n  };\n};\n"
+    "pkt\tTM{\n\tid:8:=0x1;\n    block{\n  x:valof( id )*8 - 32;\n};\n};\n",
+    "pkt TM {\n  id: 8 := 0x1;\n  block {\n    x: valof(id) * 8 - 32;\n  };\n};\n"
   );
 }
 
@@ -43,7 +43,7 @@ static int us15_tc02_fields_align_within_a_run(const TestArguments *args) {
   (void)args;
   return expect_format(
     "pkt TM {\n"
-    "  id: 8 = 1;\n"
+    "  id: 8 := 1;\n"
     "  # a comment\n"
     "  sequence: 16;\n"
     "\n"
@@ -57,7 +57,7 @@ static int us15_tc02_fields_align_within_a_run(const TestArguments *args) {
     "  x: 8;\n"
     "};\n",
     "pkt TM {\n"
-    "  id:       8 = 1;\n"
+    "  id:       8 := 1;\n"
     "  # a comment\n"
     "  sequence: 16;\n"
     "\n"
@@ -77,8 +77,8 @@ static int us15_tc02_fields_align_within_a_run(const TestArguments *args) {
 static int us15_tc03_trailing_comments_align(const TestArguments *args) {
   (void)args;
   return expect_format(
-    "pkt TM {\n  id: 8 = 1; # the id\n  sequence: 16;\n  flags: 8;     # flags\n};\n",
-    "pkt TM {\n  id:       8 = 1;  # the id\n  sequence: 16;\n  flags:    8;      # flags\n};\n"
+    "pkt TM {\n  id: 8 := 1; # the id\n  sequence: 16;\n  flags: 8;     # flags\n};\n",
+    "pkt TM {\n  id:       8 := 1;  # the id\n  sequence: 16;\n  flags:    8;       # flags\n};\n"
   );
 }
 
@@ -88,10 +88,10 @@ static int us15_tc04_attribute_groups(const TestArguments *args) {
   (void)args;
   return expect_format(
     "@bit_order: msb_first;\n@byte_order:little_endian;\n"
-    "[@byte_order:big_endian;]\npkt TM {\n  id: 8 = 1;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
+    "[@byte_order:big_endian;]\npkt TM {\n  id: 8 := 1;\n  [ @bit_order: lsb_first; @byte_order: little_endian; ]\n"
     "  x: 16;\n};\n",
     "@bit_order:  msb_first;\n@byte_order: little_endian;\n\n"
-    "[ @byte_order: big_endian; ]\npkt TM {\n  id: 8 = 1;\n  [\n    @bit_order:  lsb_first;\n"
+    "[ @byte_order: big_endian; ]\npkt TM {\n  id: 8 := 1;\n  [\n    @bit_order:  lsb_first;\n"
     "    @byte_order: little_endian;\n  ]\n  x:  16;\n};\n"
   );
 }
@@ -101,10 +101,10 @@ static int us15_tc04_attribute_groups(const TestArguments *args) {
 static int us15_tc05_blank_lines(const TestArguments *args) {
   (void)args;
   return expect_format(
-    "\n\n# header\n\n\n\ncal a(x) = x * 2;\ncal b(x) = x * 3;\n# about TM\npkt TM {\n\n  id: 8 = 1;\n\n\n\n  x: "
+    "\n\n# header\n\n\n\ncal a(x) = x * 2;\ncal b(x) = x * 3;\n# about TM\npkt TM {\n\n  id: 8 := 1;\n\n\n\n  x: "
     "8;\n\n};"
     "\n\n\n",
-    "# header\n\ncal a(x) = x * 2;\n\ncal b(x) = x * 3;\n\n# about TM\npkt TM {\n  id: 8 = 1;\n\n  x:  8;\n};\n"
+    "# header\n\ncal a(x) = x * 2;\n\ncal b(x) = x * 3;\n\n# about TM\npkt TM {\n  id: 8 := 1;\n\n  x:  8;\n};\n"
   );
 }
 
@@ -112,9 +112,9 @@ static int us15_tc05_blank_lines(const TestArguments *args) {
 static int us15_tc06_spelling_and_the_other_declarations(const TestArguments *args) {
   (void)args;
   int failure = expect_format(
-    "block H {\n  id: 0b1000 = 0B0001;\n};\n"
-    "pkt TM {\n  h : H{id=0xA;};\n  v: 0x10 = 0017;\n};\n",
-    "block H {\n  id: 0b1000 = 0B0001;\n};\n\npkt TM {\n  h: H { id = 0xA; };\n  v: 0x10 = 0017;\n};\n"
+    "block H {\n  id: 0b1000 := 0B0001;\n};\n"
+    "pkt TM {\n  h : H{id:=0xA;};\n  v: 0x10 := 0017;\n};\n",
+    "block H {\n  id: 0b1000 := 0B0001;\n};\n\npkt TM {\n  h: H { id := 0xA; };\n  v: 0x10 := 0017;\n};\n"
   );
   if (failure != 0) {
     return failure;
@@ -134,7 +134,7 @@ static int us15_tc07_every_comment_survives(const TestArguments *args) {
     "# first\n"
     "pkt TM { # opening\n"
     "  id: 8 # mid-field\n"
-    "    = 1;\n"
+    "    := 1;\n"
     "  [ # after bracket\n"
     "    @byte_order: little_endian;\n"
     "    # before close bracket\n"
@@ -168,7 +168,7 @@ static int us15_tc07_every_comment_survives(const TestArguments *args) {
 static int us15_tc08_no_tab_survives(const TestArguments *args) {
   (void)args;
   char *out = NULL;
-  if (framedsl_format("\tpkt\tTM\t{\n\t\tid:\t8\t=\t1;\n\t};\n", &out) != FRAMEDSL_OK) {
+  if (framedsl_format("\tpkt\tTM\t{\n\t\tid:\t8\t:=\t1;\n\t};\n", &out) != FRAMEDSL_OK) {
     return __LINE__;
   }
   int failure = strchr(out, '\t') == NULL ? 0 : __LINE__;
@@ -352,8 +352,8 @@ static bool file_is(const char *path, const char *content) {
 }
 
 static int us15_tc12_format_rewrites_in_place_and_check_writes_nothing(const TestArguments *args) {
-  const char *messy = "pkt TM {\n\tid:8=1;\n};\n";
-  const char *tidy = "pkt TM {\n  id: 8 = 1;\n};\n";
+  const char *messy = "pkt TM {\n\tid:8:=1;\n};\n";
+  const char *tidy = "pkt TM {\n  id: 8 := 1;\n};\n";
   char a[1024];
   char b[1024];
   if (!write_file(args, "a.fdsl", messy, a, sizeof(a)) || !write_file(args, "b.fdsl", tidy, b, sizeof(b))) {
@@ -383,9 +383,9 @@ static int us15_tc12_format_rewrites_in_place_and_check_writes_nothing(const Tes
 static int us15_tc13_standard_input_goes_to_standard_output(const TestArguments *args) {
   (void)args;
   char command[1024];
-  snprintf(command, sizeof(command), "printf 'pkt TM {\\n\\tid:8=1;\\n};' | %s - --format 2>/dev/null", FRAMEDSL_BIN);
+  snprintf(command, sizeof(command), "printf 'pkt TM {\\n\\tid:8:=1;\\n};' | %s - --format 2>/dev/null", FRAMEDSL_BIN);
   Run run = run_shell(command);
-  return run.status == 0 && strcmp(run.output, "pkt TM {\n  id: 8 = 1;\n};\n") == 0 ? 0 : __LINE__;
+  return run.status == 0 && strcmp(run.output, "pkt TM {\n  id: 8 := 1;\n};\n") == 0 ? 0 : __LINE__;
 }
 
 static int us15_tc14_a_broken_file_is_left_alone(const TestArguments *args) {
@@ -407,10 +407,10 @@ static int us15_tc14_a_broken_file_is_left_alone(const TestArguments *args) {
 static int us15_tc15_a_curve_beside_the_orders(const TestArguments *args) {
   (void)args;
   const char *expected =
-    "cal c(x) = x * 2;\n\npkt TM {\n  id: 8 = 1;\n  [\n    @cal:        c;\n    @bit_order:  lsb_first;\n"
+    "cal c(x) = x * 2;\n\npkt TM {\n  id: 8 := 1;\n  [\n    @cal:        c;\n    @bit_order:  lsb_first;\n"
     "    @byte_order: little_endian;\n  ]\n  v:  16;\n};\n";
   int failure = expect_format(
-    "cal c(x) = x * 2;\npkt TM {\n  id: 8 = 1;\n  [ @cal: c; @bit_order: lsb_first; @byte_order: little_endian; ] v: "
+    "cal c(x) = x * 2;\npkt TM {\n  id: 8 := 1;\n  [ @cal: c; @bit_order: lsb_first; @byte_order: little_endian; ] v: "
     "16;\n};\n",
     expected
   );

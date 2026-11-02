@@ -7,5 +7,5 @@ pkt TM_LATE {
   flag: 8;
   [ @if: valof(flag) == 1; ]
   ext:  16;
-  id:   8 = 0x64;
+  id:   8 := 0x64;
 };

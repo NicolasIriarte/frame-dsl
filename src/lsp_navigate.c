@@ -455,6 +455,9 @@ static const AstEnum *enum_of_value(const AstFile *ast, const AstPacket *contain
     if (field->fixed_name != NULL && field->fixed_line == line && field->fixed_column == column) {
       return enum_of(ast, field);
     }
+    if (field->default_name != NULL && field->default_line == line && field->default_column == column) {
+      return enum_of(ast, field);
+    }
     for (const AstOverride *override = field->overrides; override != NULL; override = override->next) {
       if (override->value_name != NULL && override->value_line == line && override->value_column == column) {
         const AstPacket *owner = NULL;
@@ -547,6 +550,9 @@ static void describe_layout(Buffer *buffer, const FramedslField *field) {
   if (field->has_fixed) {
     put(buffer, "- fixed at 0x%llX\n", (unsigned long long)field->fixed);
   }
+  if (field->has_default) {
+    put(buffer, "- defaults to 0x%llX\n", (unsigned long long)field->default_value);
+  }
   if (field->cal != NULL) {
     put(buffer, "- calibrated by `%s`\n", field->cal);
   }
@@ -564,6 +570,11 @@ static void describe_declaration(Buffer *buffer, const AstField *decl) {
   put(buffer, "- bit order: %s, byte order: %s\n", bit_order_name(decl->bit_order), byte_order_name(decl->byte_order));
   if (decl->has_fixed) {
     put(buffer, "- fixed at 0x%llX\n", (unsigned long long)decl->fixed);
+  }
+  if (decl->has_default) {
+    put(buffer, "- defaults to 0x%llX\n", (unsigned long long)decl->default_value);
+  } else if (decl->default_name != NULL) {
+    put(buffer, "- defaults to `%s`\n", decl->default_name);
   }
   if (decl->cal != NULL) {
     put(buffer, "- calibrated by `%s`\n", decl->cal);
@@ -709,7 +720,9 @@ static void describe_block(Buffer *buffer, const AstPacket *block) {
     } else if (fold(field->width, &width)) {
       put(buffer, "%s: %llu", field->name, (unsigned long long)width);
       if (field->has_fixed) {
-        put(buffer, " = 0x%llX", (unsigned long long)field->fixed);
+        put(buffer, " := 0x%llX", (unsigned long long)field->fixed);
+      } else if (field->has_default) {
+        put(buffer, " ?= 0x%llX", (unsigned long long)field->default_value);
       }
       put(buffer, ";\n");
     } else {
@@ -829,6 +842,11 @@ typedef enum {
   TARGET_ENUM_ITEM,
 } TargetKind;
 
+/* A field typed by an enum has a name where a width goes, as a use of a block does, and is a field. */
+static TargetKind instance_or_field(const AstFile *ast, const AstField *decl) {
+  return decl->block != NULL && ast_find_enum(ast, decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+}
+
 /* What a name under the cursor refers to, worked out once for hover and definition alike. */
 typedef struct {
   TargetKind kind;
@@ -901,7 +919,7 @@ static Target find_target(const Navigator *navigator, int line, int column) {
     /* A name in an enum's own braces, or one written as a field's value; not an attribute's value. */
     target.container = container_at(navigator, here->line, here->column, &target.container_is_block);
     target.enumeration = enum_around(ast, here->line, here->column);
-    if (target.enumeration == NULL && is(token(navigator, index - 1), TOK_EQUALS)) {
+    if (target.enumeration == NULL && token_is_value_operator(token(navigator, index - 1))) {
       target.enumeration = enum_of_value(ast, target.container, here->line, here->column);
     }
     if (target.enumeration == NULL) {
@@ -930,21 +948,20 @@ static Target find_target(const Navigator *navigator, int line, int column) {
       target.decl = field_in(target.container, name);
       target.decl_owner = target.container;
       if (target.decl != NULL) {
-        target.kind = target.decl->block != NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         snprintf(target.expanded, sizeof(target.expanded), "%s", name);
       }
     } else if (valof_path(navigator, index, path, sizeof(path))) {
       /* `valof(len)`, or a field of an instance, `valof(hdr.len)` (#12): each part goes where it names. */
       target.decl = resolve_path(ast, target.container, path, &target.decl_owner);
       if (target.decl != NULL) {
-        target.kind =
-          target.decl->block != NULL && ast_find_enum(ast, target.decl->block) == NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         snprintf(target.expanded, sizeof(target.expanded), "%s", path);
       }
     } else if ((use = override_at(target.container, here->line, here->column, path, sizeof(path))) != NULL) {
       target.decl = resolve_path(ast, find_block(ast, use->block), path, &target.decl_owner);
       if (target.decl != NULL) {
-        target.kind = target.decl->block != NULL ? TARGET_INSTANCE : TARGET_FIELD;
+        target.kind = instance_or_field(ast, target.decl);
         if (use->anonymous) {
           snprintf(target.expanded, sizeof(target.expanded), "%s", path);
         } else {
@@ -1263,7 +1280,7 @@ NavCompletion *nav_complete(const Navigator *navigator, int line, int column, si
         );
       }
     }
-  } else if (is(previous, TOK_EQUALS) && depth > 0) {
+  } else if (token_is_value_operator(previous) && depth > 0) {
     offer_values(&completions, navigator, before);
   } else if (is(previous, TOK_EQUAL_EQUAL) || is(previous, TOK_NOT_EQUAL)) {
     /* `@if: valof(kind) == ` (#12): the names of the compared field's enum, when it has one. */

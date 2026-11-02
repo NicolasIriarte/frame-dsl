@@ -6,7 +6,7 @@
 @byte_order: big_endian;
 
 pkt BYTE_ALIGNED {
-  hdr:  8 = 0xAA;
+  hdr:  8 := 0xAA;
   seq:  16;
   tail: 8;
 };

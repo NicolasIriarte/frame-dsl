@@ -11,18 +11,18 @@
 #include "testsuite.h"
 
 static const char *const COMPOSED =
-  "block Header { id: 8; sequence: 16; version: 4 = 0x1; flags: 4; };\n"
+  "block Header { id: 8; sequence: 16; version: 4 := 0x1; flags: 4; };\n"
   "block Vector3 { x: 16; y: 16; z: 16; };\n"
   "pkt TM_IMU {\n"
-  "  hdr:   Header { id = 0x83; flags = 0x3; };\n"
+  "  hdr:   Header { id := 0x83; flags := 0x3; };\n"
   "  accel: Vector3;\n"
   "  gyro:  Vector3;\n"
   "};\n"
-  "pkt TM_ACK { hdr: Header { id = 0x81; }; result: 8; };\n";
+  "pkt TM_ACK { hdr: Header { id := 0x81; }; result: 8; };\n";
 
 static const char *const WRITTEN_OUT =
   "pkt TM_IMU {\n"
-  "  id: 8 = 0x83; sequence: 16; version: 4 = 0x1; flags: 4 = 0x3;\n"
+  "  id: 8 := 0x83; sequence: 16; version: 4 := 0x1; flags: 4 := 0x3;\n"
   "  ax: 16; ay: 16; az: 16;\n"
   "  gx: 16; gy: 16; gz: 16;\n"
   "};\n";
@@ -197,8 +197,8 @@ static int us10_tc04_dotted_names_encode_and_the_tool_shows_them(const TestArgum
  * each name is found only in the form it belongs to. The bytes are the same either way. */
 static const char *const PASTED =
   "block Header { id: 8; sequence: 16; };\n"
-  "pkt TM_ACK1 { header: Header { id = 0x81; }; result: 8; };\n"
-  "pkt TM_ACK2 { Header { id = 0x82; }; result: 8; };\n";
+  "pkt TM_ACK1 { header: Header { id := 0x81; }; result: 8; };\n"
+  "pkt TM_ACK2 { Header { id := 0x82; }; result: 8; };\n";
 
 static int us10_tc05_a_pasted_block_is_addressed_without_an_instance(const TestArguments *args) {
   (void)args;
@@ -253,8 +253,8 @@ static int us10_tc06_an_imported_block_can_be_pasted(const TestArguments *args) 
         "device.fdsl",
         "import \"link.fdsl\";\n"
         "import \"link.fdsl\" as link;\n"
-        "pkt TM_A { Header { id = 0x01; }; tail: 8; };\n"
-        "pkt TM_B { link.Header { id = 0x02; }; };\n"
+        "pkt TM_A { Header { id := 0x01; }; tail: 8; };\n"
+        "pkt TM_B { link.Header { id := 0x02; }; };\n"
       )) {
     FORCE_FAILURE();
   }

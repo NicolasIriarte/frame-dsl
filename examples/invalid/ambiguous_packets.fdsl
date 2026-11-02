@@ -7,11 +7,11 @@
 # The error should name the pair, not just say a file was ambiguous.
 
 pkt TM_ALPHA {
-  hdr: 8 = 0xAA;
+  hdr: 8 := 0xAA;
   n:   16;
 };
 
 pkt TM_BETA {
-  hdr: 8 = 0xAA;
+  hdr: 8 := 0xAA;
   m:   32;
 };

@@ -9,7 +9,7 @@ enum Kind: 8 {
 };
 
 pkt TM_KIND {
-  id:   8 = 0x62;
+  id:   8 := 0x62;
   kind: Kind;
   [ @if: valof(kind) == 1; ]
   code: 16;

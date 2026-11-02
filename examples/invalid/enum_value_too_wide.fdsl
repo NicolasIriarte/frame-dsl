@@ -11,6 +11,6 @@ enum TxLevel: 2 {
 };
 
 pkt TM_ANTENNA {
-  id:    6 = 0x08;
+  id:    6 := 0x08;
   level: TxLevel;
 };

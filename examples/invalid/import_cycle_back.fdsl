@@ -7,5 +7,5 @@ block Trailer {
 };
 
 pkt TC_PONG {
-  id: 8 = 0x02;
+  id: 8 := 0x02;
 };

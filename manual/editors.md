@@ -44,7 +44,7 @@ belongs to, so a file being edited before it is saved behaves as it will once sa
   work out by reading, and they come from the same layout
   the runtime uses -- so they need the file to load. While it has errors the hover says what the
   declaration alone says, and that the offset is known once it loads.
-- **A field inside an override**, `hdr: Header { id = 2; }`: the same, for `hdr.id` in this packet.
+- **A field inside an override**, `hdr: Header { id := 2; }`: the same, for `hdr.id` in this packet.
 - **An instance**, `hdr` or the `axes` of `axes.z`: the block it is, and the bits it covers.
 - **A field declared in a block**: its width and orders. It has no offset until a packet uses it.
 - **A `valof()` target**: the field it names -- each part of `valof(hdr.flag)`, the instance and its

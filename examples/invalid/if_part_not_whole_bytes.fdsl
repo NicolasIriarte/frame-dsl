@@ -4,7 +4,7 @@
 # form. A conditional part must be whole bytes on its own.
 
 pkt TM_EXT {
-  id:   8 = 0x61;
+  id:   8 := 0x61;
   flag: 4;
   [ @if: valof(flag) == 1; ]
   ext:  4;

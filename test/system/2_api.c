@@ -11,13 +11,13 @@
 
 #define DEFINITION_A                                                                                                   \
   "pkt TM_A {\n"                                                                                                       \
-  "  hdr: 8 = 0xAA;\n"                                                                                                 \
+  "  hdr: 8 := 0xAA;\n"                                                                                                \
   "  len: 32;\n"                                                                                                       \
   "  data[128]: valof(len) * 8;\n"                                                                                     \
   "  crc: 16;\n"                                                                                                       \
   "};\n"
 
-#define DEFINITION_B "pkt TM_B { hdr: 8 = 0xBB; seq: 16; };\n"
+#define DEFINITION_B "pkt TM_B { hdr: 8 := 0xBB; seq: 16; };\n"
 
 /* Nothing is global, so a program can speak two protocols at once. This is the case that would have
  * been impossible under the original sketch, where the API had no handle at all. */
@@ -53,7 +53,7 @@ static int us2_tc02_reports_every_problem_not_only_the_first(const TestArguments
 
   /* Two packets, each with its own mistake: a fixed value too wide, and no discriminator at all. */
   FramedslResult *result = framedsl_load_string(
-    "pkt A { k: 4 = 0xFF; b: 16; };\n"
+    "pkt A { k: 4 := 0xFF; b: 16; };\n"
     "pkt B { x: 8; y: 8; };\n",
     "two.fdsl"
   );
@@ -181,7 +181,7 @@ static int us2_tc07_reports_resolved_bit_and_byte_order(const TestArguments *arg
     "@byte_order: big_endian;\n"
     "[ @byte_order: little_endian; ]\n"
     "pkt P {\n"
-    "  hdr: 8 = 0x01;\n"
+    "  hdr: 8 := 0x01;\n"
     "  a: 32;\n"
     "  [ @byte_order: big_endian; ] b: 32;\n"
     "  [ @bit_order: lsb_first; ] c: 4;\n"

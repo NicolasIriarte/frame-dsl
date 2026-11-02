@@ -51,6 +51,7 @@ class Structs(unittest.TestCase):
         self.assertEqual(marker.name, b"marker")
         self.assertTrue(marker.has_fixed)
         self.assertEqual(marker.fixed, 0xA)
+        self.assertFalse(marker.has_default)
         self.assertEqual(marker.width_bits, 4)
         self.assertEqual(reading.name, b"reading")
         self.assertFalse(reading.variable)
@@ -65,6 +66,21 @@ class Structs(unittest.TestCase):
         self.assertEqual(reading.member_count, 0)
         self.assertIsNone(reading.enumeration)
         _native.framedsl_result_free(result)
+
+    def test_a_field_reports_its_default(self):
+        result, definition = load("block B { m: 8 ?= 3; };\npkt P { id: 8 := 1; d: 8 ?= 2; o: 8; b: B[2]; };")
+        self.addCleanup(_native.framedsl_result_free, result)
+        field = _native.Field()
+        self.assertTrue(_native.framedsl_field(definition, 0, 1, ctypes.byref(field)))
+        self.assertTrue(field.has_default)
+        self.assertEqual(field.default_value, 2)
+        self.assertFalse(field.has_fixed)
+        self.assertEqual(field.bit_order, 0)
+        self.assertTrue(_native.framedsl_field(definition, 0, 2, ctypes.byref(field)))
+        self.assertFalse(field.has_default)
+        self.assertTrue(_native.framedsl_member(definition, 0, 3, 0, ctypes.byref(field)))
+        self.assertTrue(field.has_default)
+        self.assertEqual(field.default_value, 3)
 
     def test_a_field_typed_by_an_enum_names_it_last(self):
         # Added after the first members (#11), so a Field missing it or holding it out of order reads it wrong.
@@ -116,7 +132,7 @@ class Structs(unittest.TestCase):
     def test_a_diagnostic_reads_back_every_member(self):
         # A misspelt attribute: an error with a position, a span and a suggested fix. It is a syntax
         # error, so its check is 0; test_frame.py covers numbered checks through the public API.
-        result, _ = load("@bit_order: msb_first;\n@byte_ordr: big_endian;\npkt P { id: 8 = 1; };\n")
+        result, _ = load("@bit_order: msb_first;\n@byte_ordr: big_endian;\npkt P { id: 8 := 1; };\n")
         self.assertFalse(_native.framedsl_ok(result))
         self.assertEqual(_native.framedsl_status(result), _native.ERROR_INVALID)
         self.assertEqual(_native.framedsl_source_name(result), b"test.fdsl")
@@ -152,7 +168,7 @@ class Structs(unittest.TestCase):
 
 class Calls(unittest.TestCase):
     def test_encode_into_reports_the_size_and_leaves_a_short_buffer_alone(self):
-        result, definition = load("pkt P { id: 8 = 0xAA; value: 16; };\n")
+        result, definition = load("pkt P { id: 8 := 0xAA; value: 16; };\n")
         frame = _native.framedsl_frame_new(definition)
         field = _native.FieldId()
         self.assertTrue(_native.framedsl_find(definition, b"P.value", ctypes.byref(field)))
@@ -173,7 +189,7 @@ class Calls(unittest.TestCase):
 
     def test_format_returns_memory_freed_with_the_c_free(self):
         out = ctypes.c_void_p()
-        self.assertEqual(_native.framedsl_format(b"pkt P{id:8=1;};", ctypes.byref(out)), _native.OK)
+        self.assertEqual(_native.framedsl_format(b"pkt P{id:8:=1;};", ctypes.byref(out)), _native.OK)
         self.assertIn(b"pkt P {", ctypes.string_at(out))
         _native.free(out)
 

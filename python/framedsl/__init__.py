@@ -266,7 +266,7 @@ class Definition:
             _native.framedsl_result_free(result)
 
     def frame(self):
-        """A new frame: every field zero, one allocation, reused for as long as it is kept."""
+        """A new frame: every field zero or its default, one allocation, reused for as long as it is kept."""
         return Frame(self)
 
     @property
@@ -393,7 +393,7 @@ class Frame:
         return _Names(self)
 
     def reset(self):
-        """Every field back to zero, as a new frame is."""
+        """Every field back to zero or its default, as a new frame is."""
         _native.framedsl_frame_reset(self._handle)
 
     def __getitem__(self, dotted):

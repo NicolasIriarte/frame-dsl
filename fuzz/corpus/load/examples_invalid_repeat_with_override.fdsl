@@ -9,6 +9,6 @@ block Point {
 };
 
 pkt TM_POINTS {
-  id:     8 = 0x41;
-  points: Point[2] { kind = 1; };
+  id:     8 := 0x41;
+  points: Point[2] { kind := 1; };
 };

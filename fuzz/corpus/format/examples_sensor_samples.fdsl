@@ -20,7 +20,7 @@ block Header {
 # One reading: which channel, and its raw count. The marker is fixed, so every element on the wire
 # carries it whatever the caller set.
 block Sample {
-  marker:  4 = 0xA;
+  marker:  4 := 0xA;
   channel: 4;
   [
     @byte_order: little_endian;
@@ -30,13 +30,13 @@ block Sample {
 };
 
 pkt TM_SAMPLES {
-  hdr:         Header { id = 0x30; };
+  hdr:         Header { id := 0x30; };
   count:       8;
   # At most 16 readings: 16 elements of 3 bytes.
   samples[48]: Sample[valof(count)];
 };
 
 pkt TM_CALIBRATION {
-  hdr:    Header { id = 0x31; };
+  hdr:    Header { id := 0x31; };
   points: Sample[2];
 };

@@ -118,7 +118,7 @@ static char *family(unsigned count) {
   char *source = malloc(capacity);
   size_t used = 0;
   for (unsigned p = 0; source != NULL && p < count; ++p) {
-    used += (size_t)snprintf(source + used, capacity - used, "pkt P%u { id: 16 = %u; a: 16; b: 16; };\n", p, p + 1);
+    used += (size_t)snprintf(source + used, capacity - used, "pkt P%u { id: 16 := %u; a: 16; b: 16; };\n", p, p + 1);
   }
   return source;
 }
@@ -165,10 +165,10 @@ static int us26_tc01_every_packet_of_a_large_family_is_found(const TestArguments
 }
 
 static const char *const SUBTYPES =
-  "pkt TC_A { type: 8 = 0x1C; seq: 16; subtype: 8 = 0x40; a: 32; };\n"
-  "pkt TC_B { type: 8 = 0x1C; seq: 16; subtype: 8 = 0x41; a: 8; b: 8; };\n"
-  "pkt TC_C { type: 8 = 0x1C; seq: 16; subtype: 8 = 0x42; };\n"
-  "pkt TM_X { type: 8 = 0x2D; n: 8; };\n";
+  "pkt TC_A { type: 8 := 0x1C; seq: 16; subtype: 8 := 0x40; a: 32; };\n"
+  "pkt TC_B { type: 8 := 0x1C; seq: 16; subtype: 8 := 0x41; a: 8; b: 8; };\n"
+  "pkt TC_C { type: 8 := 0x1C; seq: 16; subtype: 8 := 0x42; };\n"
+  "pkt TM_X { type: 8 := 0x2D; n: 8; };\n";
 
 /* Packets that share their first fixed value and are told apart three bytes in: they share a group,
  * and the full match settles which. */
@@ -211,9 +211,9 @@ static int us26_tc02_packets_told_apart_further_in(const TestArguments *args) {
 /* Three packets each pair of which contradicts on a different bit, so no bit is pinned by all three:
  * there is nothing to key on, and every packet is tried, as before. */
 static const char *const NO_SHARED_BIT =
-  "pkt A { x: 1 = 1; y: 1 = 1; rest: 6; };\n"
-  "pkt B { x: 1 = 0; pad: 1; z: 1 = 1; rest: 5; };\n"
-  "pkt C { pad: 1; y: 1 = 0; z: 1 = 0; rest: 5; };\n";
+  "pkt A { x: 1 := 1; y: 1 := 1; rest: 6; };\n"
+  "pkt B { x: 1 := 0; pad: 1; z: 1 := 1; rest: 5; };\n"
+  "pkt C { pad: 1; y: 1 := 0; z: 1 := 0; rest: 5; };\n";
 
 static int us26_tc03_packets_sharing_no_fixed_bit_are_still_found(const TestArguments *args) {
   (void)args;
@@ -244,11 +244,11 @@ static int us26_tc04_decoding_agrees_with_trying_every_packet(const TestArgument
     SUBTYPES,
     NO_SHARED_BIT,
     /* All three pin the top nibble; two share its value and differ in the rest of the byte. */
-    "pkt A { id: 8 = 0x01; n: 8; };\npkt B { id: 8 = 0x02; n: 16; };\npkt C { k: 4 = 0x3; m: 4; n: 8; };\n",
+    "pkt A { id: 8 := 0x01; n: 8; };\npkt B { id: 8 := 0x02; n: 16; };\npkt C { k: 4 := 0x3; m: 4; n: 8; };\n",
     /* A CCSDS family: version, type and apid pinned, the apid crossing a byte boundary. */
-    "pkt T1 { version: 3 = 0; type: 1 = 0; sec: 1; apid: 11 = 0x101; seq: 16; len: 16; d: 8; };\n"
-    "pkt T2 { version: 3 = 0; type: 1 = 0; sec: 1; apid: 11 = 0x102; seq: 16; len: 16; d: 16; };\n"
-    "pkt T3 { version: 3 = 0; type: 1 = 1; sec: 1; apid: 11 = 0x101; seq: 16; len: 16; };\n",
+    "pkt T1 { version: 3 := 0; type: 1 := 0; sec: 1; apid: 11 := 0x101; seq: 16; len: 16; d: 8; };\n"
+    "pkt T2 { version: 3 := 0; type: 1 := 0; sec: 1; apid: 11 := 0x102; seq: 16; len: 16; d: 16; };\n"
+    "pkt T3 { version: 3 := 0; type: 1 := 1; sec: 1; apid: 11 := 0x101; seq: 16; len: 16; };\n",
   };
   for (size_t s = 0; s < sizeof(sources) / sizeof(*sources) && failure == 0; ++s) {
     failure = agrees_with_reference(sources[s], 20000);

@@ -5,7 +5,7 @@
 
 [ @byte_order: little_endian; ]      # the whole packet
 pkt TM_MIXED {
-  marker: 72 = 0xCAFE;               # lit count:  32;
+  marker: 72 := 0xCAFE;               # lit count:  32;
 
   value:  32;                        # little_endian again
 

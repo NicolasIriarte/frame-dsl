@@ -15,7 +15,7 @@ are sent, or how they travel -- see [`docs/scope.md`](../docs/scope.md).
 @byte_order: big_endian;
 
 pkt TM_DATAGRAM_02 {
-  some_header: 8 = 0xAA;        # fixed value: identifies this packet
+  some_header: 8 := 0xAA;       # fixed value: identifies this packet
   len:         32;              # counts payload bytes
   data[128]:   valof(len) * 8;  # 128 bytes of arena; width in bits, per frame
   crc:         16;
@@ -35,10 +35,10 @@ packet must declare at least one field.
 
 ## Fields
 
-A field is a name, a width **in bits**, and an optional fixed value:
+A field is a name, a width **in bits**, and an optional value, fixed or a default:
 
 ```
-name[<reservation>]: <width> [= <value>];
+name[<reservation>]: <width> [:= <value> | ?= <value>];
 ```
 
 Widths are always bits. The bracketed reservation is the one number in the language that is not --
@@ -60,13 +60,13 @@ the frame requires. What a *packet* must do is add up to a multiple of 8 bits.
 
 ```
 pkt TM_SPACE_PACKET {
-  version:      3 = 0b000;
-  type:         1 = 0b0;
+  version:      3 := 0b000;
+  type:         1 := 0b0;
   sec_hdr_flag: 1;
-  apid:        11;
+  apid:         11;
   seq_flags:    2;
-  seq_count:   14;
-  data_length: 16;      # 48 bits: six bytes
+  seq_count:    14;
+  data_length:  16;  # 48 bits: six bytes
 };
 ```
 
@@ -100,9 +100,9 @@ multiple of eight where it can be seen.
 ### Integers accept three bases
 
 ```
-flags: 8 = 0xAA;      # hex
-mode:  4 = 0b1010;    # binary
-count: 8 = 170;       # decimal
+flags: 8 := 0xAA;      # hex
+mode:  4 := 0b1010;    # binary
+count: 8 := 170;       # decimal
 ```
 
 ### Scalars and bit strings
@@ -118,12 +118,12 @@ The rule is the width alone. Nothing else has to be declared.
 
 ## Fixed values, and how packets are told apart
 
-A field with `= <value>` goes out with that value, and the decoder uses it to recognise the packet
+A field with `:= <value>` goes out with that value, and the decoder uses it to recognise the packet
 wherever it can look for it. Further on -- after a `valof()`-sized or a conditional field -- it
 identifies nothing and nothing checks it: a decoded frame's field reads what arrived.
 
 ```
-some_header: 8 = 0xAA;
+some_header: 8 := 0xAA;
 ```
 
 **Every packet must have at least one fixed-value field**, somewhere a decoder knows to look: before
@@ -136,18 +136,59 @@ message naming the pair. Two packets are distinguishable when there is some posi
 to a fixed value and they disagree there:
 
 ```
-pkt A { hdr: 8 = 0xAA; body: 16; };
-pkt B { hdr: 8 = 0xBB; body: 16; };        # fine: differ at bits 0..7
+pkt A { hdr: 8 := 0xAA; body: 16; };
+pkt B { hdr: 8 := 0xBB; body: 16; };        # fine: differ at bits 0..7
 
-pkt C { hdr: 8 = 0xAA; kind: 8 = 0x01; };
-pkt D { hdr: 8 = 0xAA; kind: 8 = 0x02; };  # fine: differ at bits 8..15
+pkt C { hdr: 8 := 0xAA; kind: 8 := 0x01; };
+pkt D { hdr: 8 := 0xAA; kind: 8 := 0x02; };  # fine: differ at bits 8..15
 
-pkt E { hdr: 8 = 0xAA; n: 16; };
-pkt F { hdr: 8 = 0xAA; m: 32; };           # REJECTED: nothing separates them
+pkt E { hdr: 8 := 0xAA; n: 16; };
+pkt F { hdr: 8 := 0xAA; m: 32; };           # REJECTED: nothing separates them
 ```
 
-A fixed value must fit in its field's width: `x: 4 = 0xFF;` is an error. On a field typed by an enum,
+A fixed value must fit in its field's width: `x: 4 := 0xFF;` is an error. On a field typed by an enum,
 a fixed value is one of the enum's names -- see [Enumerations](#enumerations).
+
+`=` is not how a field gets a value: it names something, as `MAX = 7;` does in an enum and `cal volts(raw)
+= ...;` does for a curve. On a field or in an override it is an error, and the error comes with a fix
+that writes `:=`.
+
+## Default values
+
+A field with `?= <value>` holds that value until something replaces it, the way `?=` reads in Make: this,
+unless somebody set it.
+
+```
+enum Health: 8 { FAULT; OK; };
+
+pkt TM_HK {
+  id:    8      := 0x40;
+  spare: 8      ?= 0;
+  power: Health ?= OK;
+  temp:  Health ?= OK;
+};
+```
+
+A frame starts with `40 00 01 01`. A program can set `temp` to `FAULT` like any other field, and a reset
+brings `OK` back. Between a default and a fixed value, the difference is what they say about a frame:
+
+- **A default identifies nothing.** It takes no part in telling packets apart, so a packet with nothing
+  but defaults has no discriminator (check 11), and two packets told apart only by a default are refused
+  (check 12). A frame carrying another value decodes, and reads what arrived.
+- **A default can be replaced.** Setting a fixed field is `FRAMEDSL_ERROR_FIXED`. Setting a field with a
+  default is what it is for.
+
+It is an ordinary value to everything else. On a conditional field it is written when the condition holds,
+and goes back to its default when a decode did not carry the field. A width, a count or a condition reads
+it: with `count: 8 ?= 4;`, an untouched frame has four elements. A length field whose default disagrees with
+its data stays `FRAMEDSL_ERROR_RANGE` on encode.
+
+**It is a raw value**, as a fixed value is, and goes through no curve. It must fit its field (check 8), the
+field must be a scalar, and on a field typed by an enum it is one of the enum's names (check 39). A field has
+one value: `:=` and `?=` together do not parse.
+
+**A repeated block's default is every element's**, and one element differs from the others only from code.
+A use replaces a default with the same words as anything else, as the next section shows.
 
 ## Fields whose length comes from another field
 
@@ -230,17 +271,17 @@ first declaration of any kind -- `pkt`, `block`, `cal` or `enum`. It is the file
 and applies to that declaration only.
 
 ```
-@bit_order:  msb_first;              # the file default
+@bit_order:  msb_first;  # the file default
 @byte_order: big_endian;
 
-[ @byte_order: little_endian; ]      # the whole packet
+[ @byte_order: little_endian; ]  # the whole packet
 pkt TM_LITTLE {
-  hdr: 8 = 0xC3;
+  hdr:   8 := 0xC3;
 
-  [ @byte_order: big_endian; ]       # this field, and not the next one
+  [ @byte_order: big_endian; ]  # this field, and not the next one
   count: 32;
 
-  value: 32;                         # little_endian again, from the packet
+  value: 32;                    # little_endian again, from the packet
 };
 ```
 
@@ -258,7 +299,7 @@ declaration you can attach a group to:
 
 ```
 pkt TM_SUBSYSTEM {
-  hdr: 8 = 0xAA;
+  hdr: 8 := 0xAA;
   seq: 16;
 
   [ @byte_order: little_endian; ]
@@ -268,7 +309,7 @@ pkt TM_SUBSYSTEM {
     temp:    16;
   };
 
-  crc: 16;                           # big_endian again
+  crc: 16;  # big_endian again
 };
 ```
 
@@ -308,10 +349,10 @@ Writing it on one that is not is an error rather than a silently ignored line:
 
 ```
 pkt TM_ODD {
-  hdr: 8 = 0xAA;
+  hdr:  8 := 0xAA;
 
-  [ @byte_order: little_endian; ]    # REJECTED: 15 bits, starting at bit 8
-  seq: 15;
+  [ @byte_order: little_endian; ]  # REJECTED: 15 bits, starting at bit 8
+  seq:  15;
 
   tail: 1;
 };
@@ -332,20 +373,20 @@ is the block's name:
 block Header {
   id:       8;              # left open: every packet fixes its own
   sequence: 16;
-  version:  4 = 0x1;
+  version:  4 := 0x1;
   flags:    4;
 };
 
 block Vector3 { x: 16; y: 16; z: 16; };
 
 pkt TC_SET_LIMIT {
-  hdr:     Header { id = 0x02; };
+  hdr:     Header { id := 0x02; };
   channel: 8;
   limit:   32;
 };
 
 pkt TM_IMU {
-  hdr:   Header { id = 0x83; flags = 0x3; };
+  hdr:   Header { id := 0x83; flags := 0x3; };
   accel: Vector3;
   gyro:  Vector3;
 };
@@ -360,18 +401,18 @@ their own names, as if they had been written out where the use is:
 
 ```
 pkt TM_ACK1 {
-  header: Header { id = 0x81; };    # TM_ACK1.header.sequence
+  header: Header { id := 0x81; };  # TM_ACK1.header.sequence
   result: 8;
 };
 
 pkt TM_ACK2 {
-  Header { id = 0x82; };            # TM_ACK2.sequence
+  Header { id := 0x82; };  # TM_ACK2.sequence
   result: 8;
 };
 
 pkt TM_TIMED {
-  Header { id = 0x83; };
-  Timestamp;                        # no overrides: no braces needed either
+  Header { id := 0x83; };
+  Timestamp;  # no overrides: no braces needed either
 };
 ```
 
@@ -382,10 +423,12 @@ pasted field may not share a name with another field of the packet (check 2) -- 
 at the use, which is the line to change. A block may be pasted into another block's declaration too,
 and then its fields are that block's own fields wherever it is used.
 
-**Overrides.** `{ id = 0x02; }` fixes a field for this use only -- which is how one shared header
+**Overrides.** `{ id := 0x02; }` fixes a field for this use only -- which is how one shared header
 becomes each packet's discriminator. It may replace a value the block fixed, and reaches into a
-nested instance by its path, `{ inner.id = 3; }`. An override fixes a value and nothing else: a
-block's widths and field order are the same in every packet that uses it.
+nested instance by its path, `{ inner.id := 3; }`. `{ state ?= FAULT; }` gives a default in the same way,
+and may replace a value the block fixed: what the use writes is what the field becomes. An override
+sets a value and nothing else: a block's widths and field order are the same in every packet that
+uses it.
 
 **Layout is decided where the block is declared.** Its attributes -- bit order, byte order, `@cal` on
 its fields -- come from the file default and from what is written inside it, not from the packet it
@@ -419,16 +462,16 @@ written with the count in brackets after the block's name:
 
 ```
 block Sample {
-  marker:  4 = 0xA;
+  marker:  4 := 0xA;
   channel: 4;
   reading: 16;
 };
 
 pkt TM_SAMPLES {
-  id:          8 = 0x30;
+  id:          8 := 0x30;
   count:       8;
-  samples[48]: Sample[valof(count)];   # as many as `count` says, at most 16
-  points:      Sample[2];              # always two
+  samples[48]: Sample[valof(count)];  # as many as `count` says, at most 16
+  points:      Sample[2];             # always two
 };
 ```
 
@@ -473,25 +516,25 @@ cal volts(raw) = raw * 3.3 / 4095;
 and imported by every file that needs it:
 
 ```
-import "common/link.fdsl";                   # Header, Trailer, volts
-import "common/sensors.fdsl" as sensors;     # sensors.Header, sensors.celsius
+import "common/link.fdsl";                # Header, Trailer, volts
+import "common/sensors.fdsl" as sensors;  # sensors.Header, sensors.celsius
 
 @byte_order: little_endian;
 
 pkt TM_TEMPERATURE {
-  hdr:     Header { id = 0x82; };
-  reading: sensors.Header { kind = 0x1; };
-  [ @cal: sensors.celsius; ] board: 16;
+  hdr:     Header { id := 0x82; };
+  reading: sensors.Header { kind := 0x1; };
+  [ @cal: sensors.celsius; ]
+  board:   16;
   end:     Trailer;
-};
-```
+};```
 
 - **Flat or named.** `import "path";` brings the file's names in as they are. `import "path" as name;`
   brings them in as `name.X` instead, and only that way -- the form for two libraries that both
   declare a `Header`. Two *different* declarations of one name reaching a file flat is an error.
 - **Blocks, calibrations and enums only.** An imported file's packets are checked but not imported, so
   importing a file never changes which packets a definition decodes. A file can be a library and a
-  protocol at once. An imported enum is a type like a local one, `mode: vendor.Mode = TX;`: the type is
+  protocol at once. An imported enum is a type like a local one, `mode: vendor.Mode := TX;`: the type is
   qualified, its names never are.
 - **Paths are relative to the importing file**, so a tree of definition files can be moved as a
   whole. A definition loaded from a string with `framedsl_load_string()` resolves them from the
@@ -522,12 +565,12 @@ operator wants is volts. A calibration is a named function from one to the other
 level with `cal` and attached to a field with `@cal:`:
 
 ```
-cal volts(raw)   = raw * 3.3 / 4095;
-cal current(raw) = volts(raw) / 0.05;              # a calibration may call another
-cal ohms(raw)    = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);
+cal volts(raw) = raw * 3.3 / 4095;
+cal current(raw) = volts(raw) / 0.05;  # a calibration may call another
+cal ohms(raw) = 10000 * raw / (4095 - raw) inverse (eng) = 4095 * eng / (10000 + eng);
 
 pkt TM_POWER {
-  id:     8 = 0x10;
+  id:     8 := 0x10;
   [ @cal: volts; ]
   bus:    12;
   [ @cal: ohms; ]
@@ -604,14 +647,14 @@ block Header {
 };
 
 pkt TM_ANTENNA {
-  hdr:   Header { type = HK; };
+  hdr:   Header { type := HK; };
   level: TxLevel;
   pad:   5;
 };
 
 pkt TM_EVENT {
-  hdr:  Header { type = EVENT; };
-  code: PktType = EVENT;
+  hdr:  Header { type := EVENT; };
+  code: PktType := EVENT;
   pad:  4;
 };
 ```
@@ -626,7 +669,7 @@ each must fit the width, written or counted (check 38). Names are unique within 
 two enums may both have an `OFF`.
 
 **A value is a name.** A fixed value or an override on a field typed by an enum is one of that enum's
-names, written bare -- `code: PktType = EVENT;`, `Header { type = HK; }` -- since the field's type
+names, written bare -- `code: PktType := EVENT;`, `Header { type := HK; }` -- since the field's type
 already says which enum it is from. A number there is refused, and so is another enum's name (check 39);
 so is a name on a field that is not typed by an enum. That is what makes a discriminator read as what it
 means, and the checks that tell packets apart see the number behind it like any other fixed value.
@@ -639,7 +682,7 @@ enum Mode: 16 { IDLE = 0x0100; RUN; };
 
 [ @byte_order: little_endian; ]
 pkt TM_MODE {
-  id:   8 = 0x40;
+  id:   8 := 0x40;
   mode: Mode;                               # little-endian, from the packet
 };
 ```
@@ -700,7 +743,7 @@ block Reading {
 };
 
 pkt TM_OPTIONAL {
-  hdr:  Header { id = 0x50; };
+  hdr:  Header { id := 0x50; };
   [ @if: valof(hdr.sec_hdr) == 1; ]
   time: Time;  # TM_OPTIONAL.time.seconds, present only with a secondary header
   [ @if: valof(hdr.kind) != IDLE; ]
@@ -840,8 +883,8 @@ review never has to discuss it. It is the layout every file under `examples/` is
 
 [ @byte_order: big_endian; ]
 pkt TM_STATUS {
-  id:       8 = 0x10;  # the discriminator
-  hdr:      Header { flags = 0x3; };
+  id:       8 := 0x10;  # the discriminator
+  hdr:      Header { flags := 0x3; };
   size:     8;
   data[64]: valof(size) * 8;
   [
@@ -861,13 +904,25 @@ pkt TM_STATUS {
   for every field of a *run*: the fields directly inside one packet or block. Blank lines, comments
   and attribute groups do not end a run; a nested `block { }` does, so the fields after it align on
   their own. File settings align on their values the same way, and so do the settings of a group.
+- **Values form a column.** In a run, `:=` or `?=` starts in one column on every line with a value, past
+  the widest width among those lines. A line with no value neither sets that column nor follows it, and
+  a use's overrides stay on its line and take no part:
+
+  ```
+  pkt TM_HK {
+    id:       8      := 0x40;
+    power:    Health ?= OK;
+    channels: Channel[4];
+  };
+  ```
+
 - **Trailing comments align too**, two spaces past the longest line of the run that has one.
 - **One setting in a group stays on one line**, `[ @byte_order: big_endian; ]`; more than one is one
   setting per line. A condition is spaced as a width is, with a space around every operator and the
   parentheses kept as written, `[ @if: (valof(a) & 0x4 != 0 || valof(b) >= 2) && valof(c) == 1; ]`.
-- **Spacing**: one space either side of `=` and of every arithmetic operator, none inside
+- **Spacing**: one space either side of `=`, `:=`, `?=` and of every arithmetic operator, none inside
   parentheses, none between `valof` or a calibration's name and its parenthesis. A use's overrides go
-  on its line: `hdr: Header { id = 0x02; flags = 0x3; };`. A calibration is one line.
+  on its line: `hdr: Header { id := 0x02; flags := 0x3; };`. A calibration is one line.
 - **An enum** has one name to a line, a level in, like a block's fields; the names with a value align on
   their `=`, and a counted name is only itself.
 - **Blank lines**: at most one in a row, none just inside a brace, exactly one between top-level

@@ -18,13 +18,13 @@
   "@bit_order:  msb_first;\n"                                                                                          \
   "@byte_order: big_endian;\n"                                                                                         \
   "pkt TM_A {\n"                                                                                                       \
-  "  hdr:       8 = 0xAA;\n"                                                                                           \
+  "  hdr:       8 := 0xAA;\n"                                                                                          \
   "  len:      32;\n"                                                                                                  \
   "  wide:     72;\n" /* over 64 bits: a bit string, nine bytes */                                                     \
   "  data[16]: valof(len) * 8;\n"                                                                                      \
   "  crc:      16;\n"                                                                                                  \
   "};\n"                                                                                                               \
-  "pkt TM_B { hdr: 8 = 0xBB; seq: 16; };\n"
+  "pkt TM_B { hdr: 8 := 0xBB; seq: 16; };\n"
 
 /* ---- Helpers --------------------------------------------------------------------------------- */
 

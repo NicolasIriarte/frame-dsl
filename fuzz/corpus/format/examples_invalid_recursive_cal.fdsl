@@ -7,7 +7,7 @@ cal a(x) = b(x) + 1;
 cal b(x) = a(x) * 2;
 
 pkt TM_ADC {
-  id: 8 = 0x01;
+  id: 8 := 0x01;
   [ @cal: a; ]
   reading: 16;
 };

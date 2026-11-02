@@ -4,7 +4,7 @@
 # already have been read.
 
 pkt TM_ORDER {
-  id:   8 = 0x66;
+  id:   8 := 0x66;
   [ @if: valof(flag) == 1; ]
   ext:  8;
   flag: 8;

@@ -10,6 +10,6 @@ block Sample {
 };
 
 pkt TM_SAMPLES {
-  id:      8 = 0x65;
+  id:      8 := 0x65;
   samples: Sample[4];
 };

@@ -16,7 +16,7 @@ enum Kind: 2 {
 };
 
 pkt TM_STATUS {
-  id:      8 = 0x7E;
+  id:      8 := 0x7E;
   version: 4;
   flags:   4;
   kind:    Kind;
