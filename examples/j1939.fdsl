@@ -1,0 +1,44 @@
+# Two SAE J1939 messages, on CAN: their identity is in the CAN ID, and not in these 8 bytes.
+#
+# EEC1 is PGN 61444, carried with CAN ID 0x0CF00400. Its fields are from the Hatz CAN bus documentation and
+# the Tencent Cloud J1939 notes. Address Claimed is PGN 60928, and its NAME is from the Kvaser introduction
+# to J1939 and python-can-j1939. Fields are listed lowest first, as those documents number them.
+#
+# `@decode: manual` because the driver has the CAN ID: a program maps it to a packet, and calls
+# framedsl_decode_as().
+#
+#   frame-dsl j1939.fdsl -d "FF FF FF 68 13 FF FF FF" --packet EEC1
+#
+# J1939 DM1 was left out. Its 19-bit fault number is split by another field, which no word layout can
+# describe, so a program would join the two parts.
+
+@decode:     manual;
+@byte_order: little_endian;
+
+cal rpm(raw) = raw * 0.125;
+
+pkt EEC1 {
+  torque_mode:       4;
+  additional_torque: 4;
+  demand_percent:    8;
+  actual_percent:    8;
+  [ @cal: rpm; ]
+  engine_speed:      16;
+  source_address:    8;
+  starter_mode:      4;
+  reserved:          4;
+  engine_demand:     8;
+};
+
+pkt ADDRESS_CLAIMED {
+  identity:          21;
+  manufacturer:      11;
+  ecu_instance:      3;
+  function_instance: 5;
+  function:          8;
+  reserved:          1;
+  vehicle_system:    7;
+  system_instance:   4;
+  industry_group:    3;
+  arbitrary:         1;
+};

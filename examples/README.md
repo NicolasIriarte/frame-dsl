@@ -61,6 +61,8 @@ trustworthy, and each file below exists so one of them has something to fail on.
 | [`signed_and_float.fdsl`](signed_and_float.fdsl) | typed fields: signed and float values, with a curve, a condition and a default |
 | [`can_bus.fdsl`](can_bus.fdsl) | `@decode: manual`: packets a program names, for a link that carries identity elsewhere |
 | [`little_endian_bitfields.fdsl`](little_endian_bitfields.fdsl) | a J1939 NAME: fields inside a little-endian word, crossing bytes |
+| [`ublox_nav_posllh.fdsl`](ublox_nav_posllh.fdsl) | a real serial frame: u-blox NAV-POSLLH, signed and little-endian, with its id in its bytes |
+| [`j1939.fdsl`](j1939.fdsl) | real CAN frames: J1939 EEC1 and Address Claimed, identified by the CAN ID |
 | [`optional_fields.fdsl`](optional_fields.fdsl) | conditional fields: `@if` on a block's use, an anonymous block and a field, nested, by enum name and through `valof(hdr.flag)` |
 | [`combined_conditions.fdsl`](combined_conditions.fdsl) | conditions combined with `&&` and `\|\|`, orderings, and masks testing bits of a flags field |
 
